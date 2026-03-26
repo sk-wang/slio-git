@@ -28,6 +28,16 @@ struct ChromeContextWidths {
     branch: u16,
 }
 
+#[derive(Debug, Clone)]
+struct StatusBarContent {
+    repo_path: String,
+    workspace_summary: String,
+    selected_path: Option<String>,
+    activity_label: String,
+    activity_tone: BadgeTone,
+    detail: Option<String>,
+}
+
 pub struct MainWindow<'a, Message> {
     pub i18n: &'a I18n,
     pub state: &'a AppState,
@@ -741,40 +751,84 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         !matches!(sync_label, "✓" | "○")
     }
 
-    fn status_bar(i18n: &'a I18n, state: &'a AppState) -> Element<'a, Message> {
-        let context = &state.shell.context_switcher;
+    fn build_status_bar_content(state: &'a AppState) -> StatusBarContent {
         let status = &state.shell.status_surface;
+        let selected_path = state.selected_change_path.clone();
+        let workspace_summary = format!(
+            "{} 个改动{}",
+            state.shell.chrome.change_count,
+            if state.shell.chrome.conflict_count > 0 {
+                format!(" · {} 个冲突", state.shell.chrome.conflict_count)
+            } else {
+                String::new()
+            }
+        );
+        let default_workspace_status = format!("{} 项变更", state.workspace_change_count());
+        let is_common_workspace_status = state.workspace_change_count() > 0
+            && status.severity == StatusSeverity::Info
+            && status.message.as_deref() == Some(default_workspace_status.as_str())
+            && match (status.detail.as_deref(), selected_path.as_deref()) {
+                (Some(detail), Some(selected)) => detail == selected,
+                (None, _) => true,
+                _ => false,
+            };
+
+        let (activity_label, activity_tone, detail) = if is_common_workspace_status {
+            ("就绪".to_string(), BadgeTone::Neutral, None)
+        } else {
+            (
+                status.message.clone().unwrap_or_else(|| "就绪".to_string()),
+                Self::status_bar_tone(state, status),
+                status.detail.clone(),
+            )
+        };
+
+        StatusBarContent {
+            repo_path: state.shell.context_switcher.repository_path.clone(),
+            workspace_summary,
+            selected_path,
+            activity_label,
+            activity_tone,
+            detail,
+        }
+    }
+
+    fn status_bar_tone(
+        state: &AppState,
+        status: &crate::state::LightweightStatusSurface,
+    ) -> BadgeTone {
+        match status.severity {
+            StatusSeverity::Success => BadgeTone::Success,
+            StatusSeverity::Warning => BadgeTone::Warning,
+            StatusSeverity::Error => BadgeTone::Danger,
+            StatusSeverity::Info => {
+                if state.is_loading {
+                    BadgeTone::Neutral
+                } else {
+                    BadgeTone::Accent
+                }
+            }
+        }
+    }
+
+    fn status_bar(i18n: &'a I18n, state: &'a AppState) -> Element<'a, Message> {
+        let StatusBarContent {
+            repo_path,
+            workspace_summary,
+            selected_path,
+            activity_label,
+            activity_tone,
+            detail,
+        } = Self::build_status_bar_content(state);
 
         crate::widgets::statusbar::StatusBar {
             i18n,
-            repo_path: Some(context.repository_path.clone()),
-            workspace_summary: format!(
-                "{} 个改动{}",
-                state.shell.chrome.change_count,
-                if state.shell.chrome.conflict_count > 0 {
-                    format!(" · {} 个冲突", state.shell.chrome.conflict_count)
-                } else {
-                    String::new()
-                }
-            ),
-            selected_path: state.selected_change_path.as_deref(),
-            activity_label: status.message.clone().unwrap_or_else(|| "就绪".to_string()),
-            activity_tone: match status.severity {
-                StatusSeverity::Success => BadgeTone::Success,
-                StatusSeverity::Warning => BadgeTone::Warning,
-                StatusSeverity::Error => BadgeTone::Danger,
-                StatusSeverity::Info => {
-                    if state.is_loading {
-                        BadgeTone::Neutral
-                    } else {
-                        BadgeTone::Accent
-                    }
-                }
-            },
-            detail: status
-                .detail
-                .clone()
-                .filter(|detail| detail.chars().count() <= 28),
+            repo_path: Some(repo_path),
+            workspace_summary,
+            selected_path,
+            activity_label,
+            activity_tone,
+            detail,
         }
         .view()
     }
@@ -1005,6 +1059,8 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use git_core::index::{Change, ChangeStatus};
+    use crate::state::LightweightStatusSurface;
 
     #[test]
     fn chrome_context_widths_leave_room_for_actions() {
@@ -1036,5 +1092,73 @@ mod tests {
         assert!(!MainWindow::<()>::show_sync_chip("○"));
         assert!(MainWindow::<()>::show_sync_chip("↑2"));
         assert!(MainWindow::<()>::show_sync_chip("↕1/1"));
+    }
+
+    #[test]
+    fn status_bar_content_suppresses_duplicate_workspace_status_signal() {
+        let mut state = AppState::default();
+        state.shell.context_switcher.repository_path = "/Users/wanghao/git/slio-git".to_string();
+        state.shell.chrome.change_count = 3;
+        state.shell.chrome.conflict_count = 1;
+        state.selected_change_path = Some("src-ui/src/main.rs".to_string());
+        state.unstaged_changes = vec![
+            Change {
+                path: "src-ui/src/main.rs".to_string(),
+                status: ChangeStatus::Modified,
+                staged: false,
+                unstaged: true,
+                old_oid: None,
+                new_oid: None,
+            },
+            Change {
+                path: "src-ui/src/views/main_window.rs".to_string(),
+                status: ChangeStatus::Modified,
+                staged: false,
+                unstaged: true,
+                old_oid: None,
+                new_oid: None,
+            },
+            Change {
+                path: "src-ui/src/widgets/statusbar.rs".to_string(),
+                status: ChangeStatus::Modified,
+                staged: false,
+                unstaged: true,
+                old_oid: None,
+                new_oid: None,
+            },
+        ];
+        state.shell.status_surface = LightweightStatusSurface {
+            message: Some("3 项变更".to_string()),
+            detail: Some("src-ui/src/main.rs".to_string()),
+            severity: StatusSeverity::Info,
+            ..LightweightStatusSurface::default()
+        };
+
+        let content = MainWindow::<()>::build_status_bar_content(&state);
+
+        assert_eq!(content.workspace_summary, "3 个改动 · 1 个冲突");
+        assert_eq!(content.selected_path.as_deref(), Some("src-ui/src/main.rs"));
+        assert_eq!(content.activity_label, "就绪");
+        assert!(matches!(content.activity_tone, BadgeTone::Neutral));
+        assert_eq!(content.detail, None);
+    }
+
+    #[test]
+    fn status_bar_content_keeps_long_detail_for_widget_truncation() {
+        let mut state = AppState::default();
+        let long_detail =
+            "origin/main 比本地领先 12 次提交，建议先拉取后再继续推送。".to_string();
+        state.shell.status_surface = LightweightStatusSurface {
+            message: Some("远程状态".to_string()),
+            detail: Some(long_detail.clone()),
+            severity: StatusSeverity::Warning,
+            ..LightweightStatusSurface::default()
+        };
+
+        let content = MainWindow::<()>::build_status_bar_content(&state);
+
+        assert_eq!(content.activity_label, "远程状态");
+        assert!(matches!(content.activity_tone, BadgeTone::Warning));
+        assert_eq!(content.detail, Some(long_detail));
     }
 }

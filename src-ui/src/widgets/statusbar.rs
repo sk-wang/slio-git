@@ -32,7 +32,7 @@ pub struct StatusBar<'a> {
     pub i18n: &'a I18n,
     pub repo_path: Option<String>,
     pub workspace_summary: String,
-    pub selected_path: Option<&'a str>,
+    pub selected_path: Option<String>,
     pub activity_label: String,
     pub activity_tone: BadgeTone,
     pub detail: Option<String>,
