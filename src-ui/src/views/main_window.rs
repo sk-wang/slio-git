@@ -166,7 +166,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         .push_maybe(banner)
                         .push(
                             Container::new(body)
-                                .padding(theme::layout::SHELL_PADDING as u16)
+                                .padding(theme::density::PANE_PADDING)
                                 .width(Length::Fill)
                                 .height(Length::Fill),
                         ),

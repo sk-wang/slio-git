@@ -3253,7 +3253,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
                         .push(button::tab("储藏", false, None::<Message>))
                         .push(Space::new().width(Length::Fill)),
                 )
-                .padding([4, 6])
+                .padding(theme::density::SECONDARY_BAR_PADDING)
                 .style(theme::frame_style(theme::Surface::Toolbar)),
             )
             .push(iced::widget::rule::horizontal(1))
@@ -3273,7 +3273,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
                         ))
                         .push(Space::new().width(Length::Fill)),
                 )
-                .padding([4, 6])
+                .padding(theme::density::SECONDARY_BAR_PADDING)
                 .style(theme::frame_style(theme::Surface::Nav)),
             )
             .push(iced::widget::rule::horizontal(1))
@@ -3292,7 +3292,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
             .push(build_diff_header(state))
             .push(
                 Container::new(build_diff_content(state, i18n))
-                    .padding([6, 0])
+                    .padding([0, 0])
                     .height(Length::Fill),
             ),
     )
@@ -3300,7 +3300,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
     .style(theme::panel_style(theme::Surface::Panel));
 
     Row::new()
-        .spacing(theme::spacing::SM)
+        .spacing(theme::spacing::XS)
         .height(Length::Fill)
         .push(changes_panel)
         .push(diff_panel)
