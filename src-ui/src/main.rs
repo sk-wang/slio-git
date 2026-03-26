@@ -3390,10 +3390,16 @@ fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
             .filter(|value| !value.is_empty())
             .map(|value| value.to_string())
     });
+    let total_hunks = state.current_diff.as_ref().map(|diff| {
+        diff.files
+            .iter()
+            .map(|file| file.hunks.len())
+            .sum::<usize>()
+    });
 
     Container::new(
         Row::new()
-            .spacing(theme::spacing::SM)
+            .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
             .push(button::tab(title, true, None::<Message>))
             .push_maybe(path_hint.map(|hint| {
@@ -3402,10 +3408,13 @@ fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
                     .color(theme::darcula::TEXT_SECONDARY)
             }))
             .push_maybe(state.current_diff.as_ref().map(|diff| {
-                widgets::info_chip::<Message>(
-                    format!("{} 个文件", diff.files.len()),
+                widgets::compact_chip::<Message>(
+                    format!("{} 文件", diff.files.len()),
                     BadgeTone::Neutral,
                 )
+            }))
+            .push_maybe(total_hunks.map(|count| {
+                widgets::compact_chip::<Message>(format!("{} 区块", count), BadgeTone::Accent)
             }))
             .push(Space::new().width(Length::Fill))
             .push(button::tab(
@@ -3433,7 +3442,7 @@ fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
                 Some(Message::NavigateNextFile),
             )),
     )
-    .padding([4, 6])
+    .padding(theme::density::SECONDARY_BAR_PADDING)
     .style(theme::frame_style(theme::Surface::Toolbar))
     .into()
 }
