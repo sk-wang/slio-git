@@ -233,13 +233,13 @@ impl<'a, Message: Clone + 'a> ChangesList<'a, Message> {
                         ),
                 ),
         )
-            .padding([6, 8])
-            .width(Length::Fill)
-            .style(theme::panel_style(if is_selected {
-                Surface::ListSelection
-            } else {
-                Surface::ListRow
-            }));
+        .padding([6, 8])
+        .width(Length::Fill)
+        .style(theme::panel_style(if is_selected {
+            Surface::ListSelection
+        } else {
+            Surface::ListRow
+        }));
 
         let selection: Element<'a, Message> = if let Some(select_message) = self
             .on_select
