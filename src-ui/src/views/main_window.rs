@@ -22,6 +22,12 @@ struct ChromeBadges {
     sync_badge: Option<(String, BadgeTone)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ChromeContextWidths {
+    repo: u16,
+    branch: u16,
+}
+
 pub struct MainWindow<'a, Message> {
     pub i18n: &'a I18n,
     pub state: &'a AppState,
@@ -262,12 +268,14 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             context.sync_hint.as_deref(),
             &context.sync_label,
         );
+        let context_widths = Self::chrome_context_widths();
 
         let repo_switcher = Button::new(
             Container::new(
                 Row::new()
                     .spacing(theme::spacing::SM)
                     .align_y(Alignment::Center)
+                    .width(Length::Fill)
                     .push(
                         Container::new(Self::inline_icon(
                             RailIcon::Repository,
@@ -280,6 +288,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                     .push(
                         Column::new()
                             .spacing(1)
+                            .width(Length::Fill)
                             .push(
                                 Text::new(&context.repository_name)
                                     .size(12)
@@ -300,7 +309,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             .style(theme::panel_style(Surface::ToolbarField)),
         )
         .style(theme::button_style(ButtonTone::Ghost))
-        .width(Length::FillPortion(4))
+        .width(Length::FillPortion(context_widths.repo))
         .on_press(on_show_branches.clone());
 
         let branch_switcher = Button::new(
@@ -308,21 +317,35 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 Row::new()
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
+                    .width(Length::Fill)
                     .push(Self::inline_icon(
                         RailIcon::Branch,
                         theme::darcula::BRAND,
                         12.0,
                     ))
-                    .push(Text::new(&context.branch_name).size(11))
+                    .push(
+                        Text::new(&context.branch_name)
+                            .size(11)
+                            .width(Length::Fill)
+                            .wrapping(text::Wrapping::WordOrGlyph),
+                    )
                     .push_maybe(badges.branch_badge.as_ref().map(|(label, tone)| {
                         widgets::compact_chip::<Message>(label.clone(), *tone)
                     })),
             )
             .padding(theme::density::TOOLBAR_PADDING)
+            .width(Length::Fill)
             .style(theme::panel_style(Surface::ToolbarField)),
         )
         .style(theme::button_style(ButtonTone::Ghost))
+        .width(Length::FillPortion(context_widths.branch))
         .on_press(on_show_branches.clone());
+
+        let context_switchers = Row::new()
+            .spacing(theme::spacing::SM)
+            .width(Length::Fill)
+            .push(repo_switcher)
+            .push(branch_switcher);
 
         let tabs = Row::new()
             .spacing(theme::spacing::XS)
@@ -404,12 +427,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 Row::new()
                     .spacing(theme::spacing::SM)
                     .align_y(Alignment::Center)
-                    .push(repo_switcher)
-                    .push(branch_switcher)
+                    .push(context_switchers)
                     .push_maybe(badges.sync_badge.as_ref().map(|(label, tone)| {
                         widgets::compact_chip::<Message>(label.clone(), *tone)
                     }))
-                    .push(Space::new().width(Length::Fill))
                     .push(quick_actions),
             )
             .padding([10, 16])
@@ -712,6 +733,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         }
     }
 
+    fn chrome_context_widths() -> ChromeContextWidths {
+        ChromeContextWidths { repo: 3, branch: 2 }
+    }
+
     fn show_sync_chip(sync_label: &str) -> bool {
         !matches!(sync_label, "✓" | "○")
     }
@@ -980,6 +1005,14 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chrome_context_widths_leave_room_for_actions() {
+        assert_eq!(
+            MainWindow::<()>::chrome_context_widths(),
+            ChromeContextWidths { repo: 3, branch: 2 }
+        );
+    }
 
     #[test]
     fn pick_branch_badges_prefers_state_hint_over_secondary_label() {
