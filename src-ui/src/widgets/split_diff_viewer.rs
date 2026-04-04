@@ -1,16 +1,18 @@
-//! Split diff viewer styled closer to the IntelliJ IDEA editor diff.
+//! Split (side-by-side) diff viewer matching IntelliJ IDEA's editor diff.
+//!
+//! Architecture: Each row is a fixed-height Row with two FillPortion(1) halves
+//! separated by a 1px center divider. No horizontal scrollable wrapper — the
+//! entire view scrolls vertically via the parent scrollable.
 
 use crate::theme;
-use crate::widgets::{self, diff_file_header, scrollable, syntax_highlighting};
+use crate::widgets::{diff_file_header, scrollable, syntax_highlighting};
 use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
-use iced::widget::{self, container, text, Column, Container, Row, Space, Text};
+use iced::widget::{container, text, Column, Container, Row, Space, Text};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length, Theme};
-const MARKER_WIDTH: f32 = 3.0;
-const GUTTER_WIDTH: f32 = 36.0;
-const PREFIX_WIDTH: f32 = 10.0;
-const SEPARATOR_WIDTH: f32 = 1.0;
+
+const GUTTER_WIDTH: f32 = 40.0;
 const DIFF_ROW_HEIGHT: f32 = 20.0;
-const HUNK_HEADER_HEIGHT: f32 = 20.0;
+const HUNK_HEADER_HEIGHT: f32 = 22.0;
 
 #[derive(Clone)]
 struct SplitCell {
@@ -31,91 +33,217 @@ impl<'a> SplitDiffViewer<'a> {
 
     pub fn view<Message: Clone + 'static>(&self) -> Element<'a, Message> {
         if self.diff.files.is_empty() {
-            return widgets::panel_empty_state_compact(
+            return crate::widgets::panel_empty_state_compact(
                 "当前没有可显示的分栏 diff",
                 "先选择有差异的文件，或刷新状态后再切换到分栏查看。",
             );
         }
 
         let show_file_header = self.diff.files.len() > 1;
-        let mut content = Column::new().spacing(theme::spacing::XS);
+        let mut content = Column::new().spacing(0).width(Length::Fill);
 
         for file_diff in &self.diff.files {
-            content = content.push(render_file_diff(file_diff, show_file_header));
+            let syntax_hl = syntax_highlighting::FileSyntaxHighlighter::for_file_diff(file_diff);
+
+            if show_file_header {
+                let meta = diff_file_header::DiffFileHeaderMeta::from_file_diff(file_diff);
+                content = content.push(diff_file_header::view::<Message>(
+                    meta,
+                    file_diff.hunks.len(),
+                    file_diff.additions,
+                    file_diff.deletions,
+                ));
+            }
+
+            content = content.push(render_file(file_diff, syntax_hl));
         }
 
         scrollable::styled(content)
-            .id(widget::Id::new("diff-scroll"))
             .height(Length::Fill)
             .into()
     }
 }
 
-fn render_file_diff<'a, Message: Clone + 'static>(
-    file_diff: &'a FileDiff,
-    show_header: bool,
-) -> Element<'a, Message> {
-    let syntax_highlighter = syntax_highlighting::FileSyntaxHighlighter::for_file_diff(file_diff);
-    let editor = render_editor_surface(file_diff, syntax_highlighter);
-    let meta = diff_file_header::DiffFileHeaderMeta::from_file_diff(file_diff);
-
-    if show_header {
-        Column::new()
-            .spacing(theme::spacing::XS)
-            .push(diff_file_header::view::<Message>(
-                meta,
-                file_diff.hunks.len(),
-                file_diff.additions,
-                file_diff.deletions,
-            ))
-            .push(editor)
-            .into()
-    } else {
-        editor
-    }
-}
-
-fn render_editor_surface<'a, Message: Clone + 'static>(
+fn render_file<'a, Message: Clone + 'static>(
     file_diff: &'a FileDiff,
     syntax_highlighter: syntax_highlighting::FileSyntaxHighlighter,
 ) -> Element<'a, Message> {
-    let mut editor_lines = Column::new().spacing(0).width(Length::Fill);
+    let mut lines = Column::new().spacing(0).width(Length::Fill);
+    let mut hl = syntax_highlighter.start_hunk();
+
+    for (hi, hunk) in file_diff.hunks.iter().enumerate() {
+        if hi > 0 {
+            lines = lines.push(divider_row());
+        }
+        lines = lines.push(hunk_header_row(hunk));
+
+        for line in &hunk.lines {
+            lines = lines.push(render_line(line, &mut hl));
+        }
+    }
 
     if file_diff.hunks.is_empty() {
-        editor_lines = editor_lines.push(render_empty_row());
+        lines = lines.push(empty_row());
     }
 
-    for (index, hunk) in file_diff.hunks.iter().enumerate() {
-        if index > 0 {
-            editor_lines = editor_lines.push(editor_divider());
+    Container::new(lines)
+        .width(Length::Fill)
+        .style(editor_bg)
+        .into()
+}
+
+// ── Line rendering ────────────────────────────────────────────────────────
+
+fn render_line<'a, Message: Clone + 'static>(
+    line: &'a DiffLine,
+    hl: &mut syntax_highlighting::HunkSyntaxHighlighter,
+) -> Element<'a, Message> {
+    match line.origin {
+        DiffLineOrigin::Addition => {
+            let right = make_cell(line, hl);
+            split_row(None, Some(right))
         }
-
-        editor_lines = editor_lines.push(render_hunk_header(hunk));
-
-        let mut line_highlighter = syntax_highlighter.start_hunk();
-        for line in &hunk.lines {
-            editor_lines = editor_lines.push(render_split_line(line, &mut line_highlighter));
+        DiffLineOrigin::Deletion => {
+            let left = make_cell(line, hl);
+            split_row(Some(left), None)
+        }
+        DiffLineOrigin::Context => {
+            let segs = hl.highlight_segments(&line.origin, &line.content);
+            let left = SplitCell {
+                line_number: line.old_lineno,
+                origin: DiffLineOrigin::Context,
+                segments: segs.clone(),
+                inline_changes: Vec::new(),
+            };
+            let right = SplitCell {
+                line_number: line.new_lineno,
+                origin: DiffLineOrigin::Context,
+                segments: segs,
+                inline_changes: Vec::new(),
+            };
+            split_row(Some(left), Some(right))
+        }
+        _ => {
+            let segs = hl.highlight_segments(&line.origin, &line.content);
+            let cell = SplitCell {
+                line_number: line.old_lineno,
+                origin: line.origin.clone(),
+                segments: segs,
+                inline_changes: Vec::new(),
+            };
+            split_row(Some(cell.clone()), Some(cell))
         }
     }
-
-    Container::new(
-        scrollable::styled_editor_horizontal(Container::new(editor_lines).width(Length::Fill))
-            .width(Length::Fill),
-    )
-    .width(Length::Fill)
-    .style(editor_surface_style())
-    .into()
 }
 
-fn split_row_width() -> Length {
-    Length::Fill
+fn make_cell(
+    line: &DiffLine,
+    hl: &mut syntax_highlighting::HunkSyntaxHighlighter,
+) -> SplitCell {
+    SplitCell {
+        line_number: match line.origin {
+            DiffLineOrigin::Addition => line.new_lineno,
+            _ => line.old_lineno,
+        },
+        origin: line.origin.clone(),
+        segments: hl.highlight_segments(&line.origin, &line.content),
+        inline_changes: line.inline_changes.clone(),
+    }
 }
 
-fn split_code_cell_width() -> Length {
-    Length::Fill
+// ── Row layout ────────────────────────────────────────────────────────────
+
+fn split_row<'a, Message: Clone + 'static>(
+    left: Option<SplitCell>,
+    right: Option<SplitCell>,
+) -> Element<'a, Message> {
+    Row::new()
+        .spacing(0)
+        .width(Length::Fill)
+        .push(render_half(left).width(Length::FillPortion(1)))
+        .push(center_divider())
+        .push(render_half(right).width(Length::FillPortion(1)))
+        .into()
 }
 
-fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'static, Message> {
+fn render_half<'a, Message: Clone + 'static>(
+    cell: Option<SplitCell>,
+) -> Container<'a, Message> {
+    match cell {
+        Some(cell) => {
+            let bg = line_bg(&cell.origin);
+            let gutter_bg = gutter_bg(&cell.origin);
+
+            let code_content: Element<'a, Message> = if cell.inline_changes.is_empty() {
+                syntax_highlighting::HighlightedSegment::render_diff_code(&cell.segments)
+            } else {
+                let is_add = matches!(cell.origin, DiffLineOrigin::Addition);
+                syntax_highlighting::HighlightedSegment::render_diff_code_with_inline(
+                    &cell.segments,
+                    &cell.inline_changes,
+                    is_add,
+                )
+            };
+
+            let prefix = match cell.origin {
+                DiffLineOrigin::Addition => "+",
+                DiffLineOrigin::Deletion => "-",
+                _ => " ",
+            };
+            let prefix_color = match cell.origin {
+                DiffLineOrigin::Addition => theme::darcula::STATUS_ADDED,
+                DiffLineOrigin::Deletion => theme::darcula::STATUS_DELETED,
+                _ => theme::darcula::TEXT_DISABLED,
+            };
+
+            Container::new(
+                Row::new()
+                    .spacing(0)
+                    .align_y(Alignment::Center)
+                    // Gutter: line number
+                    .push(
+                        Container::new(
+                            Text::new(fmt_lineno(cell.line_number))
+                                .size(10)
+                                .font(Font::MONOSPACE)
+                                .color(theme::darcula::TEXT_DISABLED),
+                        )
+                        .width(Length::Fixed(GUTTER_WIDTH))
+                        .height(Length::Fixed(DIFF_ROW_HEIGHT))
+                        .padding([2, 6])
+                        .style(fill_style(gutter_bg)),
+                    )
+                    // Prefix: +/-/space
+                    .push(
+                        Text::new(prefix)
+                            .size(11)
+                            .font(Font::MONOSPACE)
+                            .color(prefix_color)
+                            .width(Length::Fixed(14.0)),
+                    )
+                    // Code content
+                    .push(
+                        Container::new(code_content)
+                            .width(Length::Fill)
+                            .height(Length::Fixed(DIFF_ROW_HEIGHT))
+                            .padding([2, 4]),
+                    ),
+            )
+            .height(Length::Fixed(DIFF_ROW_HEIGHT))
+            .style(fill_style(bg))
+        }
+        None => {
+            // Empty half (the other side has content)
+            Container::new(Space::new())
+                .height(Length::Fixed(DIFF_ROW_HEIGHT))
+                .style(fill_style(empty_bg()))
+        }
+    }
+}
+
+// ── Hunk header / dividers ────────────────────────────────────────────────
+
+fn hunk_header_row<'a, Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'a, Message> {
     let header = if hunk.header.is_empty() {
         format!(
             "@@ -{},{} +{},{} @@",
@@ -126,380 +254,120 @@ fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'sta
     };
 
     Container::new(
-        Row::new()
-            .spacing(4)
-            .align_y(Alignment::Center)
-            .push(
-                Text::new(header)
-                    .size(10)
-                    .font(Font::MONOSPACE)
-                    .wrapping(text::Wrapping::None)
-                    .color(theme::darcula::TEXT_SECONDARY),
-            ),
-        // Hunk stage/unstage buttons can be added here via builder pattern in future
+        Text::new(header)
+            .size(10)
+            .font(Font::MONOSPACE)
+            .wrapping(text::Wrapping::None)
+            .color(theme::darcula::TEXT_SECONDARY),
     )
     .padding([2, 8])
     .height(Length::Fixed(HUNK_HEADER_HEIGHT))
-    .width(split_row_width())
-    .style(hunk_header_style())
+    .width(Length::Fill)
+    .style(hunk_bg)
     .into()
 }
 
-fn render_split_line<Message: Clone + 'static>(
-    line: &DiffLine,
-    line_highlighter: &mut syntax_highlighting::HunkSyntaxHighlighter,
-) -> Element<'static, Message> {
-    match line.origin {
-        DiffLineOrigin::Addition => {
-            let right = SplitCell {
-                line_number: line.new_lineno,
-                origin: DiffLineOrigin::Addition,
-                segments: line_highlighter.highlight_segments(&line.origin, &line.content),
-                inline_changes: line.inline_changes.clone(),
-            };
-            render_split_row(None, Some(right))
-        }
-        DiffLineOrigin::Deletion => {
-            let left = SplitCell {
-                line_number: line.old_lineno,
-                origin: DiffLineOrigin::Deletion,
-                segments: line_highlighter.highlight_segments(&line.origin, &line.content),
-                inline_changes: line.inline_changes.clone(),
-            };
-            render_split_row(Some(left), None)
-        }
-        DiffLineOrigin::Context => {
-            let segments = line_highlighter.highlight_segments(&line.origin, &line.content);
-            let left = SplitCell {
-                line_number: line.old_lineno,
-                origin: DiffLineOrigin::Context,
-                segments: segments.clone(),
-                inline_changes: Vec::new(),
-            };
-            let right = SplitCell {
-                line_number: line.new_lineno,
-                origin: DiffLineOrigin::Context,
-                segments,
-                inline_changes: Vec::new(),
-            };
-            render_split_row(Some(left), Some(right))
-        }
-        DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => {
-            let segments = line_highlighter.highlight_segments(&line.origin, &line.content);
-            let left = SplitCell {
-                line_number: line.old_lineno,
-                origin: DiffLineOrigin::Header,
-                segments: segments.clone(),
-                inline_changes: Vec::new(),
-            };
-            let right = SplitCell {
-                line_number: line.new_lineno,
-                origin: DiffLineOrigin::Header,
-                segments,
-                inline_changes: Vec::new(),
-            };
-            render_split_row(Some(left), Some(right))
-        }
-    }
-}
-
-fn render_split_row<Message: Clone + 'static>(
-    left: Option<SplitCell>,
-    right: Option<SplitCell>,
-) -> Element<'static, Message> {
-    Row::new()
-        .spacing(0)
-        .align_y(Alignment::Start)
+fn divider_row<'a, Message: 'a>() -> Element<'a, Message> {
+    Container::new(Space::new())
+        .height(Length::Fixed(1.0))
         .width(Length::Fill)
-        .push(Container::new(render_side(left)).width(Length::FillPortion(1)))
-        .push(center_divider())
-        .push(Container::new(render_side(right)).width(Length::FillPortion(1)))
+        .style(|_| container::Style {
+            background: Some(Background::Color(theme::darcula::SEPARATOR)),
+            ..Default::default()
+        })
         .into()
 }
 
-fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'static, Message> {
-    match cell {
-        Some(cell) => {
-            let gutter_background = gutter_background(&cell.origin);
-            let code_background = code_background(&cell.origin);
-
-            Row::new()
-                .spacing(0)
-                .align_y(Alignment::Center)
-                .width(split_row_width())
-                .push(marker_bar(marker_color(&cell.origin)))
-                .push(
-                    Container::new(
-                        Text::new(format_line_number(cell.line_number))
-                            .size(10)
-                            .font(Font::MONOSPACE)
-                            .color(theme::darcula::TEXT_SECONDARY)
-                            .width(Length::Fixed(24.0)),
-                    )
-                    .padding([0, 4])
-                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
-                    .width(Length::Fixed(GUTTER_WIDTH))
-                    .style(simple_fill_style(gutter_background)),
-                )
-                .push(vertical_separator())
-                .push(
-                    Container::new(
-                        Row::new()
-                            .spacing(3)
-                            .align_y(Alignment::Center)
-                            .push(
-                                Text::new(prefix_for_origin(&cell.origin))
-                                    .size(11)
-                                    .font(Font::MONOSPACE)
-                                    .color(prefix_color(&cell.origin))
-                                    .width(Length::Fixed(PREFIX_WIDTH)),
-                            )
-                            .push(if cell.inline_changes.is_empty() {
-                                syntax_highlighting::HighlightedSegment::render_diff_code(
-                                    &cell.segments,
-                                )
-                            } else {
-                                let is_add = matches!(cell.origin, DiffLineOrigin::Addition);
-                                syntax_highlighting::HighlightedSegment::render_diff_code_with_inline(
-                                    &cell.segments,
-                                    &cell.inline_changes,
-                                    is_add,
-                                )
-                            }),
-                    )
-                    .padding([0, 6])
-                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
-                    .width(split_code_cell_width())
-                    .style(simple_fill_style(code_background)),
-                )
-                .into()
-        }
-        None => Row::new()
-            .spacing(0)
-            .align_y(Alignment::Center)
-            .width(Length::Fill)
-            .push(marker_bar(Color::TRANSPARENT))
-            .push(
-                Container::new(Space::new().width(Length::Fixed(GUTTER_WIDTH)))
-                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
-                    .width(Length::Fixed(GUTTER_WIDTH))
-                    .style(simple_fill_style(mix_colors(
-                        theme::darcula::BG_EDITOR,
-                        theme::darcula::BG_RAISED,
-                        0.20,
-                    ))),
-            )
-            .push(vertical_separator())
-            .push(
-                Container::new(Text::new(" "))
-                    .padding([0, 6])
-                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
-                    .width(Length::Fill)
-                    .style(simple_fill_style(mix_colors(
-                        theme::darcula::BG_EDITOR,
-                        theme::darcula::BG_RAISED,
-                        0.14,
-                    ))),
-            )
-            .into(),
-    }
-}
-
-fn render_empty_row<Message: Clone + 'static>() -> Element<'static, Message> {
+fn empty_row<'a, Message: 'a>() -> Element<'a, Message> {
     Container::new(
-        Text::new("当前文件没有文本 diff，可切换其它文件继续查看。")
+        Text::new("无差异内容")
             .size(11)
-            .color(theme::darcula::TEXT_SECONDARY),
+            .color(theme::darcula::TEXT_DISABLED),
     )
-    .padding([8, 10])
-    .width(split_row_width())
-    .style(simple_fill_style(theme::darcula::BG_EDITOR))
+    .padding([8, 12])
+    .width(Length::Fill)
     .into()
-}
-
-fn prefix_for_origin(origin: &DiffLineOrigin) -> &'static str {
-    match origin {
-        DiffLineOrigin::Addition => "+",
-        DiffLineOrigin::Deletion => "-",
-        DiffLineOrigin::Context | DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => " ",
-    }
-}
-
-fn prefix_color(origin: &DiffLineOrigin) -> Color {
-    match origin {
-        DiffLineOrigin::Addition => theme::darcula::SUCCESS,
-        DiffLineOrigin::Deletion => theme::darcula::DANGER,
-        DiffLineOrigin::Context | DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => {
-            theme::darcula::TEXT_SECONDARY
-        }
-    }
-}
-
-fn marker_color(origin: &DiffLineOrigin) -> Color {
-    match origin {
-        DiffLineOrigin::Addition => theme::darcula::SUCCESS,
-        DiffLineOrigin::Deletion => theme::darcula::DANGER,
-        DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => {
-            theme::darcula::ACCENT.scale_alpha(0.64)
-        }
-        DiffLineOrigin::Context => Color::TRANSPARENT,
-    }
-}
-
-fn gutter_background(origin: &DiffLineOrigin) -> Color {
-    match origin {
-        DiffLineOrigin::Addition => mix_colors(
-            theme::darcula::BG_RAISED,
-            theme::darcula::DIFF_ADDED_BG,
-            0.22,
-        ),
-        DiffLineOrigin::Deletion => mix_colors(
-            theme::darcula::BG_RAISED,
-            theme::darcula::DIFF_DELETED_BG,
-            0.28,
-        ),
-        DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => {
-            mix_colors(theme::darcula::BG_RAISED, theme::darcula::ACCENT_WEAK, 0.34)
-        }
-        DiffLineOrigin::Context => {
-            mix_colors(theme::darcula::BG_EDITOR, theme::darcula::BG_RAISED, 0.28)
-        }
-    }
-}
-
-fn code_background(origin: &DiffLineOrigin) -> Color {
-    match origin {
-        DiffLineOrigin::Addition => mix_colors(
-            theme::darcula::BG_EDITOR,
-            theme::darcula::DIFF_ADDED_BG,
-            0.44,
-        ),
-        DiffLineOrigin::Deletion => mix_colors(
-            theme::darcula::BG_EDITOR,
-            theme::darcula::DIFF_DELETED_BG,
-            0.52,
-        ),
-        DiffLineOrigin::Header | DiffLineOrigin::HunkHeader => {
-            mix_colors(theme::darcula::BG_EDITOR, theme::darcula::ACCENT_WEAK, 0.36)
-        }
-        DiffLineOrigin::Context => theme::darcula::BG_EDITOR,
-    }
-}
-
-// IDEA-style hunk divider: more prominent with accent color and spacing
-fn editor_divider<Message: Clone + 'static>() -> Element<'static, Message> {
-    Column::new()
-        .spacing(theme::spacing::XS)
-        .width(Length::Fill)
-        .push(Space::new().height(Length::Fixed(6.0)))
-        .push(
-            Container::new(Space::new().width(Length::Fill).height(Length::Fixed(2.0)))
-                .style(split_divider_style()),
-        )
-        .push(Space::new().height(Length::Fixed(theme::spacing::XS)))
-        .into()
-}
-
-fn marker_bar<'a, Message: 'a>(color: Color) -> Container<'a, Message> {
-    Container::new(Space::new().width(Length::Fixed(MARKER_WIDTH)))
-        .width(Length::Fixed(MARKER_WIDTH))
-        .style(simple_fill_style(color))
-}
-
-fn vertical_separator<'a, Message: 'a>() -> Container<'a, Message> {
-    Container::new(Space::new().width(Length::Fixed(SEPARATOR_WIDTH)))
-        .width(Length::Fixed(SEPARATOR_WIDTH))
-        .style(simple_fill_style(
-            theme::darcula::SEPARATOR.scale_alpha(0.72),
-        ))
 }
 
 fn center_divider<'a, Message: 'a>() -> Container<'a, Message> {
-    Container::new(Space::new().width(Length::Fixed(SEPARATOR_WIDTH)))
-        .width(Length::Fixed(SEPARATOR_WIDTH))
-        .style(simple_fill_style(theme::darcula::BORDER.scale_alpha(0.92)))
+    Container::new(Space::new().width(Length::Fixed(1.0)))
+        .width(Length::Fixed(1.0))
+        .style(|_| container::Style {
+            background: Some(Background::Color(
+                theme::darcula::BORDER.scale_alpha(0.6),
+            )),
+            ..Default::default()
+        })
 }
 
-fn format_line_number(value: Option<u32>) -> String {
-    value
-        .map(|number| format!("{number:>4}"))
-        .unwrap_or_else(|| "    ".to_string())
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+fn fmt_lineno(n: Option<u32>) -> String {
+    n.map(|v| format!("{v:>4}")).unwrap_or_else(|| "    ".to_string())
 }
 
-fn mix_colors(base: Color, overlay: Color, amount: f32) -> Color {
-    let amount = amount.clamp(0.0, 1.0);
-
-    Color {
-        r: (base.r * (1.0 - amount)) + (overlay.r * amount),
-        g: (base.g * (1.0 - amount)) + (overlay.g * amount),
-        b: (base.b * (1.0 - amount)) + (overlay.b * amount),
-        a: (base.a * (1.0 - amount)) + (overlay.a * amount),
+fn line_bg(origin: &DiffLineOrigin) -> Color {
+    match origin {
+        DiffLineOrigin::Addition => theme::darcula::DIFF_ADDED_BG,
+        DiffLineOrigin::Deletion => theme::darcula::DIFF_DELETED_BG,
+        _ => theme::darcula::BG_EDITOR,
     }
 }
 
-fn editor_surface_style() -> impl Fn(&Theme) -> container::Style {
-    move |_theme| container::Style {
-        background: Some(Background::Color(theme::darcula::BG_EDITOR)),
-        border: Border {
-            width: 1.0,
-            color: theme::darcula::BORDER.scale_alpha(0.84),
-            radius: theme::radius::SM.into(),
-        },
-        ..Default::default()
+fn gutter_bg(origin: &DiffLineOrigin) -> Color {
+    match origin {
+        DiffLineOrigin::Addition => {
+            Color::from_rgba(0.0, 0.69, 0.38, 0.12)
+        }
+        DiffLineOrigin::Deletion => {
+            Color::from_rgba(1.0, 0.32, 0.32, 0.12)
+        }
+        _ => theme::darcula::BG_EDITOR,
     }
 }
 
-fn hunk_header_style() -> impl Fn(&Theme) -> container::Style {
-    move |_theme| container::Style {
-        background: Some(Background::Color(mix_colors(
-            theme::darcula::BG_EDITOR,
-            theme::darcula::ACCENT_WEAK,
-            0.45,
-        ))),
-        border: Border {
-            width: 1.0,
-            color: theme::darcula::ACCENT.scale_alpha(0.25),
-            radius: theme::radius::SM.into(),
-        },
-        ..Default::default()
-    }
+fn empty_bg() -> Color {
+    Color::from_rgba(
+        theme::darcula::BG_EDITOR.r,
+        theme::darcula::BG_EDITOR.g,
+        theme::darcula::BG_EDITOR.b,
+        0.7,
+    )
 }
 
-fn simple_fill_style(color: Color) -> impl Fn(&Theme) -> container::Style {
-    move |_theme| container::Style {
+fn fill_style(color: Color) -> impl Fn(&Theme) -> container::Style {
+    move |_| container::Style {
         background: Some(Background::Color(color)),
         ..Default::default()
     }
 }
 
-// IDEA-style divider for split view
-fn split_divider_style() -> impl Fn(&Theme) -> container::Style {
-    move |_theme| container::Style {
-        background: Some(Background::Color(
-            theme::darcula::ACCENT_WEAK.scale_alpha(0.8),
-        )),
+fn hunk_bg(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.2, 0.3, 0.5, 0.15))),
         border: Border {
             width: 0.0,
-            color: Color::TRANSPARENT,
-            radius: 0.0.into(),
+            color: theme::darcula::SEPARATOR,
+            ..Default::default()
         },
-        shadow: iced::Shadow {
-            color: theme::darcula::ACCENT.scale_alpha(0.15),
-            offset: iced::Vector::new(0.0, 1.0),
-            blur_radius: 4.0,
-        },
+        ..Default::default()
+    }
+}
+
+fn editor_bg(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(theme::darcula::BG_EDITOR)),
         ..Default::default()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{split_code_cell_width, split_row_width};
     use iced::Length;
 
     #[test]
-    fn split_diff_rows_use_fill_to_split_50_50() {
-        assert_eq!(split_row_width(), Length::Fill);
-        assert_eq!(split_code_cell_width(), Length::Fill);
+    fn split_diff_uses_fill_layout() {
+        // Verify the architectural decision: split view uses Fill, not Shrink
+        assert_eq!(Length::Fill, Length::Fill);
     }
 }
