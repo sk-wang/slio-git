@@ -1070,16 +1070,35 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             CommitDialogMessage::CancelPressed => state.close_auxiliary_view(),
             CommitDialogMessage::CommitAndPushPressed => {
-                // TODO: Implement commit-and-push flow
-                state.record_defect_observation("commit_and_push", "提交并推送流程尚未实现");
+                // Commit first, then push
+                if let Err(error) = submit_commit_dialog(state) {
+                    state.commit_dialog.set_error(error.clone());
+                    report_async_failure(
+                        state,
+                        "提交失败",
+                        error,
+                        "workspace.commit_and_push",
+                        "workspace.commit_and_push",
+                    );
+                } else {
+                    // Commit succeeded, now push
+                    return update(state, Message::Push);
+                }
             }
             CommitDialogMessage::ToggleRecentMessages => {
-                // TODO: Show recent messages dropdown
-                state.record_defect_observation("toggle_recent_messages", "最近消息下拉尚未实现");
+                // Load recent messages from history file
+                if let Some(repo) = &state.current_repository {
+                    state.recent_commit_messages =
+                        git_core::load_recent_messages(repo.path());
+                }
             }
-            CommitDialogMessage::SelectRecentMessage(_index) => {
-                // TODO: Insert selected recent message into editor
-                state.record_defect_observation("select_recent_message", "选择历史消息尚未实现");
+            CommitDialogMessage::SelectRecentMessage(index) => {
+                // Insert selected message into the commit editor
+                if let Some(msg) = state.recent_commit_messages.get(index).cloned() {
+                    state.commit_dialog.message = msg.clone();
+                    state.commit_dialog.message_editor =
+                        iced::widget::text_editor::Content::with_text(&msg);
+                }
             }
         },
         Message::BranchPopupMessage(message) => {
@@ -2322,7 +2341,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             HistoryMessage::SquashSelectedCommits => {
-                // Validate contiguous selection and squash via interactive rebase
                 let selected = &state.history_view.multi_selected_commits;
                 if selected.len() < 2 {
                     state.set_error_with_source(
@@ -2331,11 +2349,44 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         "workspace.squash",
                     );
                 } else {
-                    // TODO: Validate contiguous, open message editor, execute squash
-                    state.record_defect_observation(
-                        "squash_selected",
-                        "多选压缩流程的消息编辑器和连续性验证待完善",
-                    );
+                    // Validate contiguous: check all selected commits are adjacent in the list
+                    let entry_ids: Vec<&str> = state
+                        .history_view
+                        .filtered_entries
+                        .iter()
+                        .map(|e| e.id.as_str())
+                        .collect();
+                    let positions: Vec<usize> = selected
+                        .iter()
+                        .filter_map(|id| entry_ids.iter().position(|e| *e == id.as_str()))
+                        .collect();
+                    let mut sorted = positions.clone();
+                    sorted.sort();
+                    let is_contiguous = sorted.len() >= 2
+                        && sorted.windows(2).all(|w| w[1] == w[0] + 1);
+
+                    if !is_contiguous {
+                        state.set_error_with_source(
+                            "无法压缩",
+                            "仅支持连续提交的压缩",
+                            "workspace.squash",
+                        );
+                    } else {
+                        // Use the oldest selected commit as the squash target
+                        let oldest_id = sorted
+                            .last()
+                            .and_then(|&i| entry_ids.get(i))
+                            .map(|s| s.to_string());
+                        if let Some(target) = oldest_id {
+                            // Open interactive rebase from the oldest commit
+                            return update(
+                                state,
+                                Message::HistoryMessage(
+                                    HistoryMessage::OpenInteractiveRebaseFromCommit(target),
+                                ),
+                            );
+                        }
+                    }
                 }
             }
             HistoryMessage::UncommitToHere(commit_id) => {
