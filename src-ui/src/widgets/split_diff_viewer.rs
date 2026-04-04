@@ -5,12 +5,12 @@ use crate::widgets::{self, diff_file_header, scrollable, syntax_highlighting};
 use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
 use iced::widget::{self, container, text, Column, Container, Row, Space, Text};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length, Theme};
-const MARKER_WIDTH: f32 = 4.0;
-const GUTTER_WIDTH: f32 = 46.0;
-const PREFIX_WIDTH: f32 = 12.0;
+const MARKER_WIDTH: f32 = 3.0;
+const GUTTER_WIDTH: f32 = 36.0;
+const PREFIX_WIDTH: f32 = 10.0;
 const SEPARATOR_WIDTH: f32 = 1.0;
-const DIFF_ROW_HEIGHT: f32 = 22.0;
-const HUNK_HEADER_HEIGHT: f32 = 22.0;
+const DIFF_ROW_HEIGHT: f32 = 20.0;
+const HUNK_HEADER_HEIGHT: f32 = 20.0;
 
 #[derive(Clone)]
 struct SplitCell {
@@ -227,9 +227,9 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                             .size(10)
                             .font(Font::MONOSPACE)
                             .color(theme::darcula::TEXT_SECONDARY)
-                            .width(Length::Fixed(28.0)),
+                            .width(Length::Fixed(24.0)),
                     )
-                    .padding([0, 8])
+                    .padding([0, 4])
                     .height(Length::Fixed(DIFF_ROW_HEIGHT))
                     .width(Length::Fixed(GUTTER_WIDTH))
                     .style(simple_fill_style(gutter_background)),
@@ -238,7 +238,7 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                 .push(
                     Container::new(
                         Row::new()
-                            .spacing(6)
+                            .spacing(3)
                             .align_y(Alignment::Center)
                             .push(
                                 Text::new(prefix_for_origin(&cell.origin))
@@ -251,7 +251,7 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                                 &cell.segments,
                             )),
                     )
-                    .padding([0, 10])
+                    .padding([0, 6])
                     .height(Length::Fixed(DIFF_ROW_HEIGHT))
                     .width(split_code_cell_width())
                     .style(simple_fill_style(code_background)),
