@@ -79,7 +79,7 @@ fn render_editor_surface<'a, Message: Clone + 'static>(
     file_diff: &'a FileDiff,
     syntax_highlighter: syntax_highlighting::FileSyntaxHighlighter,
 ) -> Element<'a, Message> {
-    let mut editor_lines = Column::new().spacing(0).width(Length::Shrink);
+    let mut editor_lines = Column::new().spacing(0).width(Length::Fill);
 
     if file_diff.hunks.is_empty() {
         editor_lines = editor_lines.push(render_empty_row());
@@ -99,7 +99,7 @@ fn render_editor_surface<'a, Message: Clone + 'static>(
     }
 
     Container::new(
-        scrollable::styled_editor_horizontal(Container::new(editor_lines).width(Length::Shrink))
+        scrollable::styled_editor_horizontal(Container::new(editor_lines).width(Length::Fill))
             .width(Length::Fill),
     )
     .width(Length::Fill)
@@ -108,11 +108,11 @@ fn render_editor_surface<'a, Message: Clone + 'static>(
 }
 
 fn split_row_width() -> Length {
-    Length::Shrink
+    Length::Fill
 }
 
 fn split_code_cell_width() -> Length {
-    Length::Shrink
+    Length::Fill
 }
 
 fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'static, Message> {
@@ -209,11 +209,11 @@ fn render_split_row<Message: Clone + 'static>(
 ) -> Element<'static, Message> {
     Row::new()
         .spacing(0)
-        .align_y(Alignment::Center)
-        .width(split_row_width())
-        .push(render_side(left))
+        .align_y(Alignment::Start)
+        .width(Length::Fill)
+        .push(Container::new(render_side(left)).width(Length::FillPortion(1)))
         .push(center_divider())
-        .push(render_side(right))
+        .push(Container::new(render_side(right)).width(Length::FillPortion(1)))
         .into()
 }
 
@@ -277,7 +277,7 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
         None => Row::new()
             .spacing(0)
             .align_y(Alignment::Center)
-            .width(split_row_width())
+            .width(Length::Fill)
             .push(marker_bar(Color::TRANSPARENT))
             .push(
                 Container::new(Space::new().width(Length::Fixed(GUTTER_WIDTH)))
@@ -292,8 +292,9 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
             .push(vertical_separator())
             .push(
                 Container::new(Text::new(" "))
-                    .padding([0, 10])
+                    .padding([0, 6])
                     .height(Length::Fixed(DIFF_ROW_HEIGHT))
+                    .width(Length::Fill)
                     .style(simple_fill_style(mix_colors(
                         theme::darcula::BG_EDITOR,
                         theme::darcula::BG_RAISED,
@@ -497,8 +498,8 @@ mod tests {
     use iced::Length;
 
     #[test]
-    fn split_diff_rows_keep_intrinsic_width_to_avoid_code_overlap() {
-        assert_eq!(split_row_width(), Length::Shrink);
-        assert_eq!(split_code_cell_width(), Length::Shrink);
+    fn split_diff_rows_use_fill_to_split_50_50() {
+        assert_eq!(split_row_width(), Length::Fill);
+        assert_eq!(split_code_cell_width(), Length::Fill);
     }
 }
