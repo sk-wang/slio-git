@@ -10,8 +10,8 @@ use crate::theme::{self, BadgeTone, ButtonTone, Surface};
 use crate::views;
 use crate::widgets::{self, button, scrollable, OptionalPush};
 use git_core::remote::RemoteInfo;
-use iced::widget::{rule, stack, text, Button, Column, Container, Row, Space, Text};
-use iced::{Alignment, Element, Length};
+use iced::widget::{container, rule, stack, text, Button, Column, Container, Row, Space, Text};
+use iced::{Alignment, Color, Element, Length};
 use std::path::PathBuf;
 
 const MAX_RAIL_PROJECTS: usize = 5;
@@ -947,14 +947,43 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         active: bool,
         on_press: Option<Message>,
     ) -> Element<'a, Message> {
-        Container::new(button::rail(
-            Self::project_monogram(&project.name),
-            active,
-            on_press,
-        ))
-        .width(Length::Fill)
+        // Generate a colored monogram avatar (like GitHub/GitLab default)
+        let monogram = Self::project_monogram(&project.name);
+        let bg_color = Self::project_color(&project.name);
+
+        let avatar = Container::new(
+            Text::new(monogram)
+                .size(11)
+                .color(Color::WHITE)
+                .width(Length::Fill),
+        )
+        .width(Length::Fixed(32.0))
+        .height(Length::Fixed(32.0))
         .center_x(Length::Fill)
-        .into()
+        .center_y(Length::Fill)
+        .style(move |_: &_| container::Style {
+            background: Some(iced::Background::Color(bg_color)),
+            border: iced::Border {
+                radius: 8.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let btn = Button::new(avatar)
+            .style(|_, _| iced::widget::button::Style::default())
+            .padding(0);
+
+        let btn = if let Some(msg) = on_press {
+            btn.on_press(msg)
+        } else {
+            btn
+        };
+
+        Container::new(btn)
+            .width(Length::Fill)
+            .center_x(Length::Fill)
+            .into()
     }
 
     fn rail_aux_button(
@@ -1005,6 +1034,25 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
 
     fn inline_icon(icon: RailIcon, color: iced::Color, size: f32) -> Element<'a, Message> {
         rail_icons::view(icon, color, theme::darcula::TEXT_PRIMARY, size)
+    }
+
+    /// Generate a consistent color from a project name (like GitHub/GitLab avatars)
+    fn project_color(name: &str) -> Color {
+        // Hash the name to get a consistent hue
+        let hash: u32 = name.bytes().fold(0u32, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u32));
+        // Predefined palette of pleasant dark-mode colors
+        const PALETTE: &[(f32, f32, f32)] = &[
+            (0.35, 0.53, 0.87), // blue
+            (0.29, 0.69, 0.50), // green
+            (0.72, 0.40, 0.72), // purple
+            (0.87, 0.53, 0.35), // orange
+            (0.50, 0.60, 0.80), // slate blue
+            (0.65, 0.55, 0.35), // warm brown
+            (0.40, 0.70, 0.70), // teal
+            (0.80, 0.45, 0.55), // rose
+        ];
+        let (r, g, b) = PALETTE[(hash as usize) % PALETTE.len()];
+        Color::from_rgb(r, g, b)
     }
 
     fn project_monogram(name: &str) -> String {
