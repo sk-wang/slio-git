@@ -957,8 +957,8 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 .color(Color::from_rgba(1.0, 1.0, 1.0, 0.85))
                 .width(Length::Fill),
         )
-        .width(Length::Fixed(28.0))
-        .height(Length::Fixed(28.0))
+        .width(Length::Fixed(22.0))
+        .height(Length::Fixed(22.0))
         .center_x(Length::Fill)
         .center_y(Length::Fill)
         .style(move |_: &_| container::Style {
