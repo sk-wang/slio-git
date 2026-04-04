@@ -1,0 +1,54 @@
+[workspace]
+resolver = "2"
+members = [
+    "src/git-core",
+    "src-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["slio-git contributors"]
+repository = "https://github.com/your-org/slio-git"
+
+[workspace.dependencies]
+# Git operations
+git2 = "0.19"
+
+# UI Framework
+iced = { version = "0.14", features = ["advanced", "canvas", "svg", "tokio"] }
+
+# File watching
+notify = "8"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Date/time
+chrono = "0.4"
+
+# File dialogs
+rfd = "0.15"
+
+# Syntax highlighting
+syntect = "5.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Directories
+dirs-next = "2"
+
+# Testing
+tempfile = "3"
+criterion = "0.5"

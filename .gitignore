@@ -1,0 +1,39 @@
+# Rust
+/target/
+/debug/
+/release/
+*.rs.bk
+*.rlib
+*.prof*
+*.tmp
+
+# IDE
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env*
+
+# Build artifacts
+/dist/
+*.exe
+*.dll
+*.so
+*.a
+*.dmg
+
+# Tool config
+.obsidian/
+.codex/
+.specify/
