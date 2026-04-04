@@ -336,3 +336,198 @@ fn stash_with_keep_index_preserves_staged_files() {
         "staged file should be preserved with --keep-index"
     );
 }
+
+// ── 013: Inline diff (similar crate) ──────────────────────────────────────
+
+#[test]
+fn compute_inline_changes_detects_character_diffs() {
+    let (old_spans, new_spans) =
+        git_core::diff::compute_inline_changes("let count = 10;", "let count = 20;");
+
+    // Should have at least 2 spans: unchanged prefix + changed char
+    assert!(
+        old_spans.len() >= 2,
+        "old should have unchanged+changed spans, got {}",
+        old_spans.len()
+    );
+    assert!(
+        new_spans.len() >= 2,
+        "new should have unchanged+changed spans, got {}",
+        new_spans.len()
+    );
+
+    // The unchanged prefix "let count = " should be marked not-changed
+    assert!(
+        !old_spans[0].changed,
+        "first span should be unchanged"
+    );
+
+    // At least one span should be marked changed
+    assert!(
+        old_spans.iter().any(|s| s.changed),
+        "should have at least one changed span in old"
+    );
+    assert!(
+        new_spans.iter().any(|s| s.changed),
+        "should have at least one changed span in new"
+    );
+}
+
+#[test]
+fn compute_inline_changes_identical_lines_have_no_changes() {
+    let (old_spans, new_spans) =
+        git_core::diff::compute_inline_changes("same line", "same line");
+
+    // All spans should be not-changed
+    assert!(
+        old_spans.iter().all(|s| !s.changed),
+        "identical lines should have no changed spans"
+    );
+    assert!(
+        new_spans.iter().all(|s| !s.changed),
+        "identical lines should have no changed spans"
+    );
+}
+
+#[test]
+fn compute_inline_changes_completely_different() {
+    let (old_spans, new_spans) =
+        git_core::diff::compute_inline_changes("aaa", "zzz");
+
+    // All content should be marked changed
+    let old_changed: usize = old_spans.iter().filter(|s| s.changed).map(|s| s.len).sum();
+    let new_changed: usize = new_spans.iter().filter(|s| s.changed).map(|s| s.len).sum();
+    assert_eq!(old_changed, 3, "all old chars should be changed");
+    assert_eq!(new_changed, 3, "all new chars should be changed");
+}
+
+// ── 013: Full file preview ────────────────────────────────────────────────
+
+#[test]
+fn build_full_file_diff_creates_all_addition_lines() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("base.txt", "base", "init").unwrap();
+    repo.write_file("new_file.txt", "line1\nline2\nline3\n").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let preview = git_core::build_full_file_diff(&r, std::path::Path::new("new_file.txt")).unwrap();
+
+    assert!(!preview.is_binary);
+    assert!(!preview.is_truncated);
+    assert_eq!(preview.diff.additions, 3);
+    assert_eq!(preview.diff.hunks.len(), 1);
+    assert!(
+        preview.diff.hunks[0].lines.iter().all(|l| {
+            l.origin == git_core::diff::DiffLineOrigin::Addition
+        }),
+        "all lines should be additions"
+    );
+}
+
+#[test]
+fn file_is_binary_detects_null_bytes() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("base.txt", "base", "init").unwrap();
+
+    // Write a text file
+    repo.write_file("text.txt", "hello world").unwrap();
+    assert!(
+        !git_core::file_is_binary(&repo.path().join("text.txt")),
+        "text file should not be binary"
+    );
+
+    // Write a binary file (contains null bytes)
+    std::fs::write(repo.path().join("binary.dat"), b"\x00\x01\x02\x03").unwrap();
+    assert!(
+        git_core::file_is_binary(&repo.path().join("binary.dat")),
+        "file with null bytes should be binary"
+    );
+}
+
+// ── 013: stash_save delegates to stash_save_with_options ──────────────────
+
+#[test]
+fn stash_save_delegates_to_with_options() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "base", "init").unwrap();
+    repo.write_file("b.txt", "change").unwrap();
+
+    std::process::Command::new("git")
+        .args(["add", "b.txt"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+
+    // stash_save should work (it delegates internally)
+    let result = git_core::stash_save(&r, Some("delegate test"));
+    assert!(result.is_ok(), "stash_save should succeed: {:?}", result.err());
+
+    let stashes = git_core::list_stashes(&r).unwrap();
+    assert!(!stashes.is_empty(), "should have at least one stash");
+}
+
+// ── 013: stash_clear ──────────────────────────────────────────────────────
+
+#[test]
+fn stash_clear_removes_all_stashes() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "base", "init").unwrap();
+
+    // Create two stashes
+    repo.write_file("b.txt", "one").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "b.txt"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    let r = Repository::discover(repo.path()).unwrap();
+    git_core::stash_save(&r, Some("stash 1")).unwrap();
+
+    repo.write_file("c.txt", "two").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "c.txt"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    let r2 = Repository::discover(repo.path()).unwrap();
+    git_core::stash_save(&r2, Some("stash 2")).unwrap();
+
+    let before = git_core::list_stashes(&r2).unwrap();
+    assert!(before.len() >= 2, "should have at least 2 stashes");
+
+    git_core::stash_clear(&r2).unwrap();
+
+    let after = git_core::list_stashes(&r2).unwrap();
+    assert!(after.is_empty(), "all stashes should be cleared");
+}
+
+// ── 013: validate_commit_ref ──────────────────────────────────────────────
+
+#[test]
+fn validate_commit_ref_resolves_head() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "test commit").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let (hash, summary) = git_core::validate_commit_ref(&r, "HEAD").unwrap();
+
+    assert_eq!(hash.len(), 40, "should be full SHA");
+    assert!(
+        summary.contains("test commit"),
+        "summary should contain commit message, got: {}",
+        summary
+    );
+}
+
+#[test]
+fn validate_commit_ref_rejects_invalid() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "init").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let result = git_core::validate_commit_ref(&r, "nonexistent_ref_xyz");
+
+    assert!(result.is_err(), "invalid ref should error");
+}

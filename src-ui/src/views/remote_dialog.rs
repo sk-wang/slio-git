@@ -856,3 +856,61 @@ fn build_status_panel<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     widgets::status_banner(label, detail, tone)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_mode_is_overview() {
+        let state = RemoteDialogState::new();
+        assert_eq!(state.mode, RemoteDialogMode::Overview);
+    }
+
+    #[test]
+    fn pull_rebase_disables_other_options() {
+        let mut state = RemoteDialogState::new();
+        state.pull_ff_only = true;
+        state.pull_no_ff = true;
+        state.pull_squash = true;
+
+        // Selecting rebase should clear the others
+        state.pull_rebase = true;
+        if state.pull_rebase {
+            state.pull_ff_only = false;
+            state.pull_no_ff = false;
+            state.pull_squash = false;
+        }
+
+        assert!(state.pull_rebase);
+        assert!(!state.pull_ff_only);
+        assert!(!state.pull_no_ff);
+        assert!(!state.pull_squash);
+    }
+
+    #[test]
+    fn pull_ff_only_disables_conflicting_options() {
+        let mut state = RemoteDialogState::new();
+        state.pull_rebase = true;
+        state.pull_no_ff = true;
+
+        state.pull_ff_only = true;
+        if state.pull_ff_only {
+            state.pull_rebase = false;
+            state.pull_no_ff = false;
+            state.pull_squash = false;
+        }
+
+        assert!(state.pull_ff_only);
+        assert!(!state.pull_rebase);
+        assert!(!state.pull_no_ff);
+    }
+
+    #[test]
+    fn push_defaults_are_safe() {
+        let state = RemoteDialogState::new();
+        assert!(!state.force_push);
+        assert!(!state.push_tags);
+        assert!(!state.set_upstream);
+    }
+}

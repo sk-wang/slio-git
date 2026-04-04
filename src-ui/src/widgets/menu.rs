@@ -1,8 +1,8 @@
 //! Shared dense menu primitives for PhpStorm-style action surfaces.
 
 use crate::theme::{self, BadgeTone};
-use crate::widgets::OptionalPush;
-use iced::widget::{button, container, Button, Column, Container, Row, Space, Text};
+// OptionalPush removed — no longer needed after compact menu refactor
+use iced::widget::{button, container, Button, Column, Container, Row, Text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme, Vector};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
