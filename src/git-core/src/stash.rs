@@ -131,46 +131,9 @@ pub fn stash_save_with_options(
 }
 
 /// Save current changes to stash
+/// Save current changes to stash (convenience wrapper)
 pub fn stash_save(repo: &Repository, message: Option<&str>) -> Result<String, GitError> {
-    info!("Saving changes to stash");
-
-    let repo_path = repo.command_cwd();
-
-    let mut args = vec!["stash".to_string(), "push".to_string()];
-    if let Some(msg) = message {
-        args.push("-m".to_string());
-        args.push(msg.to_string());
-    }
-
-    let output = Command::new("git")
-        .args(&args)
-        .current_dir(&repo_path)
-        .output()
-        .map_err(|e| GitError::OperationFailed {
-            operation: "stash_save".to_string(),
-            details: format!("Failed to execute git stash: {}", e),
-        })?;
-
-    if !output.status.success() {
-        return Err(GitError::OperationFailed {
-            operation: "stash_save".to_string(),
-            details: format!(
-                "git stash failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            ),
-        });
-    }
-
-    // Parse the stash reference from output
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    let stash_ref = output_str
-        .lines()
-        .find(|l| l.contains("stash@"))
-        .map(|l| l.to_string())
-        .unwrap_or_else(|| "stash@{0}".to_string());
-
-    info!("Changes saved to {}", stash_ref);
-    Ok(stash_ref)
+    stash_save_with_options(repo, message, false, false)
 }
 
 /// Apply a stash

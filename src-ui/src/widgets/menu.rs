@@ -102,7 +102,7 @@ pub fn group<'a, Message: 'a>(
 pub fn action_row<'a, Message: Clone + 'a>(
     icon: Option<&'static str>,
     title: impl Into<String>,
-    detail: Option<String>,
+    _detail: Option<String>,
     badge: Option<(String, BadgeTone)>,
     on_press: Option<Message>,
     tone: MenuTone,
@@ -115,11 +115,6 @@ pub fn action_row<'a, Message: Clone + 'a>(
             }
             _ => theme::darcula::TEXT_PRIMARY,
         }
-    } else {
-        theme::darcula::TEXT_DISABLED
-    };
-    let detail_color = if enabled {
-        theme::darcula::TEXT_SECONDARY
     } else {
         theme::darcula::TEXT_DISABLED
     };

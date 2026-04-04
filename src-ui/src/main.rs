@@ -4111,11 +4111,6 @@ fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Mes
     let _is_unstaged = state.unstaged_changes.iter().any(|c| c.path == path);
 
     let stage_label = if is_staged { "取消暂存" } else { "暂存" };
-    let stage_detail = if is_staged {
-        "将该文件从暂存区移回工作区".to_string()
-    } else {
-        "将该文件添加到暂存区".to_string()
-    };
     let stage_message = if is_staged {
         Some(Message::UnstageFile(path.to_string()))
     } else {
@@ -4170,14 +4165,6 @@ fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Mes
         .style(widgets::menu::panel_style);
 
     build_change_context_menu_layer(anchor, menu.into())
-}
-
-fn change_context_group<'a>(
-    title: &'static str,
-    detail: &'static str,
-    rows: Vec<Element<'a, Message>>,
-) -> Element<'a, Message> {
-    widgets::menu::group(title, detail, widgets::menu::MenuTone::Neutral, rows)
 }
 
 fn change_context_action_row<'a>(
