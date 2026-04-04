@@ -1377,55 +1377,67 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
     let remote_branches = state.visible_remote_branches();
     let recent_branches = state.visible_recent_branches();
 
-    let header = Row::new()
-        .spacing(theme::spacing::XS)
-        .align_y(Alignment::Center)
-        .push(Text::new("分支").size(16))
-        .push_maybe(current_branch.map(|branch| {
-            widgets::info_chip::<BranchPopupMessage>(
-                truncate_branch_name(&branch.name),
-                BadgeTone::Accent,
-            )
-        }))
-        .push(Space::new().width(Length::Fill))
-        .push(button::ghost("关闭", Some(BranchPopupMessage::Close)));
-
-    let compact_toolbar = Container::new(
+    // ── IDEA-style header: title + current branch badge + close ──
+    let header = Container::new(
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            // Keep only branch-focused actions in the top area.
             .push(
-                Container::new(text_input::search_with_clear(
-                    "搜索分支",
-                    &state.search_query,
-                    BranchPopupMessage::SetSearchQuery,
-                    BranchPopupMessage::ClearSearch,
-                ))
-                .width(Length::FillPortion(5)),
+                Text::new("分支")
+                    .size(13)
+                    .color(theme::darcula::TEXT_PRIMARY),
             )
+            .push_maybe(current_branch.map(|branch| {
+                widgets::info_chip::<BranchPopupMessage>(
+                    truncate_branch_name(&branch.name),
+                    BadgeTone::Accent,
+                )
+            }))
+            .push(Space::new().width(Length::Fill))
+            .push(button::compact_ghost("关闭", Some(BranchPopupMessage::Close))),
+    )
+    .padding([6, 12])
+    .width(Length::Fill)
+    .style(theme::frame_style(Surface::Toolbar));
+
+    // ── IDEA search bar ──
+    let search_bar = Container::new(text_input::search_with_clear(
+        "搜索分支",
+        &state.search_query,
+        BranchPopupMessage::SetSearchQuery,
+        BranchPopupMessage::ClearSearch,
+    ))
+    .padding([4, 12])
+    .width(Length::Fill);
+
+    // ── IDEA quick actions: 新建分支 + 创建 + 刷新 ──
+    let quick_actions = Container::new(
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
             .push(
-                text_input::styled(
+                Container::new(text_input::styled(
                     "新建分支",
                     &state.new_branch_name,
                     BranchPopupMessage::SetNewBranchName,
-                )
-                .width(Length::FillPortion(3)),
+                ))
+                .width(Length::Fill),
             )
             .push(button::secondary(
                 "创建",
                 (!state.new_branch_name.trim().is_empty() && !state.is_loading)
                     .then(|| BranchPopupMessage::CreateBranch(state.new_branch_name.clone())),
             ))
-            .push(button::ghost("刷新", Some(BranchPopupMessage::Refresh))),
+            .push(button::compact_ghost("刷新", Some(BranchPopupMessage::Refresh))),
     )
-    .padding([8, 10])
-    .style(theme::panel_style(Surface::ToolbarField));
+    .padding([4, 12])
+    .width(Length::Fill);
 
+    // ── Main workspace: branch list (left) + detail panel (right) ──
     let branch_workspace = Row::new()
-        .spacing(theme::spacing::MD)
+        .spacing(0)
         .width(Length::Fill)
-        .height(Length::Fixed(520.0))
+        .height(Length::Fill)
         .push(
             Container::new(build_branch_navigator(
                 state,
@@ -1438,20 +1450,34 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
             .height(Length::Fill),
         )
         .push(
+            Container::new(Space::new())
+                .width(Length::Fixed(1.0))
+                .height(Length::Fill)
+                .style(|_| iced::widget::container::Style {
+                    background: Some(iced::Background::Color(theme::darcula::SEPARATOR)),
+                    ..Default::default()
+                }),
+        )
+        .push(
             Container::new(build_selected_branch_panel(state, selected_branch))
                 .width(Length::FillPortion(4))
                 .height(Length::Fill),
         );
 
+    // ── Assembly ──
     let content = Column::new()
-        .spacing(theme::spacing::SM)
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .push(header)
-        .push(compact_toolbar)
+        .push(iced::widget::rule::horizontal(1))
+        .push(search_bar)
+        .push(quick_actions)
+        .push(iced::widget::rule::horizontal(1))
         .push_maybe(build_status_panel(state))
         .push(branch_workspace);
 
-    Container::new(scrollable::styled(content).height(Length::Fill))
-        .padding([8, 10])
+    Container::new(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Panel))
@@ -1769,57 +1795,75 @@ fn build_branch_row<'a>(
         None
     };
 
-    let row_content = Container::new(
-        Column::new()
-            .spacing(2)
-            .push(
-                Row::new()
-                    .spacing(theme::spacing::XS)
-                    .align_y(Alignment::Center)
-                    .width(Length::Fill)
-                    .push(tree_indent(depth))
-                    // IDEA-style: branch icon prefix (○ current, ● favorite, ◎ regular)
-                    .push(
-                        Text::new(if branch.is_head { "●" } else { "○" })
-                            .size(10)
-                            .color(if branch.is_head {
-                                theme::darcula::SUCCESS
-                            } else {
-                                theme::darcula::TEXT_SECONDARY
-                            }),
-                    )
-                    .push(Text::new(display_label).size(12).color(label_color))
-                    // IDEA-style: show incoming/outgoing sync indicators with colored arrows
-                    .push_maybe(build_sync_indicators(branch))
-                    .push_maybe(branch.is_head.then(|| -> Element<'_, BranchPopupMessage> {
-                        Container::new(Text::new("当前").size(10).color(theme::darcula::SUCCESS))
-                            .padding([2, 5])
-                            .style(|_| container::Style {
-                                border: Border {
-                                    width: 1.0,
-                                    color: theme::darcula::SUCCESS.scale_alpha(0.45),
-                                    radius: theme::radius::SM.into(),
-                                },
-                                ..Default::default()
-                            })
-                            .into()
-                    }))
-                    .push_maybe((branch.is_remote && !branch.is_head).then(|| {
-                        widgets::info_chip::<BranchPopupMessage>("远程", BadgeTone::Neutral)
-                    })),
+    // IDEA-style single-line branch row:
+    // [indent] [icon] [name] [sync badge] [current badge] ... [tracking] [›]
+    let mut row = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .width(Length::Fill)
+        .push(tree_indent(depth))
+        .push(
+            Text::new(if branch.is_head { "●" } else { "○" })
+                .size(10)
+                .color(if branch.is_head {
+                    theme::darcula::SUCCESS
+                } else {
+                    theme::darcula::TEXT_DISABLED
+                }),
+        )
+        .push(
+            Text::new(display_label)
+                .size(12)
+                .color(label_color),
+        );
+
+    // Sync indicators (↙5 etc.)
+    if let Some(sync) = build_sync_indicators(branch) {
+        row = row.push(sync);
+    }
+
+    // "当前" badge for HEAD branch
+    if branch.is_head {
+        row = row.push(
+            Container::new(
+                Text::new("当前")
+                    .size(9)
+                    .color(theme::darcula::SUCCESS),
             )
-            .push_maybe(branch_meta_summary(branch).map(|meta| {
-                Container::new(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .width(Length::Fill)
-                        .push(tree_indent(depth))
-                        .push(Text::new(meta).size(10).color(meta_color)),
-                )
-            })),
-    )
-    .padding([4, 6])
-    .width(Length::Fill);
+            .padding([1, 4])
+            .style(|_| container::Style {
+                border: Border {
+                    width: 1.0,
+                    color: theme::darcula::SUCCESS.scale_alpha(0.4),
+                    radius: theme::radius::SM.into(),
+                },
+                ..Default::default()
+            }),
+        );
+    }
+
+    // Push remaining space then tracking branch on right
+    row = row.push(Space::new().width(Length::Fill));
+
+    // Tracking branch name (right-aligned, like IDEA)
+    if let Some(upstream) = &branch.upstream {
+        row = row.push(
+            Text::new(upstream.as_str())
+                .size(10)
+                .color(meta_color),
+        );
+    }
+
+    // Submenu arrow
+    row = row.push(
+        Text::new("›")
+            .size(12)
+            .color(theme::darcula::TEXT_DISABLED),
+    );
+
+    let row_content = Container::new(row)
+        .padding([3, 8])
+        .width(Length::Fill);
 
     // Strip + button in a nested Row so that strip's height(Fill) is resolved
     // against the button's Shrink height (avoids circular Fill dependency inside
