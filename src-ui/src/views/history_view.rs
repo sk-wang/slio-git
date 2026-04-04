@@ -241,15 +241,15 @@ fn format_timestamp(timestamp: i64) -> String {
     datetime.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-const HISTORY_ROW_HEIGHT: f32 = 24.0;
-const HISTORY_CONTEXT_MENU_WIDTH: f32 = 332.0;
+const HISTORY_ROW_HEIGHT: f32 = 22.0;
+const HISTORY_CONTEXT_MENU_WIDTH: f32 = 280.0;
 const HISTORY_CONTEXT_MENU_ESTIMATED_HEIGHT: f32 = 340.0;
 const HISTORY_CONTEXT_MENU_EDGE_PADDING: f32 = 8.0;
-const HISTORY_GRAPH_LANE_WIDTH: f32 = 16.0;
+const HISTORY_GRAPH_LANE_WIDTH: f32 = 14.0;
 const HISTORY_GRAPH_PADDING: f32 = 8.0;
 const HISTORY_GRAPH_MIN_WIDTH: f32 = 56.0;
-const HISTORY_GRAPH_LINE_WIDTH: f32 = 1.6;
-const HISTORY_GRAPH_NODE_RADIUS: f32 = 4.0;
+const HISTORY_GRAPH_LINE_WIDTH: f32 = 1.5;
+const HISTORY_GRAPH_NODE_RADIUS: f32 = 3.0;
 
 #[derive(Debug, Clone)]
 struct LaneState {
@@ -542,7 +542,7 @@ fn build_commit_row<'a>(
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
     )
-    .padding([8, 10])
+    .padding([4, 8])
     .style(theme::panel_style(if is_menu_open {
         Surface::Selection
     } else if is_selected {
@@ -988,7 +988,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                 scrollable::styled(actions).height(Length::Fixed(250.0)),
             )),
     )
-    .padding([10, 12])
+    .padding([6, 8])
     .width(Length::Fixed(HISTORY_CONTEXT_MENU_WIDTH))
     .style(widgets::menu::panel_style);
 

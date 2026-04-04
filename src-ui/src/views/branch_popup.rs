@@ -1473,7 +1473,7 @@ fn build_status_panel<'a>(state: &'a BranchPopupState) -> Option<Element<'a, Bra
                             .color(theme::darcula::TEXT_SECONDARY),
                     ),
             )
-            .padding([8, 12])
+            .padding([4, 8])
             .style(theme::panel_style(Surface::Raised))
             .into(),
         );
@@ -1631,7 +1631,7 @@ fn build_branch_section_shell<'a>(
             )
             .push(list),
     )
-    .padding([10, 12])
+    .padding([4, 8])
     .width(Length::Fill)
     .style(theme::panel_style(Surface::Panel))
     .into()
@@ -3444,7 +3444,7 @@ fn build_inline_action_panel<'a>(
                         )),
                 ),
         )
-        .padding([10, 12])
+        .padding([4, 8])
         .style(theme::panel_style(Surface::Selection))
         .into(),
     )
@@ -3483,7 +3483,7 @@ fn build_comparison_panel<'a>(
                         .height(Length::Fixed(280.0)),
                 ),
         )
-        .padding([10, 12])
+        .padding([4, 8])
         .style(theme::panel_style(Surface::Panel))
         .into(),
     )

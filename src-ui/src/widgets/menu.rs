@@ -88,7 +88,7 @@ pub fn group<'a, Message: 'a>(
             )
             .push(rows),
     )
-    .padding([8, 10])
+    .padding([4, 8])
     .style(group_style(tone))
     .into()
 }
@@ -134,17 +134,11 @@ pub fn action_row<'a, Message: Clone + 'a>(
                 .align_y(Alignment::Center)
                 .push(leading)
                 .push(
+                    // IDEA-style: compact menu — title only, no detail subtitle
                     Column::new()
-                        .spacing(1)
+                        .spacing(0)
                         .width(Length::Fill)
-                        .push(Text::new(title.into()).size(12).color(title_color))
-                        .push_maybe(detail.map(|detail| {
-                            Text::new(detail)
-                                .size(10)
-                                .width(Length::Fill)
-                                .wrapping(iced::widget::text::Wrapping::WordOrGlyph)
-                                .color(detail_color)
-                        })),
+                        .push(Text::new(title.into()).size(12).color(title_color)),
                 )
                 .push_maybe(
                     badge.map(|(label, tone)| crate::widgets::compact_chip::<Message>(label, tone)),
@@ -159,7 +153,7 @@ pub fn action_row<'a, Message: Clone + 'a>(
                         }),
                 ),
         )
-        .padding([10, 8])
+        .padding([4, 8])
         .width(Length::Fill),
     )
     .width(Length::Fill)

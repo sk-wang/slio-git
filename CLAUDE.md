@@ -27,9 +27,9 @@ cargo test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECH
 Rust (edition 2021+): Follow standard conventions
 
 ## Recent Changes
+- 013-compact-menus-graph: Added Rust (edition 2021+) + Iced 0.14
 - 012-idea-ui-refactor: Added Rust (edition 2021+) + Iced 0.14 (UI), git2 0.19 (libgit2 bindings), notify 8 (file watching), syntect (syntax highlighting)
 - 011-idea-git-parity: Added Rust (edition 2021+) + Iced 0.14 (UI), git2 0.19 (libgit2 bindings), notify 8 (file watching), syntect (syntax highlighting)
-- 010-idea-git-tool-window: Added Rust 2021+ + Iced 0.14 (pure Rust UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching)
 
 
 <!-- MANUAL ADDITIONS START -->
