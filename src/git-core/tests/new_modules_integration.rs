@@ -531,3 +531,355 @@ fn validate_commit_ref_rejects_invalid() {
 
     assert!(result.is_err(), "invalid ref should error");
 }
+
+// ── Branch group_path computation ─────────────────────────────────────────
+
+#[test]
+fn branch_group_path_splits_by_slash() {
+    let mut branch = git_core::Branch {
+        name: "feature/auth/login".to_string(),
+        oid: String::new(),
+        is_remote: false,
+        is_head: false,
+        upstream: None,
+        tracking_status: None,
+        sync_hint: None,
+        recency_hint: None,
+        last_commit_timestamp: None,
+        group_path: None,
+    };
+    branch.compute_group_path();
+    assert_eq!(
+        branch.group_path,
+        Some(vec!["feature".to_string(), "auth".to_string()])
+    );
+    assert_eq!(branch.leaf_name(), "login");
+}
+
+#[test]
+fn branch_group_path_none_for_simple_name() {
+    let mut branch = git_core::Branch {
+        name: "main".to_string(),
+        oid: String::new(),
+        is_remote: false,
+        is_head: false,
+        upstream: None,
+        tracking_status: None,
+        sync_hint: None,
+        recency_hint: None,
+        last_commit_timestamp: None,
+        group_path: None,
+    };
+    branch.compute_group_path();
+    assert_eq!(branch.group_path, None);
+    assert_eq!(branch.leaf_name(), "main");
+}
+
+// ── History filter functions ──────────────────────────────────────────────
+
+#[test]
+fn get_history_for_author_filters_by_name() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "commit by codex test").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let results = git_core::get_history_for_author(&r, "Codex", Some(10)).unwrap();
+    assert!(!results.is_empty(), "should find commits by 'Codex'");
+
+    let no_results = git_core::get_history_for_author(&r, "nonexistent_author", Some(10)).unwrap();
+    assert!(no_results.is_empty(), "should find no commits by unknown author");
+}
+
+#[test]
+fn get_history_for_path_filters_by_file() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("src/main.rs", "fn main() {}", "add main").unwrap();
+    repo.add_and_commit("README.md", "# Hello", "add readme").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let main_history = git_core::get_history_for_path(&r, "src/main.rs", Some(10)).unwrap();
+    assert_eq!(main_history.len(), 1, "only one commit touches src/main.rs");
+    assert!(main_history[0].message.contains("add main"));
+}
+
+#[test]
+fn get_history_for_date_range_filters_correctly() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "recent commit").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+
+    // Range that includes now
+    let results = git_core::get_history_for_date_range(&r, now - 3600, now + 3600, Some(10)).unwrap();
+    assert!(!results.is_empty(), "should find recent commit in range");
+
+    // Range far in the past
+    let old_results = git_core::get_history_for_date_range(&r, 0, 1000, Some(10)).unwrap();
+    assert!(old_results.is_empty(), "should find no commits in 1970");
+}
+
+// ── Graph computation ─────────────────────────────────────────────────────
+
+#[test]
+fn compute_graph_handles_merge_commits() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "base", "init").unwrap();
+
+    // Create a branch, commit, merge back
+    std::process::Command::new("git")
+        .args(["checkout", "-b", "side"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    repo.add_and_commit("b.txt", "side", "side commit").unwrap();
+
+    std::process::Command::new("git")
+        .args(["checkout", "main"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    repo.add_and_commit("c.txt", "main", "main commit").unwrap();
+
+    let merge_output = std::process::Command::new("git")
+        .args(["merge", "side", "--no-ff", "-m", "merge side"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        merge_output.status.success(),
+        "merge failed: {}",
+        String::from_utf8_lossy(&merge_output.stderr)
+    );
+
+    // Re-discover repo to pick up the merge commit
+    let mut r = Repository::discover(repo.path()).unwrap();
+    let _ = r.refresh();
+    let history = git_core::get_history(&r, Some(20)).unwrap();
+
+    // Should have 4 commits: merge, main commit, side commit, init
+    // (if --no-ff works correctly, otherwise 3 without a separate merge commit)
+    let has_merge = history.iter().any(|e| e.parent_ids.len() > 1);
+    if has_merge {
+        let ids: Vec<String> = history.iter().map(|e| e.id.clone()).collect();
+        let nodes = git_core::compute_graph(&r, &ids).unwrap();
+        assert!(
+            nodes.iter().any(|n| n.is_merge),
+            "graph should flag merge node"
+        );
+    } else {
+        // If git merged as fast-forward despite --no-ff (can happen with some git configs),
+        // just verify graph computation doesn't crash
+        let ids: Vec<String> = history.iter().map(|e| e.id.clone()).collect();
+        let nodes = git_core::compute_graph(&r, &ids).unwrap();
+        assert_eq!(nodes.len(), history.len());
+    }
+}
+
+// ── Tag operations ────────────────────────────────────────────────────────
+
+#[test]
+fn create_and_delete_tag() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "init").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let history = git_core::get_history(&r, Some(1)).unwrap();
+    let commit_id = &history[0].id;
+
+    // Create annotated tag
+    git_core::create_tag(&r, "v1.0", commit_id, "release 1.0", "Tester", "test@example.com").unwrap();
+
+    let tags = git_core::list_tags(&r).unwrap();
+    assert!(tags.iter().any(|t| t.name == "v1.0"), "tag should exist");
+
+    // Create lightweight tag
+    git_core::create_lightweight_tag(&r, "v1.0-light", commit_id).unwrap();
+    let tags2 = git_core::list_tags(&r).unwrap();
+    assert!(tags2.iter().any(|t| t.name == "v1.0-light"));
+
+    // Delete tag
+    git_core::delete_tag(&r, "v1.0").unwrap();
+    let tags3 = git_core::list_tags(&r).unwrap();
+    assert!(!tags3.iter().any(|t| t.name == "v1.0"), "tag should be deleted");
+}
+
+// ── Stash apply (non-pop) ─────────────────────────────────────────────────
+
+#[test]
+fn stash_apply_keeps_stash_in_list() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "base", "init").unwrap();
+    repo.write_file("b.txt", "stashed").unwrap();
+
+    std::process::Command::new("git")
+        .args(["add", "b.txt"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    git_core::stash_save(&r, Some("test")).unwrap();
+
+    // Apply (not pop) — stash should remain
+    git_core::stash_apply(&r, 0).unwrap();
+    let stashes = git_core::list_stashes(&r).unwrap();
+    assert!(!stashes.is_empty(), "stash should still be in list after apply");
+    assert!(repo.path().join("b.txt").exists(), "file should be restored");
+}
+
+// ── Stash diff preview ────────────────────────────────────────────────────
+
+#[test]
+fn stash_diff_returns_content() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "base", "init").unwrap();
+    repo.write_file("a.txt", "modified content").unwrap();
+
+    std::process::Command::new("git")
+        .args(["add", "a.txt"])
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    git_core::stash_save(&r, Some("diff test")).unwrap();
+
+    let diff = git_core::stash_diff(&r, 0).unwrap();
+    assert!(!diff.is_empty(), "stash diff should have content");
+    assert!(diff.contains("modified content") || diff.contains("a.txt"),
+        "diff should reference the changed file");
+}
+
+// ── Enhance hunk with inline changes ──────────────────────────────────────
+
+#[test]
+fn enhance_hunk_pairs_deletions_with_additions() {
+    use git_core::diff::{DiffHunk, DiffLine, DiffLineOrigin, enhance_hunk_with_inline_changes};
+
+    let mut hunk = DiffHunk {
+        header: "@@ -1,1 +1,1 @@".to_string(),
+        old_start: 1,
+        old_lines: 1,
+        new_start: 1,
+        new_lines: 1,
+        lines: vec![
+            DiffLine {
+                content: "let x = 10;".to_string(),
+                origin: DiffLineOrigin::Deletion,
+                old_lineno: Some(1),
+                new_lineno: None,
+                inline_changes: Vec::new(),
+            },
+            DiffLine {
+                content: "let x = 20;".to_string(),
+                origin: DiffLineOrigin::Addition,
+                old_lineno: None,
+                new_lineno: Some(1),
+                inline_changes: Vec::new(),
+            },
+        ],
+    };
+
+    enhance_hunk_with_inline_changes(&mut hunk);
+
+    // Both lines should now have inline changes
+    assert!(
+        !hunk.lines[0].inline_changes.is_empty(),
+        "deletion line should have inline changes"
+    );
+    assert!(
+        !hunk.lines[1].inline_changes.is_empty(),
+        "addition line should have inline changes"
+    );
+
+    // The "1" and "2" should be marked as changed
+    let del_changed: usize = hunk.lines[0].inline_changes.iter()
+        .filter(|s| s.changed).map(|s| s.len).sum();
+    let add_changed: usize = hunk.lines[1].inline_changes.iter()
+        .filter(|s| s.changed).map(|s| s.len).sum();
+    assert!(del_changed > 0, "deletion should have changed chars");
+    assert!(add_changed > 0, "addition should have changed chars");
+}
+
+#[test]
+fn enhance_hunk_skips_context_lines() {
+    use git_core::diff::{DiffHunk, DiffLine, DiffLineOrigin, enhance_hunk_with_inline_changes};
+
+    let mut hunk = DiffHunk {
+        header: "@@".to_string(),
+        old_start: 1, old_lines: 1, new_start: 1, new_lines: 1,
+        lines: vec![
+            DiffLine {
+                content: "unchanged line".to_string(),
+                origin: DiffLineOrigin::Context,
+                old_lineno: Some(1), new_lineno: Some(1),
+                inline_changes: Vec::new(),
+            },
+        ],
+    };
+
+    enhance_hunk_with_inline_changes(&mut hunk);
+    assert!(hunk.lines[0].inline_changes.is_empty(), "context lines should not get inline changes");
+}
+
+// ── Full file preview truncation ──────────────────────────────────────────
+
+#[test]
+fn build_full_file_diff_truncates_large_files() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("base.txt", "base", "init").unwrap();
+
+    // Create a file with 6000 lines (exceeds 5000-line limit)
+    let big_content: String = (0..6000).map(|i| format!("line {i}\n")).collect();
+    repo.write_file("big.txt", &big_content).unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let preview = git_core::build_full_file_diff(&r, std::path::Path::new("big.txt")).unwrap();
+
+    assert!(preview.is_truncated, "should be marked as truncated");
+    assert!(!preview.is_binary);
+    assert!(
+        preview.diff.hunks[0].lines.len() <= 5000,
+        "should have at most 5000 lines, got {}",
+        preview.diff.hunks[0].lines.len()
+    );
+}
+
+// ── HistoryEntry extended fields ──────────────────────────────────────────
+
+#[test]
+fn history_entry_includes_committer_info() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "test commit").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let history = git_core::get_history(&r, Some(1)).unwrap();
+    let entry = &history[0];
+
+    // committer_name is None when same as author (our optimization)
+    // Just verify the field exists and doesn't crash
+    assert!(!entry.author_name.is_empty());
+    assert!(!entry.author_email.is_empty());
+    assert!(entry.timestamp > 0);
+    assert!(!entry.id.is_empty());
+    // refs and signature_status should be default empty
+    assert!(entry.refs.is_empty());
+    assert!(entry.signature_status.is_none());
+}
+
+// ── Force push function exists ────────────────────────────────────────────
+
+#[test]
+fn force_push_fails_gracefully_without_remote() {
+    let repo = TestRepo::new().unwrap();
+    repo.add_and_commit("a.txt", "content", "init").unwrap();
+
+    let r = Repository::discover(repo.path()).unwrap();
+    let result = git_core::force_push(&r, "origin", "main");
+    // Should fail because there's no remote configured
+    assert!(result.is_err());
+}

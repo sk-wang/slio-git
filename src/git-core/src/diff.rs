@@ -988,7 +988,8 @@ pub fn build_full_file_diff(repo: &Repository, file_path: &Path) -> Result<FullF
         details: format!("Failed to read file {:?}: {}", file_path, e),
     })?;
 
-    let is_truncated = content.len() > MAX_PREVIEW_BYTES;
+    let total_lines = content.lines().count();
+    let is_truncated = content.len() > MAX_PREVIEW_BYTES || total_lines > MAX_PREVIEW_LINES;
 
     let lines: Vec<&str> = content.lines().take(MAX_PREVIEW_LINES).collect();
     let line_count = lines.len() as u32;

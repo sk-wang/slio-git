@@ -1050,3 +1050,157 @@ fn build_status_panel<'a, Message: 'a>(
 ) -> Element<'a, Message> {
     widgets::status_banner(label, detail, tone)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_todo(action: &str, commit: &str, message: &str) -> RebaseTodoItem {
+        RebaseTodoItem {
+            action: action.to_string(),
+            commit: commit.to_string(),
+            message: message.to_string(),
+        }
+    }
+
+    #[test]
+    fn cycle_todo_action_rotates_through_actions() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![
+            make_todo("pick", "abc123", "first"),
+            make_todo("pick", "def456", "second"),
+        ];
+
+        // First item: pick → reword → edit → drop → pick
+        state.cycle_todo_action(0);
+        assert_eq!(state.todo_list[0].action, "reword");
+
+        state.cycle_todo_action(0);
+        assert_eq!(state.todo_list[0].action, "edit");
+
+        state.cycle_todo_action(0);
+        assert_eq!(state.todo_list[0].action, "drop");
+
+        state.cycle_todo_action(0);
+        assert_eq!(state.todo_list[0].action, "pick");
+    }
+
+    #[test]
+    fn second_item_can_use_fixup_and_squash() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![
+            make_todo("pick", "abc", "first"),
+            make_todo("pick", "def", "second"),
+        ];
+
+        // Second item has more options: pick → reword → edit → fixup → squash → drop
+        state.cycle_todo_action(1); // reword
+        state.cycle_todo_action(1); // edit
+        state.cycle_todo_action(1); // fixup
+        assert_eq!(state.todo_list[1].action, "fixup");
+
+        state.cycle_todo_action(1); // squash
+        assert_eq!(state.todo_list[1].action, "squash");
+    }
+
+    #[test]
+    fn move_todo_up_swaps_items() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![
+            make_todo("pick", "aaa", "first"),
+            make_todo("pick", "bbb", "second"),
+            make_todo("pick", "ccc", "third"),
+        ];
+
+        state.move_todo_up(2);
+        assert_eq!(state.todo_list[1].commit, "ccc");
+        assert_eq!(state.todo_list[2].commit, "bbb");
+    }
+
+    #[test]
+    fn move_todo_down_swaps_items() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![
+            make_todo("pick", "aaa", "first"),
+            make_todo("pick", "bbb", "second"),
+        ];
+
+        state.move_todo_down(0);
+        assert_eq!(state.todo_list[0].commit, "bbb");
+        assert_eq!(state.todo_list[1].commit, "aaa");
+    }
+
+    #[test]
+    fn move_todo_up_at_zero_does_nothing() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![make_todo("pick", "aaa", "first")];
+
+        state.move_todo_up(0); // should not panic
+        assert_eq!(state.todo_list[0].commit, "aaa");
+    }
+
+    #[test]
+    fn set_todo_action_changes_action() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = true;
+        state.todo_list = vec![
+            make_todo("pick", "aaa", "first"), // need 2 items so squash is valid
+            make_todo("pick", "abc", "test"),
+        ];
+
+        state.set_todo_action(1, "squash".to_string());
+        assert_eq!(state.todo_list[1].action, "squash");
+    }
+
+    #[test]
+    fn inline_edit_lifecycle() {
+        let mut state = RebaseEditorState::new();
+        state.todo_list = vec![make_todo("pick", "abc", "original message")];
+
+        // Start editing
+        state.start_inline_edit(0);
+        assert_eq!(state.inline_edit_index, Some(0));
+        assert_eq!(state.inline_edit_text, "original message");
+
+        // Change text
+        state.inline_edit_text = "new message".to_string();
+
+        // Confirm
+        state.confirm_inline_edit();
+        assert_eq!(state.todo_list[0].message, "new message");
+        assert_eq!(state.inline_edit_index, None);
+    }
+
+    #[test]
+    fn inline_edit_cancel_preserves_original() {
+        let mut state = RebaseEditorState::new();
+        state.todo_list = vec![make_todo("pick", "abc", "original")];
+
+        state.start_inline_edit(0);
+        state.inline_edit_text = "changed but cancelled".to_string();
+        state.cancel_inline_edit();
+
+        assert_eq!(state.todo_list[0].message, "original");
+        assert_eq!(state.inline_edit_index, None);
+    }
+
+    #[test]
+    fn non_editable_state_ignores_mutations() {
+        let mut state = RebaseEditorState::new();
+        state.todo_is_editable = false;
+        state.todo_list = vec![make_todo("pick", "abc", "test")];
+
+        state.cycle_todo_action(0);
+        assert_eq!(state.todo_list[0].action, "pick", "should not change when not editable");
+
+        state.move_todo_up(0);
+        state.move_todo_down(0);
+        state.set_todo_action(0, "drop".to_string());
+        assert_eq!(state.todo_list[0].action, "pick");
+    }
+}

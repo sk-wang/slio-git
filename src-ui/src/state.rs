@@ -2227,4 +2227,58 @@ mod tests {
         assert_eq!(state.shell.git_tool_window_tab, super::GitToolWindowTab::Changes);
         assert_eq!(state.view_mode, super::ViewMode::Repository);
     }
+
+    #[test]
+    fn log_tab_all_is_not_closable() {
+        let tab = super::LogTab::all();
+        assert!(!tab.is_closable);
+        assert_eq!(tab.label, "全部");
+        assert!(tab.branch_filter.is_none());
+    }
+
+    #[test]
+    fn log_tab_for_branch_is_closable() {
+        let tab = super::LogTab::for_branch(1, "main".to_string());
+        assert!(tab.is_closable);
+        assert_eq!(tab.label, "main");
+        assert_eq!(tab.branch_filter, Some("main".to_string()));
+    }
+
+    #[test]
+    fn file_display_mode_default_is_flat() {
+        let mode = super::FileDisplayMode::default();
+        assert_eq!(mode, super::FileDisplayMode::Flat);
+    }
+
+    #[test]
+    fn network_operation_state_can_be_created() {
+        let op = super::NetworkOperation {
+            label: "Pushing".to_string(),
+            progress: Some(0.5),
+            status: Some("50%".to_string()),
+        };
+        assert_eq!(op.progress, Some(0.5));
+    }
+
+    #[test]
+    fn pull_strategy_default_is_merge() {
+        let strategy = super::PullStrategy::default();
+        assert_eq!(strategy, super::PullStrategy::Merge);
+    }
+
+    #[test]
+    fn app_state_new_has_correct_defaults() {
+        let state = super::AppState::new();
+        assert_eq!(state.file_display_mode, super::FileDisplayMode::Flat);
+        assert_eq!(state.log_tabs.len(), 1); // "All" tab
+        assert!(!state.log_tabs[0].is_closable);
+        assert_eq!(state.active_log_tab, 0);
+        assert!(state.log_branches_dashboard_visible);
+        assert!(!state.blame_active);
+        assert!(state.recent_commit_messages.is_empty());
+        assert!(state.network_operation.is_none());
+        assert!(state.full_file_preview.is_none());
+        assert!(!state.full_file_preview_binary);
+        assert!(!state.full_file_preview_truncated);
+    }
 }
