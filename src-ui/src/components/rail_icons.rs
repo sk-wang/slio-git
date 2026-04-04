@@ -66,98 +66,95 @@ static TAGS_ICON: Lazy<svg::Handle> = Lazy::new(|| svg::Handle::from_memory(TAGS
 static STASHES_ICON: Lazy<svg::Handle> = Lazy::new(|| svg::Handle::from_memory(STASHES_SVG));
 static REBASE_ICON: Lazy<svg::Handle> = Lazy::new(|| svg::Handle::from_memory(REBASE_SVG));
 
+// Lucide-style polished icons — rounded strokes, balanced proportions
 const REPOSITORY_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M2.25 4.5h3.7l1.35 1.5h6.45v5.25A1.25 1.25 0 0 1 12.5 12.5h-9A1.25 1.25 0 0 1 2.25 11.25z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+  <circle cx="12" cy="13" r="1" fill="currentColor" stroke="none"/>
 </svg>
 "#;
 
 const OPEN_REPOSITORY_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M2.25 5h3.6L7.2 6.5h6.55v4.75A1.25 1.25 0 0 1 12.5 12.5h-9A1.25 1.25 0 0 1 2.25 11.25z"/>
-  <path d="M8.1 2.75v3.1"/>
-  <path d="M6.55 4.3h3.1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/>
+  <line x1="12" y1="10" x2="12" y2="16"/>
+  <line x1="9" y1="13" x2="15" y2="13"/>
 </svg>
 "#;
 
 const BRANCH_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="4" cy="3.25" r="1.5"/>
-  <circle cx="12" cy="5.25" r="1.5"/>
-  <circle cx="4" cy="12.25" r="1.5"/>
-  <path d="M5.5 3.25h2A2.5 2.5 0 0 1 10 5.75v0"/>
-  <path d="M4 4.75v6"/>
-  <path d="M5.5 12.25h1.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="6" y1="3" x2="6" y2="15"/>
+  <circle cx="18" cy="6" r="3"/>
+  <circle cx="6" cy="18" r="3"/>
+  <path d="M18 9a9 9 0 0 1-9 9"/>
 </svg>
 "#;
 
 const OVERVIEW_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2.5" y="2.5" width="4.25" height="4.25" rx="0.8"/>
-  <rect x="9.25" y="2.5" width="4.25" height="4.25" rx="0.8"/>
-  <rect x="2.5" y="9.25" width="4.25" height="4.25" rx="0.8"/>
-  <rect x="9.25" y="9.25" width="4.25" height="4.25" rx="0.8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <rect width="7" height="7" x="3" y="3" rx="1"/>
+  <rect width="7" height="7" x="14" y="3" rx="1"/>
+  <rect width="7" height="7" x="14" y="14" rx="1"/>
+  <rect width="7" height="7" x="3" y="14" rx="1"/>
 </svg>
 "#;
 
 const CHANGES_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M4.75 4h8"/>
-  <path d="M4.75 8h8"/>
-  <path d="M4.75 12h8"/>
-  <circle cx="2.75" cy="4" r="0.65" fill="currentColor" stroke="none"/>
-  <circle cx="2.75" cy="8" r="0.65" fill="currentColor" stroke="none"/>
-  <circle cx="2.75" cy="12" r="0.65" fill="currentColor" stroke="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+  <polyline points="14 2 14 8 20 8"/>
+  <line x1="9" y1="15" x2="15" y2="15"/>
 </svg>
 "#;
 
 const CONFLICTS_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M8 2.5l5.3 9.25H2.7z"/>
-  <path d="M8 6v3.2"/>
-  <circle cx="8" cy="11.4" r="0.7" fill="currentColor" stroke="none"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+  <line x1="12" y1="9" x2="12" y2="13"/>
+  <line x1="12" y1="17" x2="12.01" y2="17"/>
 </svg>
 "#;
 
 const HISTORY_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M3.5 7.25A4.75 4.75 0 1 1 8 12.75a4.6 4.6 0 0 1-3.4-1.45"/>
-  <path d="M3.5 3.75v3.5H7"/>
-  <path d="M8 5.5v2.9l2.2 1.35"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="10"/>
+  <polyline points="12 6 12 12 16 14"/>
 </svg>
 "#;
 
 const REMOTES_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M5 12.5V3.5"/>
-  <path d="M3.25 5.25L5 3.5l1.75 1.75"/>
-  <path d="M11 3.5v9"/>
-  <path d="M9.25 10.75L11 12.5l1.75-1.75"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <line x1="7" y1="17" x2="7" y2="7"/>
+  <polyline points="4 10 7 7 10 10"/>
+  <line x1="17" y1="7" x2="17" y2="17"/>
+  <polyline points="14 14 17 17 20 14"/>
 </svg>
 "#;
 
 const TAGS_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <path d="M8.1 2.75h3.55l1.6 1.6v3.55L7.55 13.6 2.4 8.45z"/>
-  <circle cx="10.6" cy="5.4" r="0.65"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/>
+  <path d="M7 7h.01"/>
 </svg>
 "#;
 
 const STASHES_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <rect x="2.5" y="4.25" width="11" height="8.25" rx="1.1"/>
-  <path d="M2.5 7.1h11"/>
-  <path d="M6 9.8h4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m20 7-8-4-8 4"/>
+  <path d="M4 7v10l8 4 8-4V7"/>
+  <line x1="12" y1="21" x2="12" y2="11"/>
+  <line x1="20" y1="7" x2="12" y2="11"/>
+  <line x1="4" y1="7" x2="12" y2="11"/>
 </svg>
 "#;
 
 const REBASE_SVG: &[u8] = br#"
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="4" cy="3.5" r="1.2"/>
-  <circle cx="12" cy="5.5" r="1.2"/>
-  <circle cx="4" cy="12" r="1.2"/>
-  <path d="M5.2 3.5h1.8A3 3 0 0 1 10 6.5"/>
-  <path d="M4 4.7v4a3.3 3.3 0 0 0 3.3 3.3h3.5"/>
-  <path d="M9.7 10.4l1.8 1.6-1.8 1.5"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="5" cy="6" r="3"/>
+  <circle cx="19" cy="6" r="3"/>
+  <circle cx="12" cy="18" r="3"/>
+  <path d="M5 9v3a4 4 0 0 0 4 4h2"/>
+  <path d="M19 9v3a4 4 0 0 1-4 4h-2"/>
 </svg>
 "#;
