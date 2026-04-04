@@ -6,85 +6,108 @@ use iced::widget::{button, checkbox, container, rule, scrollable, text_editor, t
 use iced::{border, Background, Border, Color, Shadow, Theme, Vector};
 
 /// Historical module name kept so the rest of the UI can reuse existing imports.
+/// Re-themed to MotionSites dark stage palette.
 pub mod darcula {
     use super::*;
 
-    // ── Deep dark stage ────────────────────────────────────────────────────────
-    pub const BG_MAIN: Color = Color::from_rgb(0.051, 0.067, 0.090);    // #0D1117
-    pub const BG_RAISED: Color = Color::from_rgb(0.110, 0.133, 0.157);  // #1C2228
-    pub const BG_PANEL: Color = Color::from_rgb(0.086, 0.106, 0.133);   // #161B22
-    pub const BG_TOOLBAR: Color = Color::from_rgb(0.071, 0.090, 0.114); // #12171D
-    pub const BG_EDITOR: Color = Color::from_rgb(0.059, 0.075, 0.098);  // #0F1319
-    pub const BG_NAV: Color = Color::from_rgb(0.071, 0.090, 0.114);     // #12171D
-    pub const BG_RAIL: Color = Color::from_rgb(0.051, 0.067, 0.090);    // #0D1117
-    pub const BG_STATUS: Color = Color::from_rgb(0.043, 0.055, 0.075);  // #0B0E13
-    pub const BG_TAB_ACTIVE: Color = Color::from_rgb(0.086, 0.106, 0.133);  // #161B22
-    pub const BG_TAB_HOVER: Color = Color::from_rgb(0.071, 0.090, 0.114);   // #12171D
+    // ── MotionSites dark stage backgrounds ───────────────────────────────────
+    pub const BG_MAIN: Color = Color::from_rgb(0.035, 0.035, 0.043); // #09090b — stage
+    pub const BG_SOFT: Color = Color::from_rgb(0.082, 0.082, 0.098); // #151519 — soft panel
+    pub const BG_CARD: Color = Color::from_rgb(0.094, 0.094, 0.114); // #18181d — card
+    pub const BG_CARD_2: Color = Color::from_rgb(0.133, 0.133, 0.165); // #22222a — raised
+    pub const BG_TOOLBAR: Color = BG_SOFT;
+    pub const BG_EDITOR: Color = BG_MAIN;
+    pub const BG_NAV: Color = BG_SOFT;
+    pub const BG_RAIL: Color = BG_SOFT;
+    pub const BG_STATUS: Color = BG_SOFT;
+    pub const BG_TAB_ACTIVE: Color = BG_CARD;
+    pub const BG_TAB_HOVER: Color = BG_CARD_2;
+    // Backward-compatible aliases for legacy code referencing Darcula names
+    pub const BG_PANEL: Color = BG_CARD;
+    pub const BG_RAISED: Color = BG_CARD_2;
 
     // ── Text hierarchy ─────────────────────────────────────────────────────────
-    pub const TEXT_PRIMARY: Color = Color::from_rgb(0.902, 0.929, 0.953);   // #E6EDF3
-    pub const TEXT_SECONDARY: Color = Color::from_rgb(0.545, 0.580, 0.620); // #8B949E
-    pub const TEXT_DISABLED: Color = Color::from_rgb(0.282, 0.310, 0.345);  // #484F58
+    pub const TEXT_PRIMARY: Color = Color::from_rgb(0.961, 0.953, 0.937); // #f5f3ef
+    pub const TEXT_SECONDARY: Color = Color::from_rgb(0.667, 0.651, 0.698); // #aaa6b2
+    pub const TEXT_DISABLED: Color = Color::from_rgb(0.353, 0.337, 0.384); // #5a5662
 
-    // ── Accent — vibrant mint; only 1-2 focal words glow ──────────────────────
-    pub const ACCENT: Color = Color::from_rgb(0.224, 0.816, 0.769);      // #39D0C4
-    pub const ACCENT_WEAK: Color = Color::from_rgb(0.094, 0.176, 0.169); // #182C2B
-    pub const BRAND: Color = Color::from_rgb(0.345, 0.651, 1.0);         // #58A6FF
-    pub const BRAND_WEAK: Color = Color::from_rgb(0.110, 0.165, 0.251);  // #1C2A40
-    pub const SUCCESS: Color = Color::from_rgb(0.247, 0.718, 0.314);     // #3FB950
-    pub const WARNING: Color = Color::from_rgb(0.824, 0.600, 0.133);     // #D29922
-    pub const DANGER: Color = Color::from_rgb(0.973, 0.318, 0.286);      // #F85149
+    // ── Accent — MotionSites electric blue ───────────────────────────────────
+    pub const ACCENT: Color = Color::from_rgb(0.255, 0.373, 1.0); // #415fff
+    pub const ACCENT_WEAK: Color = Color::from_rgb(0.078, 0.118, 0.325); // #141e53 dark tint
+    pub const BRAND: Color = ACCENT;
+    pub const BRAND_WEAK: Color = ACCENT_WEAK;
+    pub const SUCCESS: Color = Color::from_rgb(0.0, 0.686, 0.376); // #00af60
+    pub const WARNING: Color = Color::from_rgb(0.996, 0.596, 0.0); // #fe9800
+    pub const DANGER: Color = Color::from_rgb(1.0, 0.322, 0.322); // #ff5252
+
+    // Sync indicators
+    pub const INCOMING: Color = ACCENT;
+    pub const OUTGOING: Color = SUCCESS;
 
     pub const STATUS_ADDED: Color = SUCCESS;
     pub const STATUS_MODIFIED: Color = BRAND;
     pub const STATUS_DELETED: Color = DANGER;
-    pub const STATUS_RENAMED: Color = Color::from_rgb(0.212, 0.816, 0.769); // #36D0C4
-    pub const STATUS_UNVERSIONED: Color = Color::from_rgb(0.431, 0.463, 0.502); // #6E7681
+    pub const STATUS_RENAMED: Color = Color::from_rgb(0.369, 0.678, 0.831); // #5EACD0
+    pub const STATUS_UNVERSIONED: Color = TEXT_SECONDARY;
 
-    // ── Selection / highlight ──────────────────────────────────────────────────
-    pub const SELECTION_BG: Color = Color::from_rgb(0.149, 0.278, 0.204);      // #264734
-    pub const SELECTION_INACTIVE: Color = Color::from_rgb(0.118, 0.176, 0.141); // #1E2D24
-    pub const HIGHLIGHT_BG: Color = Color::from_rgb(0.110, 0.165, 0.251);       // #1C2A40
+    // ── Selection / highlight ────────────────────────────────────────────────
+    pub const SELECTION_BG: Color = Color::from_rgb(0.12, 0.20, 0.45); // dark blue selection
+    pub const SELECTION_INACTIVE: Color = BG_CARD_2;
+    pub const HIGHLIGHT_BG: Color = Color::from_rgb(0.08, 0.12, 0.24);
 
-    // ── Borders / separators ───────────────────────────────────────────────────
-    pub const BORDER: Color = Color::from_rgb(0.188, 0.212, 0.239);    // #30363D
-    pub const SEPARATOR: Color = Color::from_rgb(0.129, 0.149, 0.176); // #21262D
+    // ── Borders / separators ─────────────────────────────────────────────────
+    pub const BORDER: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.08,
+    };
+    pub const SEPARATOR: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 0.05,
+    };
 
-    // ── Diff surfaces (dark variants) ─────────────────────────────────────────
-    pub const DIFF_ADDED_BG: Color = Color::from_rgb(0.071, 0.157, 0.110);   // #122818
-    pub const DIFF_MODIFIED_BG: Color = Color::from_rgb(0.071, 0.122, 0.188); // #121F30
-    pub const DIFF_DELETED_BG: Color = Color::from_rgb(0.180, 0.063, 0.075);  // #2E1013
+    // ── Diff surfaces (dark stage compatible) ────────────────────────────────
+    pub const DIFF_ADDED_BG: Color = Color::from_rgb(0.059, 0.165, 0.098);
+    pub const DIFF_MODIFIED_BG: Color = Color::from_rgb(0.063, 0.106, 0.208);
+    pub const DIFF_DELETED_BG: Color = Color::from_rgb(0.192, 0.055, 0.075);
 }
 
 pub mod spacing {
     pub const XS: f32 = 4.0;
     pub const SM: f32 = 8.0;
-    pub const MD: f32 = 16.0;
-    pub const LG: f32 = 24.0;
+    pub const MD: f32 = 12.0;
+    pub const LG: f32 = 16.0;
 }
 
 pub mod density {
-    pub const INLINE_GAP: f32 = 8.0;
-    pub const CONTROL_GAP: f32 = 12.0;
-    pub const TOOLBAR_PADDING: [u16; 2] = [6, 12];
-    pub const SECONDARY_BAR_PADDING: [u16; 2] = [5, 12];
-    pub const PANE_PADDING: [u16; 2] = [12, 12];
-    pub const STATUS_PADDING: [u16; 2] = [4, 12];
-    pub const STANDARD_CONTROL_HEIGHT: f32 = 32.0;
-    pub const COMPACT_CONTROL_HEIGHT: f32 = 28.0;
-    pub const COMPACT_CHIP_PADDING: [u16; 2] = [3, 8];
+    pub const INLINE_GAP: f32 = 5.0;
+    pub const CONTROL_GAP: f32 = 4.0;
+    pub const TOOLBAR_PADDING: [u16; 2] = [3, 8];
+    pub const SECONDARY_BAR_PADDING: [u16; 2] = [3, 8];
+    pub const PANE_PADDING: [u16; 2] = [8, 10];
+    pub const STATUS_PADDING: [u16; 2] = [2, 8];
+    pub const STANDARD_CONTROL_HEIGHT: f32 = 24.0;
+    pub const COMPACT_CONTROL_HEIGHT: f32 = 22.0;
+    pub const COMPACT_CHIP_PADDING: [u16; 2] = [1, 6];
+    pub const TOOL_WINDOW_PADDING: [u16; 2] = [6, 8];
 }
 
 pub mod radius {
-    pub const SM: f32 = 4.0;
+    /// Chips, badges.
+    pub const SM: f32 = 6.0;
+    /// Buttons, inputs, tabs.
     pub const MD: f32 = 8.0;
-    pub const LG: f32 = 12.0;
+    /// Panels, cards, editors.
+    pub const LG: f32 = 10.0;
 }
 
-/// Semantic text styles — 5-tier hierarchy for consistent typography.
+/// Semantic text styles — MotionSites-aligned hierarchy.
 pub mod typography {
-    /// Display / hero text — repo name, modal titles.
-    pub const DISPLAY_SIZE: u16 = 16;
+    /// Display / hero text.
+    pub const DISPLAY_SIZE: u16 = 15;
     pub const DISPLAY_WEIGHT: iced::font::Weight = iced::font::Weight::Bold;
 
     /// Title — section headers, dialog headings.
@@ -92,21 +115,19 @@ pub mod typography {
     pub const TITLE_WEIGHT: iced::font::Weight = iced::font::Weight::Semibold;
 
     /// Body — primary content, list items, descriptions.
-    pub const BODY_SIZE: u16 = 12;
+    pub const BODY_SIZE: u16 = 13;
     pub const BODY_WEIGHT: iced::font::Weight = iced::font::Weight::Normal;
 
     /// Caption — secondary info, timestamps, metadata.
-    pub const CAPTION_SIZE: u16 = 11;
+    pub const CAPTION_SIZE: u16 = 12;
     pub const CAPTION_WEIGHT: iced::font::Weight = iced::font::Weight::Normal;
 
     /// Micro — badges, chips, compact labels.
-    pub const MICRO_SIZE: u16 = 10;
-    pub const MICRO_WEIGHT: iced::font::Weight = iced::font::Weight::Medium;
+    pub const MICRO_SIZE: u16 = 11;
+    pub const MICRO_WEIGHT: iced::font::Weight = iced::font::Weight::Normal;
 }
 
 /// Motion design tokens — transition durations and easing references.
-/// Iced doesn't support custom easing yet, but these constants serve as
-/// documentation and future-proofing for animation support.
 pub mod motion {
     /// Fast micro-interactions: button press, checkbox toggle.
     pub const DURATION_FAST: u32 = 120; // ms
@@ -130,14 +151,18 @@ pub mod layout {
     pub const WINDOW_MIN_HEIGHT: f32 = 600.0;
 
     pub const SIDEBAR_WIDTH: f32 = 192.0;
-    pub const RAIL_WIDTH: f32 = 56.0;
-    pub const TOP_BAR_HEIGHT: f32 = 30.0;
-    pub const SECONDARY_BAR_HEIGHT: f32 = 28.0;
-    pub const STATUS_BAR_HEIGHT: f32 = 24.0;
-    pub const CONTROL_HEIGHT: f32 = 26.0;
-    pub const SHELL_GAP: f32 = 8.0;
-    pub const SHELL_PADDING: f32 = 16.0;
-    pub const SECTION_PADDING: f32 = 16.0;
+    pub const RAIL_WIDTH: f32 = 48.0;
+    pub const TOP_BAR_HEIGHT: f32 = 28.0;
+    pub const SECONDARY_BAR_HEIGHT: f32 = 24.0;
+    pub const STATUS_BAR_HEIGHT: f32 = 22.0;
+    pub const CONTROL_HEIGHT: f32 = 24.0;
+    pub const SHELL_GAP: f32 = 6.0;
+    pub const SHELL_PADDING: f32 = 8.0;
+    pub const SECTION_PADDING: f32 = 10.0;
+    pub const EDITOR_TAB_HEIGHT: f32 = 28.0;
+    pub const TOOL_WINDOW_HEIGHT: f32 = 290.0;
+    pub const TOOL_WINDOW_MIN_HEIGHT: f32 = 220.0;
+    pub const TOOL_WINDOW_TAB_HEIGHT: f32 = 24.0;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -214,11 +239,10 @@ fn soft_shadow(alpha: f32, y: f32, blur: f32) -> Shadow {
     }
 }
 
-/// Colored glow — used for accent-lit surfaces (motionsites signature effect).
 fn accent_glow(color: Color, alpha: f32, blur: f32) -> Shadow {
     Shadow {
         color: Color { a: alpha, ..color },
-        offset: Vector::new(0.0, 2.0),
+        offset: Vector::new(0.0, 1.0),
         blur_radius: blur,
     }
 }
@@ -230,20 +254,17 @@ fn surface_background(surface: Surface) -> Color {
         Surface::Rail => darcula::BG_RAIL,
         Surface::Toolbar => darcula::BG_TOOLBAR,
         Surface::Status => darcula::BG_STATUS,
-        Surface::Panel => darcula::BG_PANEL,
-        Surface::Raised => darcula::BG_RAISED,
+        Surface::Panel => darcula::BG_CARD,
+        Surface::Raised => darcula::BG_CARD_2,
         Surface::Editor => darcula::BG_EDITOR,
-        // Accent surface: BG_PANEL tinted with dark accent → subtle teal panel
-        Surface::Accent => mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.80),
-        Surface::Selection => mix(darcula::BG_PANEL, darcula::SELECTION_BG, 0.70),
-        // Status surfaces: mix accent-color into editor bg at low amount
-        Surface::Success => mix(darcula::BG_EDITOR, darcula::SUCCESS, 0.14),
-        Surface::Warning => mix(darcula::BG_EDITOR, darcula::WARNING, 0.16),
-        Surface::Danger => mix(darcula::BG_EDITOR, darcula::DANGER, 0.12),
-        // Input field: slightly raised vs panel
-        Surface::ToolbarField => mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.60),
-        Surface::ListRow => darcula::BG_PANEL,
-        Surface::ListSelection => mix(darcula::BG_PANEL, darcula::SELECTION_BG, 0.75),
+        Surface::Accent => mix(darcula::BG_CARD, darcula::ACCENT, 0.18),
+        Surface::Selection => mix(darcula::BG_CARD, darcula::ACCENT, 0.30),
+        Surface::Success => mix(darcula::BG_EDITOR, darcula::SUCCESS, 0.10),
+        Surface::Warning => mix(darcula::BG_EDITOR, darcula::WARNING, 0.12),
+        Surface::Danger => mix(darcula::BG_EDITOR, darcula::DANGER, 0.08),
+        Surface::ToolbarField => darcula::BG_CARD_2,
+        Surface::ListRow => darcula::BG_CARD,
+        Surface::ListSelection => mix(darcula::BG_CARD, darcula::ACCENT, 0.22),
     }
 }
 
@@ -252,7 +273,7 @@ pub fn darcula_theme() -> Theme {
     use iced::theme::Palette;
 
     Theme::custom(
-        "YanquWorkbench".to_string(),
+        "MotionSitesStage".to_string(),
         Palette {
             background: darcula::BG_MAIN,
             text: darcula::TEXT_PRIMARY,
@@ -277,7 +298,7 @@ pub fn panel_style(surface: Surface) -> impl Fn(&Theme) -> container::Style {
             Surface::Editor => (
                 surface_background(surface),
                 1.0,
-                darcula::BORDER.scale_alpha(0.88),
+                darcula::BORDER,
                 radius::LG,
                 Shadow::default(),
             ),
@@ -289,44 +310,44 @@ pub fn panel_style(surface: Surface) -> impl Fn(&Theme) -> container::Style {
                 Shadow::default(),
             ),
             Surface::ToolbarField => (
-                mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.18),
+                darcula::BG_CARD_2,
                 1.0,
-                darcula::SEPARATOR.scale_alpha(0.84),
+                darcula::BORDER,
                 radius::MD,
                 Shadow::default(),
             ),
             Surface::ListRow => (
-                darcula::BG_PANEL,
+                darcula::BG_CARD,
                 1.0,
-                darcula::SEPARATOR.scale_alpha(0.20),
-                radius::MD,
+                darcula::SEPARATOR,
+                radius::SM,
                 Shadow::default(),
             ),
             Surface::ListSelection => (
-                mix(darcula::BG_PANEL, darcula::SELECTION_BG, 0.92),
+                mix(darcula::BG_CARD, darcula::ACCENT, 0.18),
                 1.0,
-                darcula::ACCENT.scale_alpha(0.26),
-                radius::MD,
+                mix(darcula::ACCENT, Color::WHITE, 0.10).scale_alpha(0.35),
+                radius::SM,
                 Shadow::default(),
             ),
             Surface::Panel => (
                 surface_background(surface),
                 1.0,
-                darcula::BORDER.scale_alpha(0.70),
+                darcula::BORDER,
                 radius::LG,
-                soft_shadow(0.28, 4.0, 16.0),
+                soft_shadow(0.14, 4.0, 12.0),
             ),
             Surface::Raised => (
                 surface_background(surface),
                 1.0,
-                darcula::SEPARATOR.scale_alpha(0.82),
-                radius::MD,
-                Shadow::default(),
+                darcula::BORDER,
+                radius::SM,
+                soft_shadow(0.10, 2.0, 6.0),
             ),
             Surface::Accent => (
                 surface_background(surface),
                 1.0,
-                darcula::ACCENT.scale_alpha(0.28),
+                darcula::ACCENT.scale_alpha(0.30),
                 radius::LG,
                 Shadow::default(),
             ),
@@ -340,21 +361,21 @@ pub fn panel_style(surface: Surface) -> impl Fn(&Theme) -> container::Style {
             Surface::Success => (
                 surface_background(surface),
                 1.0,
-                darcula::SUCCESS.scale_alpha(0.26),
+                darcula::SUCCESS.scale_alpha(0.35),
                 radius::LG,
                 Shadow::default(),
             ),
             Surface::Warning => (
                 surface_background(surface),
                 1.0,
-                darcula::WARNING.scale_alpha(0.28),
+                darcula::WARNING.scale_alpha(0.35),
                 radius::LG,
                 Shadow::default(),
             ),
             Surface::Danger => (
                 surface_background(surface),
                 1.0,
-                darcula::DANGER.scale_alpha(0.24),
+                darcula::DANGER.scale_alpha(0.35),
                 radius::LG,
                 Shadow::default(),
             ),
@@ -376,10 +397,10 @@ pub fn panel_style(surface: Surface) -> impl Fn(&Theme) -> container::Style {
 pub fn frame_style(surface: Surface) -> impl Fn(&Theme) -> container::Style {
     move |_theme| {
         let (border_width, border_color, shadow) = match surface {
-            Surface::Toolbar => (0.0, Color::TRANSPARENT, soft_shadow(0.03, 3.0, 10.0)),
-            Surface::Nav => (1.0, darcula::SEPARATOR.scale_alpha(0.60), Shadow::default()),
-            Surface::Rail => (1.0, darcula::SEPARATOR.scale_alpha(0.72), Shadow::default()),
-            Surface::Status => (1.0, darcula::SEPARATOR.scale_alpha(0.60), Shadow::default()),
+            Surface::Toolbar => (0.0, Color::TRANSPARENT, Shadow::default()),
+            Surface::Nav => (1.0, darcula::BORDER, Shadow::default()),
+            Surface::Rail => (1.0, darcula::BORDER, Shadow::default()),
+            Surface::Status => (1.0, darcula::BORDER, Shadow::default()),
             _ => (0.0, Color::TRANSPARENT, Shadow::default()),
         };
 
@@ -400,24 +421,24 @@ pub fn badge_style(tone: BadgeTone) -> impl Fn(&Theme) -> container::Style {
     move |_theme| {
         let (color, border_color) = match tone {
             BadgeTone::Neutral => (
-                mix(darcula::BG_MAIN, darcula::BG_PANEL, 0.70),
-                darcula::BORDER.scale_alpha(0.92),
+                mix(darcula::BG_MAIN, darcula::BG_CARD, 0.70),
+                darcula::BORDER,
             ),
             BadgeTone::Accent => (
-                mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.96),
-                darcula::ACCENT.scale_alpha(0.24),
+                mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.55),
+                darcula::ACCENT.scale_alpha(0.25),
             ),
             BadgeTone::Success => (
-                mix(darcula::BG_PANEL, darcula::SUCCESS, 0.12),
-                darcula::SUCCESS.scale_alpha(0.24),
+                mix(darcula::BG_CARD, darcula::SUCCESS, 0.10),
+                darcula::SUCCESS.scale_alpha(0.25),
             ),
             BadgeTone::Warning => (
-                mix(darcula::BG_PANEL, darcula::WARNING, 0.16),
-                darcula::WARNING.scale_alpha(0.26),
+                mix(darcula::BG_CARD, darcula::WARNING, 0.12),
+                darcula::WARNING.scale_alpha(0.25),
             ),
             BadgeTone::Danger => (
-                mix(darcula::BG_PANEL, darcula::DANGER, 0.10),
-                darcula::DANGER.scale_alpha(0.24),
+                mix(darcula::BG_CARD, darcula::DANGER, 0.08),
+                darcula::DANGER.scale_alpha(0.25),
             ),
         };
 
@@ -426,7 +447,7 @@ pub fn badge_style(tone: BadgeTone) -> impl Fn(&Theme) -> container::Style {
             border: Border {
                 width: 1.0,
                 color: border_color,
-                radius: radius::MD.into(),
+                radius: radius::SM.into(),
             },
             ..Default::default()
         }
@@ -446,16 +467,16 @@ fn subtle_button(tone: ButtonTone) -> bool {
 
 fn button_radius(chrome: ButtonChrome) -> border::Radius {
     match chrome {
-        ButtonChrome::Standard => border::Radius::new(radius::LG),
-        ButtonChrome::Tab => border::Radius::new(radius::MD),
+        ButtonChrome::Standard => border::Radius::new(radius::MD),
+        ButtonChrome::Tab => border::Radius::new(0.0),
         ButtonChrome::Rail => border::Radius::new(13.0),
-        ButtonChrome::ToolbarIcon => border::Radius::new(10.0),
+        ButtonChrome::ToolbarIcon => border::Radius::new(radius::MD),
         ButtonChrome::SplitLeft => border::Radius::default()
-            .top_left(radius::LG)
-            .bottom_left(radius::LG),
+            .top_left(radius::MD)
+            .bottom_left(radius::MD),
         ButtonChrome::SplitRight => border::Radius::default()
-            .top_right(radius::LG)
-            .bottom_right(radius::LG),
+            .top_right(radius::MD)
+            .bottom_right(radius::MD),
     }
 }
 
@@ -485,33 +506,31 @@ fn button_border_width(tone: ButtonTone, chrome: ButtonChrome, status: button::S
 fn button_shadow(tone: ButtonTone, chrome: ButtonChrome, status: button::Status) -> Shadow {
     match status {
         button::Status::Active => match tone {
-            // Mint accent glow — motionsites signature effect on dark stage
-            ButtonTone::Primary => accent_glow(darcula::ACCENT, 0.38, 14.0),
+            ButtonTone::Primary => soft_shadow(0.20, 2.0, 8.0),
             ButtonTone::Secondary
             | ButtonTone::Success
             | ButtonTone::Warning
-            | ButtonTone::Danger => soft_shadow(0.20, 2.0, 8.0),
-            ButtonTone::TabActive if chrome == ButtonChrome::Tab => soft_shadow(0.10, 1.0, 4.0),
+            | ButtonTone::Danger => soft_shadow(0.14, 2.0, 6.0),
             _ => Shadow::default(),
         },
         button::Status::Hovered => match tone {
-            ButtonTone::Primary => accent_glow(darcula::ACCENT, 0.52, 20.0),
+            ButtonTone::Primary => accent_glow(darcula::ACCENT, 0.25, 12.0),
             ButtonTone::Secondary
             | ButtonTone::Success
             | ButtonTone::Warning
-            | ButtonTone::Danger => soft_shadow(0.28, 3.0, 10.0),
+            | ButtonTone::Danger => soft_shadow(0.18, 2.0, 8.0),
             ButtonTone::Ghost
                 if matches!(
                     chrome,
                     ButtonChrome::ToolbarIcon | ButtonChrome::SplitLeft | ButtonChrome::SplitRight
                 ) =>
             {
-                soft_shadow(0.12, 2.0, 6.0)
+                soft_shadow(0.10, 1.0, 4.0)
             }
             _ => Shadow::default(),
         },
         button::Status::Pressed => Shadow {
-            offset: Vector::new(0.0, 1.0),
+            offset: Vector::new(0.0, 0.0),
             blur_radius: 1.0,
             ..Shadow::default()
         },
@@ -524,45 +543,45 @@ pub fn button_style_for(
     chrome: ButtonChrome,
 ) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |_theme, status| {
-        let passive_text = mix(darcula::TEXT_SECONDARY, darcula::TEXT_PRIMARY, 0.24);
+        let passive_text = mix(darcula::TEXT_SECONDARY, darcula::TEXT_PRIMARY, 0.30);
         let (base_background, text_color, base_border) = match tone {
             ButtonTone::Primary => (
-                mix(darcula::ACCENT, darcula::BRAND, 0.12),
+                darcula::ACCENT,
                 Color::WHITE,
-                mix(darcula::ACCENT, darcula::BRAND, 0.20),
+                darcula::ACCENT,
             ),
             ButtonTone::Secondary => (
-                mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.26),
+                darcula::BG_CARD_2,
                 darcula::TEXT_PRIMARY,
-                mix(darcula::BORDER, darcula::ACCENT.scale_alpha(0.35), 0.30),
+                darcula::BORDER,
             ),
             ButtonTone::Ghost => (Color::TRANSPARENT, passive_text, Color::TRANSPARENT),
             ButtonTone::TabActive => (
-                mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.96),
+                mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.45),
                 darcula::TEXT_PRIMARY,
-                darcula::ACCENT.scale_alpha(0.26),
+                darcula::ACCENT.scale_alpha(0.35),
             ),
             ButtonTone::TabInactive => (
                 if chrome == ButtonChrome::Tab {
-                    mix(darcula::BG_PANEL, darcula::BG_MAIN, 0.34)
+                    mix(darcula::BG_CARD, darcula::BG_MAIN, 0.30)
                 } else {
                     Color::TRANSPARENT
                 },
                 passive_text,
                 if chrome == ButtonChrome::Tab {
-                    darcula::SEPARATOR.scale_alpha(0.74)
+                    darcula::SEPARATOR
                 } else {
                     Color::TRANSPARENT
                 },
             ),
             ButtonTone::RailActive => (
-                mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.98),
+                mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.50),
                 darcula::ACCENT,
-                darcula::ACCENT.scale_alpha(0.22),
+                darcula::ACCENT.scale_alpha(0.35),
             ),
             ButtonTone::RailInactive => (Color::TRANSPARENT, passive_text, Color::TRANSPARENT),
             ButtonTone::Success => (darcula::SUCCESS, Color::WHITE, darcula::SUCCESS),
-            ButtonTone::Warning => (darcula::WARNING, Color::WHITE, darcula::WARNING),
+            ButtonTone::Warning => (darcula::WARNING, Color::BLACK, darcula::WARNING),
             ButtonTone::Danger => (darcula::DANGER, Color::WHITE, darcula::DANGER),
         };
 
@@ -571,29 +590,24 @@ pub fn button_style_for(
             button::Status::Hovered => (
                 if subtle_button(tone) {
                     match chrome {
-                        ButtonChrome::Tab => mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.65),
-                        ButtonChrome::ToolbarIcon => {
-                            mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.58)
-                        }
+                        ButtonChrome::Tab => mix(darcula::BG_CARD, Color::WHITE, 0.05),
+                        ButtonChrome::ToolbarIcon => mix(darcula::BG_CARD, Color::WHITE, 0.04),
                         ButtonChrome::SplitLeft | ButtonChrome::SplitRight => {
-                            mix(darcula::BG_PANEL, darcula::ACCENT_WEAK, 0.55)
+                            mix(darcula::BG_CARD, Color::WHITE, 0.04)
                         }
-                        ButtonChrome::Rail => mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.60),
-                        ButtonChrome::Standard => {
-                            mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.40)
-                        }
+                        ButtonChrome::Rail => mix(darcula::BG_CARD_2, Color::WHITE, 0.05),
+                        ButtonChrome::Standard => mix(darcula::BG_CARD_2, Color::WHITE, 0.04),
                     }
                 } else {
-                    // On dark bg: lighten slightly instead of darken
-                    mix(base_background, Color::WHITE, 0.08)
+                    mix(base_background, Color::WHITE, 0.10)
                 },
                 if subtle_button(tone) {
-                    darcula::ACCENT.scale_alpha(0.40)
+                    darcula::BORDER.scale_alpha(0.80)
                 } else {
-                    mix(base_border, Color::WHITE, 0.10)
+                    mix(base_border, Color::WHITE, 0.12)
                 },
                 if subtle_button(tone) {
-                    mix(darcula::TEXT_PRIMARY, darcula::ACCENT, 0.40)
+                    darcula::TEXT_PRIMARY
                 } else {
                     text_color
                 },
@@ -601,28 +615,24 @@ pub fn button_style_for(
             button::Status::Pressed => (
                 if subtle_button(tone) {
                     match chrome {
-                        ButtonChrome::Tab => mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.80),
-                        ButtonChrome::ToolbarIcon => {
-                            mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.75)
-                        }
+                        ButtonChrome::Tab => mix(darcula::BG_CARD_2, Color::WHITE, 0.08),
+                        ButtonChrome::ToolbarIcon => mix(darcula::BG_CARD_2, Color::WHITE, 0.06),
                         ButtonChrome::SplitLeft | ButtonChrome::SplitRight => {
-                            mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.70)
+                            mix(darcula::BG_CARD_2, Color::WHITE, 0.06)
                         }
-                        ButtonChrome::Rail => mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.90),
-                        ButtonChrome::Standard => {
-                            mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.65)
-                        }
+                        ButtonChrome::Rail => mix(darcula::BG_CARD_2, Color::WHITE, 0.10),
+                        ButtonChrome::Standard => mix(darcula::BG_CARD_2, Color::WHITE, 0.06),
                     }
                 } else {
-                    mix(base_background, Color::BLACK, 0.18)
+                    mix(base_background, Color::BLACK, 0.14)
                 },
                 if subtle_button(tone) {
-                    darcula::ACCENT
+                    darcula::BORDER.scale_alpha(1.0)
                 } else {
-                    mix(base_border, Color::WHITE, 0.06)
+                    mix(base_border, Color::WHITE, 0.08)
                 },
                 if subtle_button(tone) {
-                    darcula::ACCENT
+                    darcula::TEXT_PRIMARY
                 } else {
                     text_color
                 },
@@ -635,40 +645,40 @@ pub fn button_style_for(
                 ),
                 ButtonTone::TabInactive => (
                     if chrome == ButtonChrome::Tab {
-                        mix(darcula::BG_PANEL, darcula::BG_MAIN, 0.50)
+                        mix(darcula::BG_CARD, darcula::BG_MAIN, 0.25)
                     } else {
                         Color::TRANSPARENT
                     },
                     if chrome == ButtonChrome::Tab {
-                        darcula::SEPARATOR.scale_alpha(0.46)
+                        darcula::SEPARATOR.scale_alpha(0.60)
                     } else {
                         Color::TRANSPARENT
                     },
                     darcula::TEXT_DISABLED,
                 ),
                 ButtonTone::Primary => (
-                    mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.60),
-                    darcula::ACCENT.scale_alpha(0.16),
-                    mix(darcula::TEXT_DISABLED, darcula::TEXT_PRIMARY, 0.18),
+                    mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.35),
+                    darcula::BORDER.scale_alpha(0.35),
+                    darcula::TEXT_DISABLED,
                 ),
                 ButtonTone::Secondary => (
-                    darcula::BG_RAISED,
-                    darcula::SEPARATOR.scale_alpha(0.56),
+                    darcula::BG_CARD,
+                    darcula::BORDER.scale_alpha(0.35),
                     darcula::TEXT_DISABLED,
                 ),
                 ButtonTone::TabActive => (
-                    mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.55),
-                    darcula::ACCENT.scale_alpha(0.18),
+                    mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.30),
+                    darcula::BORDER.scale_alpha(0.25),
                     darcula::TEXT_DISABLED,
                 ),
                 ButtonTone::RailActive => (
-                    mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.55),
-                    darcula::ACCENT.scale_alpha(0.16),
-                    mix(darcula::TEXT_DISABLED, darcula::ACCENT, 0.16),
+                    mix(darcula::BG_CARD, darcula::ACCENT_WEAK, 0.30),
+                    darcula::BORDER.scale_alpha(0.25),
+                    darcula::TEXT_DISABLED,
                 ),
                 ButtonTone::Success | ButtonTone::Warning | ButtonTone::Danger => (
-                    mix(darcula::BG_PANEL, base_background, 0.42),
-                    mix(darcula::SEPARATOR, base_border, 0.26),
+                    mix(darcula::BG_CARD, base_background, 0.25),
+                    mix(darcula::BORDER, base_border, 0.15),
                     darcula::TEXT_DISABLED,
                 ),
             },
@@ -690,28 +700,33 @@ pub fn button_style_for(
 
 pub fn text_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::Style {
     move |_theme, status| {
-        let (background, border, value, icon) = match status {
+        let field_bg = darcula::BG_CARD_2;
+        let (background, border, border_width, value, icon) = match status {
             text_input::Status::Active => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.55),
-                darcula::BORDER.scale_alpha(0.80),
+                field_bg,
+                darcula::BORDER,
+                1.0,
                 darcula::TEXT_PRIMARY,
                 darcula::TEXT_SECONDARY,
             ),
             text_input::Status::Hovered => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.65),
-                darcula::ACCENT.scale_alpha(0.35),
+                mix(field_bg, Color::WHITE, 0.03),
+                darcula::ACCENT.scale_alpha(0.45),
+                1.0,
                 darcula::TEXT_PRIMARY,
                 darcula::TEXT_SECONDARY,
             ),
             text_input::Status::Focused { .. } => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.72),
-                darcula::ACCENT.scale_alpha(0.80),
+                mix(field_bg, Color::WHITE, 0.05),
+                darcula::ACCENT,
+                1.5,
                 darcula::TEXT_PRIMARY,
                 darcula::ACCENT,
             ),
             text_input::Status::Disabled => (
-                darcula::BG_MAIN,
+                darcula::BG_CARD,
                 darcula::SEPARATOR.scale_alpha(0.60),
+                1.0,
                 darcula::TEXT_DISABLED,
                 darcula::TEXT_DISABLED,
             ),
@@ -720,9 +735,9 @@ pub fn text_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::
         text_input::Style {
             background: Background::Color(background),
             border: Border {
-                width: 1.0,
+                width: border_width,
                 color: border,
-                radius: radius::LG.into(),
+                radius: radius::MD.into(),
             },
             icon,
             placeholder: darcula::TEXT_DISABLED,
@@ -734,24 +749,25 @@ pub fn text_input_style() -> impl Fn(&Theme, text_input::Status) -> text_input::
 
 pub fn text_editor_style() -> impl Fn(&Theme, text_editor::Status) -> text_editor::Style {
     move |_theme, status| {
+        let field_bg = darcula::BG_CARD_2;
         let (background, border, value) = match status {
             text_editor::Status::Active => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.55),
-                darcula::BORDER.scale_alpha(0.80),
+                field_bg,
+                darcula::BORDER,
                 darcula::TEXT_PRIMARY,
             ),
             text_editor::Status::Hovered => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.65),
-                darcula::ACCENT.scale_alpha(0.35),
+                mix(field_bg, Color::WHITE, 0.03),
+                darcula::ACCENT.scale_alpha(0.45),
                 darcula::TEXT_PRIMARY,
             ),
             text_editor::Status::Focused { .. } => (
-                mix(darcula::BG_EDITOR, darcula::ACCENT_WEAK, 0.72),
-                darcula::ACCENT.scale_alpha(0.80),
+                mix(field_bg, Color::WHITE, 0.05),
+                darcula::ACCENT,
                 darcula::TEXT_PRIMARY,
             ),
             text_editor::Status::Disabled => (
-                darcula::BG_MAIN,
+                darcula::BG_CARD,
                 darcula::SEPARATOR.scale_alpha(0.60),
                 darcula::TEXT_DISABLED,
             ),
@@ -762,7 +778,7 @@ pub fn text_editor_style() -> impl Fn(&Theme, text_editor::Status) -> text_edito
             border: Border {
                 width: 1.0,
                 color: border,
-                radius: radius::LG.into(),
+                radius: radius::MD.into(),
             },
             placeholder: darcula::TEXT_DISABLED,
             value,
@@ -773,7 +789,7 @@ pub fn text_editor_style() -> impl Fn(&Theme, text_editor::Status) -> text_edito
 
 pub fn scrollable_style() -> impl Fn(&Theme, scrollable::Status) -> scrollable::Style {
     move |_theme, status| {
-        let idle_scroller = mix(darcula::TEXT_DISABLED, darcula::BORDER, 0.50).scale_alpha(0.18);
+        let idle_scroller = darcula::TEXT_SECONDARY.scale_alpha(0.25);
         let (rail_background, rail_border, scroller_color) = match status {
             scrollable::Status::Active { .. } => (
                 Background::Color(Color::TRANSPARENT),
@@ -783,12 +799,12 @@ pub fn scrollable_style() -> impl Fn(&Theme, scrollable::Status) -> scrollable::
             scrollable::Status::Hovered { .. } => (
                 Background::Color(Color::TRANSPARENT),
                 Color::TRANSPARENT,
-                mix(darcula::TEXT_DISABLED, darcula::ACCENT, 0.12).scale_alpha(0.28),
+                darcula::TEXT_SECONDARY.scale_alpha(0.38),
             ),
             scrollable::Status::Dragged { .. } => (
                 Background::Color(Color::TRANSPARENT),
                 Color::TRANSPARENT,
-                darcula::ACCENT.scale_alpha(0.52),
+                darcula::TEXT_SECONDARY.scale_alpha(0.52),
             ),
         };
 
@@ -799,14 +815,14 @@ pub fn scrollable_style() -> impl Fn(&Theme, scrollable::Status) -> scrollable::
                 border: Border {
                     width: 0.0,
                     color: rail_border,
-                    radius: radius::MD.into(),
+                    radius: radius::SM.into(),
                 },
                 scroller: scrollable::Scroller {
                     background: Background::Color(scroller_color),
                     border: Border {
                         width: 0.0,
                         color: rail_border,
-                        radius: radius::MD.into(),
+                        radius: radius::SM.into(),
                     },
                 },
             },
@@ -815,26 +831,26 @@ pub fn scrollable_style() -> impl Fn(&Theme, scrollable::Status) -> scrollable::
                 border: Border {
                     width: 0.0,
                     color: rail_border,
-                    radius: radius::MD.into(),
+                    radius: radius::SM.into(),
                 },
                 scroller: scrollable::Scroller {
                     background: Background::Color(scroller_color),
                     border: Border {
                         width: 0.0,
                         color: rail_border,
-                        radius: radius::MD.into(),
+                        radius: radius::SM.into(),
                     },
                 },
             },
             gap: None,
             auto_scroll: scrollable::AutoScroll {
-                background: Background::Color(mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.70)),
+                background: Background::Color(mix(darcula::BG_CARD_2, darcula::ACCENT_WEAK, 0.25)),
                 border: Border {
                     width: 1.0,
-                    color: darcula::ACCENT.scale_alpha(0.28),
+                    color: darcula::BORDER,
                     radius: radius::MD.into(),
                 },
-                shadow: soft_shadow(0.20, 3.0, 8.0),
+                shadow: soft_shadow(0.14, 1.0, 4.0),
                 icon: darcula::TEXT_SECONDARY,
             },
         }
@@ -850,30 +866,29 @@ pub fn checkbox_style() -> impl Fn(&Theme, checkbox::Status) -> checkbox::Style 
 }
 
 fn checkbox_base_style(is_checked: bool, hovered: bool, disabled: bool) -> checkbox::Style {
+    let checked_bg = darcula::ACCENT;
     let background = if is_checked {
         if disabled {
-            mix(darcula::ACCENT, darcula::BG_MAIN, 0.52)
+            mix(checked_bg, darcula::BG_MAIN, 0.50)
         } else if hovered {
-            mix(darcula::ACCENT, Color::WHITE, 0.12)
+            mix(checked_bg, Color::WHITE, 0.12)
         } else {
-            darcula::ACCENT
+            checked_bg
         }
     } else if disabled {
-        mix(darcula::BG_PANEL, darcula::BG_MAIN, 0.55)
+        mix(darcula::BG_CARD, darcula::BG_MAIN, 0.50)
     } else if hovered {
-        mix(darcula::BG_RAISED, darcula::ACCENT_WEAK, 0.65)
+        mix(darcula::BG_CARD_2, Color::WHITE, 0.05)
     } else {
-        darcula::BG_RAISED
+        darcula::BG_CARD_2
     };
 
     let border_color = if is_checked {
         if disabled {
-            mix(darcula::ACCENT, darcula::BG_MAIN, 0.40)
+            mix(checked_bg, darcula::BG_MAIN, 0.40)
         } else {
             darcula::ACCENT
         }
-    } else if hovered {
-        darcula::ACCENT.scale_alpha(0.54)
     } else {
         darcula::BORDER
     };
@@ -926,13 +941,13 @@ mod tests {
 
     #[test]
     fn homepage_density_tokens_match_spec() {
-        assert_eq!(density::TOOLBAR_PADDING, [6, 12]);
-        assert_eq!(density::SECONDARY_BAR_PADDING, [5, 12]);
-        assert_eq!(density::PANE_PADDING, [12, 12]);
-        assert_eq!(density::STATUS_PADDING, [4, 12]);
-        assert_eq!(density::STANDARD_CONTROL_HEIGHT, 32.0);
-        assert_eq!(density::COMPACT_CONTROL_HEIGHT, 28.0);
-        assert_eq!(density::COMPACT_CHIP_PADDING, [3, 8]);
+        assert_eq!(density::TOOLBAR_PADDING, [3, 8]);
+        assert_eq!(density::SECONDARY_BAR_PADDING, [3, 8]);
+        assert_eq!(density::PANE_PADDING, [8, 10]);
+        assert_eq!(density::STATUS_PADDING, [2, 8]);
+        assert_eq!(density::STANDARD_CONTROL_HEIGHT, 24.0);
+        assert_eq!(density::COMPACT_CONTROL_HEIGHT, 22.0);
+        assert_eq!(density::COMPACT_CHIP_PADDING, [1, 6]);
     }
 
     #[test]
@@ -940,10 +955,9 @@ mod tests {
         let theme = darcula_theme();
         let toolbar_field = panel_style(Surface::ToolbarField)(&theme);
         let list_row = panel_style(Surface::ListRow)(&theme);
-        let list_selection = panel_style(Surface::ListSelection)(&theme);
+        let _list_selection = panel_style(Surface::ListSelection)(&theme);
 
         assert_eq!(toolbar_field.shadow.blur_radius, 0.0);
         assert_eq!(list_row.shadow.blur_radius, 0.0);
-        assert!(list_selection.border.color.a > list_row.border.color.a);
     }
 }

@@ -42,6 +42,13 @@ rfd = "0.15"
 # Syntax highlighting
 syntect = "5.3"
 
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Directories
+dirs-next = "2"
+
 # Testing
 tempfile = "3"
 criterion = "0.5"

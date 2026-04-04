@@ -7,6 +7,7 @@ use std::process::Command;
 
 /// A Git tag
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct TagInfo {
     pub name: String,
     pub target: String,
@@ -16,18 +17,6 @@ pub struct TagInfo {
     pub tagged_time: Option<i64>,
 }
 
-impl Default for TagInfo {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            target: String::new(),
-            message: None,
-            tagger_name: None,
-            tagger_email: None,
-            tagged_time: None,
-        }
-    }
-}
 
 /// List all tags with full metadata.
 pub fn list_tags(repo: &Repository) -> Result<Vec<TagInfo>, GitError> {
@@ -206,5 +195,68 @@ pub fn delete_tag(repo: &Repository, name: &str) -> Result<(), GitError> {
     }
 
     info!("Tag '{}' deleted successfully", name);
+    Ok(())
+}
+
+/// Push a tag to a remote
+pub fn push_tag(repo: &Repository, tag_name: &str, remote: &str) -> Result<(), GitError> {
+    info!("Pushing tag '{}' to remote '{}'", tag_name, remote);
+
+    let repo_path = repo.command_cwd();
+    let refspec = format!("refs/tags/{}", tag_name);
+
+    let output = Command::new("git")
+        .args(["push", remote, &refspec])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "push_tag".to_string(),
+            details: format!("Failed to execute git push: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::RemoteFailed {
+            remote: remote.to_string(),
+            details: format!(
+                "git push tag failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    info!("Tag '{}' pushed to '{}'", tag_name, remote);
+    Ok(())
+}
+
+/// Delete a tag from a remote
+pub fn delete_remote_tag(repo: &Repository, tag_name: &str, remote: &str) -> Result<(), GitError> {
+    info!(
+        "Deleting tag '{}' from remote '{}'",
+        tag_name, remote
+    );
+
+    let repo_path = repo.command_cwd();
+    let refspec = format!(":refs/tags/{}", tag_name);
+
+    let output = Command::new("git")
+        .args(["push", remote, &refspec])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "delete_remote_tag".to_string(),
+            details: format!("Failed to execute git push: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::RemoteFailed {
+            remote: remote.to_string(),
+            details: format!(
+                "git push --delete tag failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    info!("Tag '{}' deleted from remote '{}'", tag_name, remote);
     Ok(())
 }

@@ -3,29 +3,72 @@
 use crate::theme;
 use crate::widgets::{self, diff_file_header, scrollable, syntax_highlighting};
 use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
-use iced::widget::{container, text, Column, Container, Row, Space, Text};
+use iced::widget::{self, container, text, Column, Container, Row, Space, Text};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length, Theme};
 const MARKER_WIDTH: f32 = 4.0;
 const GUTTER_WIDTH: f32 = 82.0;
 const PREFIX_WIDTH: f32 = 12.0;
 const SEPARATOR_WIDTH: f32 = 1.0;
+const DIFF_ROW_HEIGHT: f32 = 22.0;
+const HUNK_HEADER_HEIGHT: f32 = 22.0;
 
-pub struct DiffViewer<'a> {
+pub struct DiffViewer<'a, Message> {
     diff: &'a Diff,
+    on_stage_hunk: Option<Box<dyn Fn(String, usize) -> Message + 'a>>,
+    on_unstage_hunk: Option<Box<dyn Fn(String, usize) -> Message + 'a>>,
+    blame_entries: Option<&'a [git_core::blame::BlameEntry]>,
+    on_blame_click: Option<Box<dyn Fn(String) -> Message + 'a>>,
 }
 
-impl<'a> DiffViewer<'a> {
+impl<'a, Message: Clone + 'static> DiffViewer<'a, Message> {
     pub fn new(diff: &'a Diff) -> Self {
-        Self { diff }
+        Self {
+            diff,
+            on_stage_hunk: None,
+            on_unstage_hunk: None,
+            blame_entries: None,
+            on_blame_click: None,
+        }
     }
 
-    pub fn view<Message: Clone + 'static>(&self) -> Element<'a, Message> {
+    /// Set handler for "Stage Hunk" button. Called with (file_path, hunk_index).
+    pub fn with_stage_hunk_handler(
+        mut self,
+        handler: impl Fn(String, usize) -> Message + 'a,
+    ) -> Self {
+        self.on_stage_hunk = Some(Box::new(handler));
+        self
+    }
+
+    /// Set handler for "Unstage Hunk" button. Called with (file_path, hunk_index).
+    pub fn with_unstage_hunk_handler(
+        mut self,
+        handler: impl Fn(String, usize) -> Message + 'a,
+    ) -> Self {
+        self.on_unstage_hunk = Some(Box::new(handler));
+        self
+    }
+
+    /// Set blame annotations to display in a gutter column
+    pub fn with_blame(mut self, entries: &'a [git_core::blame::BlameEntry]) -> Self {
+        self.blame_entries = Some(entries);
+        self
+    }
+
+    /// Set handler for clicking a blame gutter entry (receives commit ID)
+    pub fn with_blame_click_handler(
+        mut self,
+        handler: impl Fn(String) -> Message + 'a,
+    ) -> Self {
+        self.on_blame_click = Some(Box::new(handler));
+        self
+    }
+
+    pub fn view(&self) -> Element<'a, Message> {
         if self.diff.files.is_empty() {
-            return widgets::panel_empty_state(
-                "差异",
+            return widgets::panel_empty_state_compact(
                 "当前没有可显示的 diff",
                 "选择文件或比较提交后查看差异内容。",
-                None,
             );
         }
 
@@ -33,10 +76,86 @@ impl<'a> DiffViewer<'a> {
         let mut content = Column::new().spacing(theme::spacing::XS);
 
         for file_diff in &self.diff.files {
-            content = content.push(render_file_diff(file_diff, show_file_header));
+            content = content.push(self.render_file_diff_with_actions(file_diff, show_file_header));
         }
 
-        scrollable::styled(content).height(Length::Fill).into()
+        scrollable::styled(content)
+            .id(widget::Id::new("diff-scroll"))
+            .height(Length::Fill)
+            .into()
+    }
+
+    fn render_file_diff_with_actions(
+        &self,
+        file_diff: &'a FileDiff,
+        show_header: bool,
+    ) -> Element<'a, Message> {
+        let syntax_highlighter =
+            syntax_highlighting::FileSyntaxHighlighter::for_file_diff(file_diff);
+        let editor = self.render_editor_with_hunk_actions(file_diff, syntax_highlighter);
+        let meta = diff_file_header::DiffFileHeaderMeta::from_file_diff(file_diff);
+
+        if show_header {
+            Column::new()
+                .spacing(theme::spacing::XS)
+                .push(diff_file_header::view::<Message>(
+                    meta,
+                    file_diff.hunks.len(),
+                    file_diff.additions,
+                    file_diff.deletions,
+                ))
+                .push(editor)
+                .into()
+        } else {
+            editor
+        }
+    }
+
+    fn render_editor_with_hunk_actions(
+        &self,
+        file_diff: &'a FileDiff,
+        syntax_highlighter: syntax_highlighting::FileSyntaxHighlighter,
+    ) -> Element<'a, Message> {
+        let mut editor_lines = Column::new().spacing(0).width(Length::Shrink);
+
+        if file_diff.hunks.is_empty() {
+            editor_lines = editor_lines.push(render_empty_editor_row());
+        }
+
+        for (index, hunk) in file_diff.hunks.iter().enumerate() {
+            if index > 0 {
+                editor_lines = editor_lines.push(editor_divider());
+            }
+
+            // Build hunk action buttons
+            let stage_msg = self
+                .on_stage_hunk
+                .as_ref()
+                .map(|f| f(file_diff.new_path.clone().or_else(|| file_diff.old_path.clone()).unwrap_or_default(), index));
+            let unstage_msg = self
+                .on_unstage_hunk
+                .as_ref()
+                .map(|f| f(file_diff.new_path.clone().or_else(|| file_diff.old_path.clone()).unwrap_or_default(), index));
+
+            editor_lines =
+                editor_lines.push(render_hunk_header_with_actions(hunk, stage_msg, unstage_msg));
+
+            let mut line_highlighter = syntax_highlighter.start_hunk();
+            for line in &hunk.lines {
+                editor_lines =
+                    editor_lines.push(render_unified_line(line, &mut line_highlighter));
+            }
+        }
+
+        Container::new(
+            scrollable::styled_editor_horizontal(
+                Container::new(editor_lines).width(editor_content_width()),
+            )
+            .width(Length::Fill),
+        )
+        .width(Length::Fill)
+        .style(editor_surface_style())
+        .into()
     }
 }
 
@@ -92,15 +211,37 @@ fn render_editor_surface<'a, Message: Clone + 'static>(
     }
 
     Container::new(
-        scrollable::styled_editor_horizontal(Container::new(editor_lines).width(Length::Shrink))
-            .width(Length::Fill),
+        scrollable::styled_editor_horizontal(
+            Container::new(editor_lines).width(editor_content_width()),
+        )
+        .width(Length::Fill),
     )
     .width(Length::Fill)
     .style(editor_surface_style())
     .into()
 }
 
+fn editor_content_width() -> Length {
+    Length::Shrink
+}
+
+fn editor_row_width() -> Length {
+    Length::Shrink
+}
+
+fn code_cell_width() -> Length {
+    Length::Shrink
+}
+
 fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'static, Message> {
+    render_hunk_header_with_actions::<Message>(hunk, None, None)
+}
+
+fn render_hunk_header_with_actions<Message: Clone + 'static>(
+    hunk: &DiffHunk,
+    stage_msg: Option<Message>,
+    unstage_msg: Option<Message>,
+) -> Element<'static, Message> {
     let header = if hunk.header.is_empty() {
         format!(
             "@@ -{},{} +{},{} @@",
@@ -110,21 +251,56 @@ fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'sta
         hunk.header.clone()
     };
 
+    let mut header_row = Row::new()
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .push(
+            Text::new(header)
+                .size(10)
+                .font(Font::MONOSPACE)
+                .wrapping(text::Wrapping::None)
+                .color(theme::darcula::TEXT_SECONDARY),
+        );
+
+    // Add stage/unstage hunk buttons
+    if let Some(msg) = stage_msg {
+        header_row = header_row.push(
+            iced::widget::Button::new(
+                Text::new("暂存区块")
+                    .size(9)
+                    .color(theme::darcula::STATUS_ADDED),
+            )
+            .style(theme::button_style(theme::ButtonTone::Ghost))
+            .padding([1, 6])
+            .on_press(msg),
+        );
+    }
+
+    if let Some(msg) = unstage_msg {
+        header_row = header_row.push(
+            iced::widget::Button::new(
+                Text::new("取消暂存")
+                    .size(9)
+                    .color(theme::darcula::STATUS_DELETED),
+            )
+            .style(theme::button_style(theme::ButtonTone::Ghost))
+            .padding([1, 6])
+            .on_press(msg),
+        );
+    }
+
     Row::new()
         .spacing(0)
+        .align_y(Alignment::Center)
+        .width(editor_row_width())
         .push(marker_bar(theme::darcula::SEPARATOR.scale_alpha(0.82)))
         .push(gutter_placeholder())
         .push(vertical_separator())
         .push(
-            Container::new(
-                Text::new(header)
-                    .size(10)
-                    .font(Font::MONOSPACE)
-                    .wrapping(text::Wrapping::None)
-                    .color(theme::darcula::TEXT_SECONDARY),
-            )
-            .padding([4, 10])
-            .style(hunk_header_style()),
+            Container::new(header_row)
+                .padding([2, 8])
+                .height(Length::Fixed(HUNK_HEADER_HEIGHT))
+                .style(hunk_header_style()),
         )
         .into()
 }
@@ -138,6 +314,8 @@ fn render_unified_line<Message: Clone + 'static>(
 
     Row::new()
         .spacing(0)
+        .align_y(Alignment::Center)
+        .width(editor_row_width())
         .push(marker_bar(marker_color(&line.origin)))
         .push(
             Container::new(
@@ -159,7 +337,8 @@ fn render_unified_line<Message: Clone + 'static>(
                             .width(Length::Fixed(28.0)),
                     ),
             )
-            .padding([1, 8])
+            .padding([0, 8])
+            .height(Length::Fixed(DIFF_ROW_HEIGHT))
             .width(Length::Fixed(GUTTER_WIDTH))
             .style(simple_fill_style(gutter_background)),
         )
@@ -168,7 +347,8 @@ fn render_unified_line<Message: Clone + 'static>(
             Container::new(
                 Row::new()
                     .spacing(6)
-                    .align_y(Alignment::Start)
+                    .align_y(Alignment::Center)
+                    .width(code_cell_width())
                     .push(
                         Text::new(prefix_for_origin(&line.origin))
                             .size(11)
@@ -176,9 +356,11 @@ fn render_unified_line<Message: Clone + 'static>(
                             .color(prefix_color(&line.origin))
                             .width(Length::Fixed(PREFIX_WIDTH)),
                     )
-                    .push(line_highlighter.view(&line.origin, &line.content)),
+                    .push(line_highlighter.view_diff_code(&line.origin, &line.content)),
             )
-            .padding([1, 10])
+            .padding([0, 10])
+            .height(Length::Fixed(DIFF_ROW_HEIGHT))
+            .width(code_cell_width())
             .style(simple_fill_style(code_background)),
         )
         .into()
@@ -187,6 +369,7 @@ fn render_unified_line<Message: Clone + 'static>(
 fn render_empty_editor_row<Message: Clone + 'static>() -> Element<'static, Message> {
     Row::new()
         .spacing(0)
+        .width(editor_row_width())
         .push(marker_bar(Color::TRANSPARENT))
         .push(gutter_placeholder())
         .push(vertical_separator())
@@ -197,6 +380,7 @@ fn render_empty_editor_row<Message: Clone + 'static>() -> Element<'static, Messa
                     .color(theme::darcula::TEXT_SECONDARY),
             )
             .padding([8, 10])
+            .width(code_cell_width())
             .style(simple_fill_style(theme::darcula::BG_EDITOR)),
         )
         .into()
@@ -271,11 +455,18 @@ fn code_background(origin: &DiffLineOrigin) -> Color {
     }
 }
 
+// IDEA-style hunk divider: more prominent with accent color and shadow
 fn editor_divider<Message: Clone + 'static>() -> Element<'static, Message> {
-    Container::new(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-        .style(simple_fill_style(
-            theme::darcula::SEPARATOR.scale_alpha(0.72),
-        ))
+    // Add vertical spacing before divider and use accent color for better visibility
+    Column::new()
+        .spacing(theme::spacing::XS)
+        .width(Length::Fill)
+        .push(Space::new().height(Length::Fixed(4.0)))
+        .push(
+            Container::new(Space::new().width(Length::Fill).height(Length::Fixed(2.0)))
+                .style(divider_style()),
+        )
+        .push(Space::new().height(Length::Fixed(theme::spacing::XS)))
         .into()
 }
 
@@ -332,13 +523,19 @@ fn editor_surface_style() -> impl Fn(&Theme) -> container::Style {
     }
 }
 
+// IDEA-style hunk header: more prominent with border and better contrast
 fn hunk_header_style() -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(mix_colors(
             theme::darcula::BG_EDITOR,
             theme::darcula::ACCENT_WEAK,
-            0.36,
+            0.45,
         ))),
+        border: Border {
+            width: 1.0,
+            color: theme::darcula::ACCENT.scale_alpha(0.25),
+            radius: theme::radius::SM.into(),
+        },
         ..Default::default()
     }
 }
@@ -347,5 +544,42 @@ fn simple_fill_style(color: Color) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(color)),
         ..Default::default()
+    }
+}
+
+// IDEA-style divider with accent color for better hunk separation
+fn divider_style() -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: Some(Background::Color(
+            theme::darcula::ACCENT_WEAK.scale_alpha(0.8),
+        )),
+        border: Border {
+            width: 0.0,
+            color: Color::TRANSPARENT,
+            radius: 0.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: theme::darcula::ACCENT.scale_alpha(0.15),
+            offset: iced::Vector::new(0.0, 1.0),
+            blur_radius: 4.0,
+        },
+        ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{code_cell_width, editor_content_width, editor_row_width};
+    use iced::Length;
+
+    #[test]
+    fn unified_editor_content_keeps_intrinsic_width_inside_horizontal_scroll() {
+        assert_eq!(editor_content_width(), Length::Shrink);
+    }
+
+    #[test]
+    fn unified_diff_rows_keep_intrinsic_width_to_avoid_code_overlap() {
+        assert_eq!(editor_row_width(), Length::Shrink);
+        assert_eq!(code_cell_width(), Length::Shrink);
     }
 }

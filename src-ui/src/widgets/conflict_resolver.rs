@@ -573,12 +573,10 @@ impl ConflictResolver {
             .filter_map(|line| line.theirs_line.clone())
             .collect();
 
-        let mut result = Vec::with_capacity(ours_lines.len() + theirs_lines.len() + 3);
-        result.push("<<<<<<< 选择左侧".to_string());
+        // IDEA-style: no raw markers, just show the content
+        let mut result = Vec::with_capacity(ours_lines.len() + theirs_lines.len());
         result.extend(ours_lines);
-        result.push("=======".to_string());
         result.extend(theirs_lines);
-        result.push(">>>>>>> 选择右侧".to_string());
         result
     }
 }
@@ -674,9 +672,10 @@ fn build_result_lines(hunk: &ConflictHunk, resolution: Option<ResolutionOption>)
                 .filter_map(|line| line.theirs_line.clone())
                 .collect();
             let mut result = Vec::new();
+            // IDEA-style: show "未解决冲突" instead of raw markers when unresolved
             result.push(PaneLine {
                 number: None,
-                text: "<<<<<<< 选择左侧".to_string(),
+                text: "── 未解决冲突 ──".to_string(),
                 tone: PaneTone::Marker,
             });
             for text in ours_lines {
@@ -688,11 +687,6 @@ fn build_result_lines(hunk: &ConflictHunk, resolution: Option<ResolutionOption>)
                     tone: PaneTone::Ours,
                 });
             }
-            result.push(PaneLine {
-                number: None,
-                text: "=======".to_string(),
-                tone: PaneTone::Marker,
-            });
             for text in theirs_lines {
                 let current = line_number;
                 line_number += 1;
@@ -702,11 +696,6 @@ fn build_result_lines(hunk: &ConflictHunk, resolution: Option<ResolutionOption>)
                     tone: PaneTone::Theirs,
                 });
             }
-            result.push(PaneLine {
-                number: None,
-                text: ">>>>>>> 选择右侧".to_string(),
-                tone: PaneTone::Marker,
-            });
             result
         }
     }
@@ -767,9 +756,10 @@ fn build_column_header(
             .push(
                 Container::new(
                     Text::new(match kind {
-                        EditorColumnKind::Ours => "<<",
-                        EditorColumnKind::Result => "<>",
-                        EditorColumnKind::Theirs => ">>",
+                        // IDEA-style: more descriptive column labels
+                        EditorColumnKind::Ours => "您的",
+                        EditorColumnKind::Result => "结果",
+                        EditorColumnKind::Theirs => "他们的",
                     })
                     .size(11)
                     .color(theme::darcula::TEXT_PRIMARY),

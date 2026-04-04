@@ -280,7 +280,7 @@ fn build_remote_row(remote: &RemoteInfo, is_selected: bool) -> Element<'_, Remot
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
     )
-    .padding([14, 16])
+    .padding([10, 12])
     .style(theme::panel_style(if is_selected {
         Surface::Selection
     } else {
@@ -346,7 +346,7 @@ fn build_remotes_list(state: &RemoteDialogState) -> Element<'_, RemoteDialogMess
             )
             .push(scrollable::styled(list).height(Length::Fixed(150.0))),
     )
-    .padding([16, 16])
+    .padding([12, 12])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -355,11 +355,6 @@ fn build_credential_inputs(state: &RemoteDialogState) -> Element<'_, RemoteDialo
     Container::new(
         Column::new()
             .spacing(theme::spacing::SM)
-            .push(widgets::section_header(
-                "认证",
-                "远程凭据",
-                "默认优先使用系统或 Git 凭据助手里的认证信息；如需覆盖，再手动填写用户名和密码。",
-            ))
             .push(text_input::styled(
                 "用户名（可选覆盖）",
                 &state.username,
@@ -371,7 +366,7 @@ fn build_credential_inputs(state: &RemoteDialogState) -> Element<'_, RemoteDialo
                 RemoteDialogMessage::SetPassword,
             )),
     )
-    .padding([16, 16])
+    .padding([12, 12])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -392,11 +387,6 @@ fn build_branch_scope_panel(state: &RemoteDialogState) -> Element<'_, RemoteDial
     Container::new(
         Column::new()
             .spacing(theme::spacing::SM)
-            .push(widgets::section_header(
-                "范围",
-                "当前分支上下文",
-                "远程同步默认围绕当前分支和它的上游关系展开。",
-            ))
             .push(
                 Row::new()
                     .spacing(theme::spacing::XS)
@@ -414,7 +404,7 @@ fn build_branch_scope_panel(state: &RemoteDialogState) -> Element<'_, RemoteDial
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
     )
-    .padding([16, 16])
+    .padding([12, 12])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -455,12 +445,24 @@ fn build_action_buttons(state: &RemoteDialogState) -> Element<'_, RemoteDialogMe
 
 /// Build the remote dialog view.
 pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
-    let status_panel = if state.is_loading {
-        Some(build_status_panel::<RemoteDialogMessage>(
-            "处理中",
-            "正在与远程仓库交互，请稍候。",
-            BadgeTone::Neutral,
-        ))
+    // IDEA-style: compact loading indicator when processing
+    let status_panel: Option<Element<'_, RemoteDialogMessage>> = if state.is_loading {
+        Some(
+            Container::new(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .align_y(Alignment::Center)
+                    .push(widgets::loading_spinner::<RemoteDialogMessage>())
+                    .push(
+                        Text::new("正在与远程仓库交互...")
+                            .size(12)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    ),
+            )
+            .padding([8, 12])
+            .style(theme::panel_style(Surface::Raised))
+            .into(),
+        )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<RemoteDialogMessage>(
             "失败",
@@ -479,56 +481,37 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
             "当前仓库还没有配置远程；先添加 remote，再执行同步操作。",
             BadgeTone::Neutral,
         ))
-    } else if let Some(remote) = state.selected_remote.as_ref() {
-        Some(build_status_panel::<RemoteDialogMessage>(
-            "已选择",
-            if let Some(branch_name) = state.current_branch_name.as_ref() {
-                format!(
-                    "当前会围绕分支 {branch_name} 与远程 {remote} 执行同步；留空时会优先尝试系统或 Git 已保存的凭据。"
-                )
-            } else {
-                format!("当前远程为 {remote}；留空时会优先尝试系统或 Git 已保存的凭据。")
-            },
-            BadgeTone::Accent,
-        ))
     } else {
-        Some(build_status_panel::<RemoteDialogMessage>(
-            "等待选择",
-            "请选择一个远程仓库后再执行远程操作。",
-            BadgeTone::Neutral,
-        ))
+        None
     };
 
-    let overview_cards = Row::new()
-        .spacing(theme::spacing::MD)
-        .push(widgets::stat_card(
-            "远程数量",
-            state.remotes.len().to_string(),
-            "仅展示当前分支的同步目标",
-        ))
-        .push(widgets::stat_card(
-            "当前分支",
-            state.current_branch_display.clone(),
-            "默认围绕当前分支与上游继续操作",
-        ))
-        .push(widgets::stat_card(
-            "同步状态",
-            state
-                .current_branch_sync_hint
-                .clone()
-                .unwrap_or_else(|| "待确认".to_string()),
-            "fetch / pull / push 结果将在此更新",
-        ));
+    let toolbar = Container::new(
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
+            .push(Text::new("远程").size(16))
+            .push(widgets::info_chip::<RemoteDialogMessage>(
+                format!("远程 {}", state.remotes.len()),
+                BadgeTone::Neutral,
+            ))
+            .push(widgets::info_chip::<RemoteDialogMessage>(
+                state.current_branch_display.clone(),
+                BadgeTone::Accent,
+            ))
+            .push_maybe(
+                state
+                    .selected_remote
+                    .as_ref()
+                    .map(|remote| widgets::info_chip::<RemoteDialogMessage>(format!("已选 {remote}"), BadgeTone::Success)),
+            ),
+    )
+    .padding([10, 12])
+    .style(theme::panel_style(Surface::Panel));
 
     let content = if state.remotes.is_empty() && !state.is_loading && state.error.is_none() {
         Column::new()
             .spacing(theme::spacing::MD)
-            .push(widgets::section_header(
-                "远程",
-                "远程操作",
-                "集中查看 remotes、认证信息和常见同步动作。",
-            ))
-            .push(overview_cards)
+            .push(toolbar)
             .push(build_branch_scope_panel(state))
             .push_maybe(status_panel)
             .push(widgets::panel_empty_state(
@@ -540,12 +523,7 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
     } else {
         Column::new()
             .spacing(theme::spacing::MD)
-            .push(widgets::section_header(
-                "远程",
-                "远程操作",
-                "集中查看 remotes、认证信息和常见同步动作。",
-            ))
-            .push(overview_cards)
+            .push(toolbar)
             .push(build_branch_scope_panel(state))
             .push_maybe(status_panel)
             .push(build_remotes_list(state))
@@ -554,7 +532,7 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
     };
 
     Container::new(scrollable::styled(content).height(Length::Fill))
-        .padding([16, 18])
+        .padding([10, 12])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Panel))

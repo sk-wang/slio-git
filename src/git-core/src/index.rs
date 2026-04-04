@@ -27,6 +27,10 @@ pub struct Change {
     pub unstaged: bool,
     pub old_oid: Option<String>,
     pub new_oid: Option<String>,
+    /// Whether this change is a submodule entry
+    pub is_submodule: bool,
+    /// Commit range summary for submodule changes (e.g., "abc1234..def5678")
+    pub submodule_summary: Option<String>,
 }
 
 /// An entry in the index
@@ -280,13 +284,24 @@ pub fn get_status(repo: &Repository) -> Result<Vec<Change>, GitError> {
             continue;
         }
 
+        let file_path = entry.path().unwrap_or("").to_string();
+        let is_submodule = entry.status().intersects(git2::Status::WT_TYPECHANGE)
+            || crate::submodule::is_submodule(repo, &file_path);
+        let submodule_summary = if is_submodule {
+            crate::submodule::submodule_summary(repo, &file_path)
+        } else {
+            None
+        };
+
         changes.push(Change {
-            path: entry.path().unwrap_or("").to_string(),
+            path: file_path,
             status: convert_status(status),
             staged: has_staged_status(status),
             unstaged: has_unstaged_status(status),
             old_oid: None,
             new_oid: None,
+            is_submodule,
+            submodule_summary,
         });
     }
 
@@ -777,6 +792,65 @@ fn re_stage_other_hunks(
         if i != skip_hunk_index {
             let patch = generate_hunk_patch(file_path, hunk)?;
             apply_patch_cached(repo, &patch)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Discard changes for a file: reset both index and worktree to HEAD.
+/// For untracked files, removes the file from the working directory.
+pub fn discard_file(repo: &Repository, file_path: &Path) -> Result<(), GitError> {
+    use std::process::Command;
+
+    let repo_path = repo.command_cwd();
+    let full_path = repo_path.join(file_path);
+
+    // Check if file is tracked
+    let tracked = {
+        let repo_lock = repo.inner.read().unwrap();
+        repo_lock
+            .revparse_single("HEAD")
+            .ok()
+            .and_then(|obj| obj.peel_to_commit().ok())
+            .and_then(|commit| commit.tree().ok())
+            .map(|tree| tree.get_path(file_path).is_ok())
+            .unwrap_or(false)
+    };
+
+    if tracked {
+        // git checkout HEAD -- file_path (restore to HEAD in both index and worktree)
+        let output = Command::new("git")
+            .args(["checkout", "HEAD", "--"])
+            .arg(file_path)
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| GitError::OperationFailed {
+                operation: "discard_file".to_string(),
+                details: format!("Failed to execute git checkout: {}", e),
+            })?;
+
+        if !output.status.success() {
+            return Err(GitError::OperationFailed {
+                operation: "discard_file".to_string(),
+                details: format!(
+                    "git checkout failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            });
+        }
+    } else {
+        // Untracked: remove file/directory
+        if full_path.is_dir() {
+            std::fs::remove_dir_all(&full_path).map_err(|e| GitError::OperationFailed {
+                operation: "discard_file".to_string(),
+                details: format!("Failed to remove directory: {}", e),
+            })?;
+        } else {
+            std::fs::remove_file(&full_path).map_err(|e| GitError::OperationFailed {
+                operation: "discard_file".to_string(),
+                details: format!("Failed to remove file: {}", e),
+            })?;
         }
     }
 

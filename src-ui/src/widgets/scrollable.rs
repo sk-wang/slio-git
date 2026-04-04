@@ -20,13 +20,13 @@ struct ScrollbarMetrics {
 fn scrollbar_metrics(role: ScrollbarRole) -> ScrollbarMetrics {
     match role {
         ScrollbarRole::Pane => ScrollbarMetrics {
-            width: 6,
-            scroller_width: 4,
+            width: 5,
+            scroller_width: 3,
             margin: 1,
         },
         ScrollbarRole::Inline => ScrollbarMetrics {
-            width: 4,
-            scroller_width: 3,
+            width: 3,
+            scroller_width: 2,
             margin: 0,
         },
     }

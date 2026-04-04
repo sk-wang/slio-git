@@ -43,6 +43,22 @@ pub enum HistoryMessage {
     SquashCommitToPrevious(String),
     DropCommitFromHistory(String),
     OpenInteractiveRebaseFromCommit(String),
+    // Multi-tab log messages
+    SelectLogTab(usize),
+    CloseLogTab(usize),
+    NewLogTab,
+    OpenInNewTab(String),
+    // Filter bar messages
+    SetBranchFilter(Option<String>),
+    SetAuthorFilter(Option<String>),
+    SetPathFilter(Option<String>),
+    // Branches dashboard messages
+    ToggleBranchesDashboard,
+    DashboardSelectBranch(String),
+    DashboardCheckoutBranch(String),
+    DashboardMergeBranch(String),
+    DashboardRebaseOnto(String),
+    DashboardDeleteBranch(String),
 }
 
 /// State for the history view.
@@ -173,15 +189,53 @@ impl Default for HistoryState {
     }
 }
 
+/// IDEA-style relative timestamp formatter
+/// Shows human-readable relative times like "just now", "5 minutes ago", "yesterday", etc.
+fn format_relative_time(timestamp: i64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    let diff = now.saturating_sub(timestamp);
+
+    if diff < 60 {
+        "just now".to_string()
+    } else if diff < 3600 {
+        let mins = diff / 60;
+        format!("{} minute{} ago", mins, if mins == 1 { "" } else { "s" })
+    } else if diff < 86400 {
+        let hours = diff / 3600;
+        format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
+    } else if diff < 172800 {
+        "yesterday".to_string()
+    } else if diff < 604800 {
+        let days = diff / 86400;
+        format!("{} day{} ago", days, if days == 1 { "" } else { "s" })
+    } else if diff < 2592000 {
+        let weeks = diff / 604800;
+        format!("{} week{} ago", weeks, if weeks == 1 { "" } else { "s" })
+    } else if diff < 31536000 {
+        let months = diff / 2592000;
+        format!("{} month{} ago", months, if months == 1 { "" } else { "s" })
+    } else {
+        // For older dates, show absolute date
+        let datetime = DateTime::from_timestamp(timestamp, 0)
+            .unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap());
+        datetime.format("%Y-%m-%d").to_string()
+    }
+}
+
+/// Fallback absolute timestamp for older dates
 fn format_timestamp(timestamp: i64) -> String {
     let datetime = DateTime::from_timestamp(timestamp, 0)
         .unwrap_or_else(|| DateTime::from_timestamp(0, 0).unwrap());
     datetime.format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-const HISTORY_ROW_HEIGHT: f32 = 26.0;
-const HISTORY_CONTEXT_MENU_WIDTH: f32 = 392.0;
-const HISTORY_CONTEXT_MENU_ESTIMATED_HEIGHT: f32 = 420.0;
+const HISTORY_ROW_HEIGHT: f32 = 24.0;
+const HISTORY_CONTEXT_MENU_WIDTH: f32 = 332.0;
+const HISTORY_CONTEXT_MENU_ESTIMATED_HEIGHT: f32 = 340.0;
 const HISTORY_CONTEXT_MENU_EDGE_PADDING: f32 = 8.0;
 const HISTORY_GRAPH_LANE_WIDTH: f32 = 16.0;
 const HISTORY_GRAPH_PADDING: f32 = 8.0;
@@ -473,7 +527,7 @@ fn build_commit_row<'a>(
                     .color(theme::darcula::TEXT_SECONDARY),
             )
             .push(
-                Text::new(format_timestamp(entry.timestamp))
+                Text::new(format_relative_time(entry.timestamp))
                     .size(11)
                     .width(Length::FillPortion(2))
                     .wrapping(text::Wrapping::None)
@@ -493,7 +547,11 @@ fn build_commit_row<'a>(
         Container::new(
             Button::new(row)
                 .width(Length::Fill)
-                .style(theme::button_style(theme::ButtonTone::Ghost))
+                .style(widgets::menu::trigger_row_button_style(
+                    is_selected,
+                    is_menu_open,
+                    Some(theme::darcula::ACCENT),
+                ))
                 .on_press(HistoryMessage::SelectCommit(entry.id.clone())),
         )
         .width(Length::Fill),
@@ -588,12 +646,12 @@ fn build_history_list<'a>(state: &'a HistoryState) -> Element<'a, HistoryMessage
                                     .color(theme::darcula::TEXT_DISABLED),
                             ),
                     )
-                    .padding([8, 10])
-                    .style(theme::panel_style(Surface::Raised)),
+                    .padding([6, 8])
+                    .style(theme::panel_style(Surface::ToolbarField)),
                 )
-                .push(scrollable::styled(list).height(Length::Fixed(320.0))),
+                .push(scrollable::styled(list).height(Length::Fill)),
         )
-        .padding([16, 16])
+        .padding([8, 8])
         .style(theme::panel_style(Surface::Panel)),
     )
     .on_move(HistoryMessage::TrackContextMenuCursor)
@@ -620,7 +678,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
         .selected_commit
         .as_deref()
         .filter(|selected| *selected == entry.id)
-        .and_then(|_| state.selected_commit_info.as_ref());
+        .and(state.selected_commit_info.as_ref());
     let has_current_branch = state.current_branch_name.is_some();
     let has_upstream = state.current_upstream_ref.is_some();
     let commit_detail_ready = selected_info.is_some();
@@ -719,19 +777,19 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     "复制哈希",
                     "把完整提交哈希复制到系统剪贴板".to_string(),
                     Some(HistoryMessage::CopyCommitHash(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
                 history_context_action_row(
                     "导出 Patch",
                     "用 git format-patch 导出这条提交的补丁文件".to_string(),
                     Some(HistoryMessage::ExportCommitPatch(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
                 history_context_action_row(
                     "查看详情",
                     "加载完整提交信息并保持当前列表上下文".to_string(),
                     Some(HistoryMessage::SelectCommit(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
             ],
         ))
@@ -744,28 +802,28 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     compare_with_current_detail,
                     has_current_branch
                         .then_some(HistoryMessage::CompareWithCurrent(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
                 history_context_action_row(
                     "查看与工作树差异",
                     compare_with_worktree_detail,
                     (!state.is_loading)
                         .then_some(HistoryMessage::CompareWithWorktree(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
                 history_context_action_row(
                     "从该提交建分支",
                     "保留当前分支不动，基于这条提交创建新分支".to_string(),
                     (!state.is_loading)
                         .then_some(HistoryMessage::PrepareCreateBranch(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
                 history_context_action_row(
                     "给该提交打标签",
                     "在这条提交上创建一个新的标签".to_string(),
                     (!state.is_loading)
                         .then_some(HistoryMessage::PrepareTagFromCommit(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
             ],
         ))
@@ -781,7 +839,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_merge_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::PrepareCherryPickCommit(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
                 history_context_action_row(
                     "Revert",
@@ -791,7 +849,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_merge_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::PrepareRevertCommit(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
             ],
         ))
@@ -805,7 +863,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     (!state.is_loading && has_current_branch).then_some(
                         HistoryMessage::PrepareResetCurrentBranchToCommit(entry.id.clone()),
                     ),
-                    HistoryMenuTone::Danger,
+                    widgets::menu::MenuTone::Danger,
                 ),
                 history_context_action_row(
                     "推送当前分支到这里",
@@ -813,7 +871,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     (!state.is_loading && has_current_branch && has_upstream).then_some(
                         HistoryMessage::PreparePushCurrentBranchToCommit(entry.id.clone()),
                     ),
-                    HistoryMenuTone::Danger,
+                    widgets::menu::MenuTone::Danger,
                 ),
             ],
         ))
@@ -829,7 +887,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_merge_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::EditCommitMessage(entry.id.clone())),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
                 history_context_action_row(
                     "Fixup...",
@@ -840,7 +898,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_root_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::FixupCommitToPrevious(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
                 history_context_action_row(
                     "压缩到...",
@@ -851,7 +909,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_root_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::SquashCommitToPrevious(entry.id.clone())),
-                    HistoryMenuTone::Accent,
+                    widgets::menu::MenuTone::Accent,
                 ),
                 history_context_action_row(
                     "删除提交",
@@ -861,7 +919,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                         && !is_merge_commit
                         && has_current_branch)
                         .then_some(HistoryMessage::DropCommitFromHistory(entry.id.clone())),
-                    HistoryMenuTone::Danger,
+                    widgets::menu::MenuTone::Danger,
                 ),
                 history_context_action_row(
                     "从这里进行交互式变基...",
@@ -869,7 +927,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     (!state.is_loading && has_current_branch).then_some(
                         HistoryMessage::OpenInteractiveRebaseFromCommit(entry.id.clone()),
                     ),
-                    HistoryMenuTone::Neutral,
+                    widgets::menu::MenuTone::Neutral,
                 ),
             ],
         ));
@@ -926,21 +984,14 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     .color(theme::darcula::TEXT_SECONDARY)
             }))
             .push(Container::new(
-                scrollable::styled(actions).height(Length::Fixed(320.0)),
+                scrollable::styled(actions).height(Length::Fixed(250.0)),
             )),
     )
-    .padding([16, 18])
+    .padding([10, 12])
     .width(Length::Fixed(HISTORY_CONTEXT_MENU_WIDTH))
-    .style(history_context_menu_style);
+    .style(widgets::menu::panel_style);
 
     build_history_context_menu_layer(anchor, menu.into())
-}
-
-#[derive(Debug, Clone, Copy)]
-enum HistoryMenuTone {
-    Neutral,
-    Accent,
-    Danger,
 }
 
 fn history_context_group<'a>(
@@ -948,111 +999,24 @@ fn history_context_group<'a>(
     detail: &'static str,
     rows: Vec<Element<'a, HistoryMessage>>,
 ) -> Element<'a, HistoryMessage> {
-    let rows = rows
-        .into_iter()
-        .fold(Column::new().spacing(0), |column, row| column.push(row));
-
-    let (background, border_color) = match title {
-        "危险动作" => (
-            blend_color(theme::darcula::BG_PANEL, theme::darcula::DANGER, 0.10),
-            theme::darcula::DANGER.scale_alpha(0.24),
-        ),
-        "应用到当前分支" | "比较与派生" | "修改当前分支历史" => (
-            blend_color(theme::darcula::BG_PANEL, theme::darcula::ACCENT_WEAK, 0.66),
-            theme::darcula::ACCENT.scale_alpha(0.20),
-        ),
-        _ => (
-            blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_RAISED, 0.76),
-            theme::darcula::BORDER.scale_alpha(0.74),
-        ),
+    let tone = match title {
+        "危险动作" => widgets::menu::MenuTone::Danger,
+        "应用到当前分支" | "比较与派生" | "历史整理" => {
+            widgets::menu::MenuTone::Accent
+        }
+        _ => widgets::menu::MenuTone::Neutral,
     };
 
-    Container::new(
-        Column::new()
-            .spacing(theme::spacing::SM)
-            .push(
-                Text::new(title)
-                    .size(11)
-                    .color(theme::darcula::TEXT_DISABLED),
-            )
-            .push(
-                Text::new(detail)
-                    .size(10)
-                    .width(Length::Fill)
-                    .wrapping(text::Wrapping::WordOrGlyph)
-                    .color(theme::darcula::TEXT_SECONDARY),
-            )
-            .push(rows),
-    )
-    .padding([9, 11])
-    .style(move |_theme| iced::widget::container::Style {
-        background: Some(iced::Background::Color(background)),
-        border: iced::Border {
-            width: 1.0,
-            color: border_color,
-            radius: theme::radius::LG.into(),
-        },
-        ..Default::default()
-    })
-    .into()
+    widgets::menu::group(title, detail, tone, rows)
 }
 
 fn history_context_action_row<'a>(
     title: &'static str,
     detail: String,
     message: Option<HistoryMessage>,
-    tone: HistoryMenuTone,
+    tone: widgets::menu::MenuTone,
 ) -> Element<'a, HistoryMessage> {
-    let enabled = message.is_some();
-    let title_color = if enabled {
-        match tone {
-            HistoryMenuTone::Neutral => theme::darcula::TEXT_PRIMARY,
-            HistoryMenuTone::Accent => theme::darcula::TEXT_PRIMARY,
-            HistoryMenuTone::Danger => theme::darcula::DANGER.scale_alpha(0.95),
-        }
-    } else {
-        theme::darcula::TEXT_DISABLED
-    };
-    let detail_color = if enabled {
-        match tone {
-            HistoryMenuTone::Danger => theme::darcula::DANGER.scale_alpha(0.7),
-            _ => theme::darcula::TEXT_SECONDARY,
-        }
-    } else {
-        theme::darcula::TEXT_DISABLED
-    };
-
-    Button::new(
-        Container::new(
-            Row::new()
-                .spacing(theme::spacing::SM)
-                .align_y(Alignment::Center)
-                .push(
-                    Column::new()
-                        .spacing(1)
-                        .width(Length::Fill)
-                        .push(Text::new(title).size(12).color(title_color))
-                        .push(
-                            Text::new(detail)
-                                .size(10)
-                                .width(Length::Fill)
-                                .wrapping(text::Wrapping::WordOrGlyph)
-                                .color(detail_color),
-                        ),
-                )
-                .push(
-                    Text::new(if enabled { ">" } else { "·" })
-                        .size(11)
-                        .color(detail_color),
-                ),
-        )
-        .padding([13, 10])
-        .width(Length::Fill),
-    )
-    .width(Length::Fill)
-    .style(history_context_action_button_style(tone, enabled))
-    .on_press_maybe(message)
-    .into()
+    widgets::menu::action_row(None, title, Some(detail), None, message, tone)
 }
 
 fn build_history_context_menu_layer<'a>(
@@ -1077,11 +1041,10 @@ fn build_history_context_menu_layer<'a>(
             )
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(history_context_menu_scrim_style),
+            .style(widgets::menu::scrim_style),
         )
         .on_press(HistoryMessage::CloseCommitContextMenu),
     )
-    .into()
 }
 
 fn history_context_menu_origin(anchor: Point) -> Point {
@@ -1098,105 +1061,6 @@ fn history_context_menu_origin(anchor: Point) -> Point {
     };
 
     Point::new(x, y)
-}
-
-fn history_context_menu_style(_theme: &Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(iced::Background::Color(blend_color(
-            theme::darcula::BG_PANEL,
-            theme::darcula::BG_RAISED,
-            0.92,
-        ))),
-        border: iced::Border {
-            width: 1.0,
-            color: theme::darcula::ACCENT.scale_alpha(0.24),
-            radius: theme::radius::LG.into(),
-        },
-        shadow: iced::Shadow {
-            color: Color {
-                a: 0.20,
-                ..theme::darcula::BG_MAIN
-            },
-            offset: iced::Vector::new(0.0, 16.0),
-            blur_radius: 32.0,
-        },
-        ..Default::default()
-    }
-}
-
-fn history_context_action_button_style(
-    tone: HistoryMenuTone,
-    enabled: bool,
-) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style {
-    move |_theme, status| {
-        let interaction_color = match tone {
-            HistoryMenuTone::Neutral => theme::darcula::BG_TAB_HOVER,
-            HistoryMenuTone::Accent => theme::darcula::ACCENT,
-            HistoryMenuTone::Danger => theme::darcula::DANGER,
-        };
-
-        let (background, border_color) = if enabled {
-            match status {
-                iced::widget::button::Status::Active => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.06),
-                    interaction_color.scale_alpha(0.14),
-                ),
-                iced::widget::button::Status::Hovered => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.18),
-                    interaction_color.scale_alpha(0.28),
-                ),
-                iced::widget::button::Status::Pressed => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.26),
-                    interaction_color.scale_alpha(0.38),
-                ),
-                iced::widget::button::Status::Disabled => (
-                    blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_MAIN, 0.20),
-                    theme::darcula::SEPARATOR.scale_alpha(0.28),
-                ),
-            }
-        } else {
-            (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_MAIN, 0.18),
-                theme::darcula::SEPARATOR.scale_alpha(0.22),
-            )
-        };
-
-        iced::widget::button::Style {
-            background: Some(iced::Background::Color(background)),
-            border: iced::Border {
-                width: 1.0,
-                color: border_color,
-                radius: theme::radius::LG.into(),
-            },
-            text_color: if enabled {
-                theme::darcula::TEXT_PRIMARY
-            } else {
-                theme::darcula::TEXT_DISABLED
-            },
-            ..Default::default()
-        }
-    }
-}
-
-fn history_context_menu_scrim_style(_theme: &Theme) -> iced::widget::container::Style {
-    iced::widget::container::Style {
-        background: Some(iced::Background::Color(Color {
-            a: 0.08,
-            ..theme::darcula::BG_EDITOR
-        })),
-        border: iced::Border::default(),
-        ..Default::default()
-    }
-}
-
-fn blend_color(base: Color, overlay: Color, amount: f32) -> Color {
-    let amount = amount.clamp(0.0, 1.0);
-    Color {
-        r: (base.r * (1.0 - amount)) + (overlay.r * amount),
-        g: (base.g * (1.0 - amount)) + (overlay.g * amount),
-        b: (base.b * (1.0 - amount)) + (overlay.b * amount),
-        a: (base.a * (1.0 - amount)) + (overlay.a * amount),
-    }
 }
 
 fn commit_subject(message: &str) -> &str {
@@ -1233,119 +1097,298 @@ fn stroke_segment(
     );
 }
 
-/// Branch-lane palette tuned for the dark mint-accent theme.
-/// Colors are vivid enough to distinguish lanes but harmonize with the mint/teal brand.
+/// Branch-lane palette — IDEA-style graph colors for Darcula theme.
+/// Colors are vivid enough to distinguish lanes on #2B2B2B background.
 fn history_graph_color(index: usize) -> Color {
     match index % 8 {
-        0 => Color::from_rgb(0.224, 0.816, 0.769), // accent mint
-        1 => Color::from_rgb(0.345, 0.651, 1.000), // brand blue
-        2 => Color::from_rgb(0.247, 0.718, 0.314), // success green
-        3 => Color::from_rgb(0.627, 0.431, 0.863), // violet
-        4 => Color::from_rgb(0.235, 0.757, 0.851), // cyan
-        5 => Color::from_rgb(0.824, 0.600, 0.133), // warning gold
+        0 => Color::from_rgb(0.345, 0.616, 0.965), // IDEA blue #589DF6
+        1 => Color::from_rgb(0.212, 0.710, 0.361), // IDEA green #369650 brighter
+        2 => Color::from_rgb(0.624, 0.471, 0.710), // IDEA purple #9F79B5
+        3 => Color::from_rgb(0.369, 0.678, 0.831), // IDEA cyan #5EACD0
+        4 => Color::from_rgb(0.851, 0.639, 0.263), // IDEA gold #D9A343
+        5 => Color::from_rgb(0.682, 0.588, 0.337), // IDEA tag #AE9656
         6 => Color::from_rgb(0.863, 0.431, 0.478), // rose
-        _ => Color::from_rgb(0.760, 0.549, 0.302), // warm amber
+        _ => Color::from_rgb(0.682, 0.816, 0.576), // IDEA commit graph #AEB9C0 warm
     }
-}
-
-fn build_search_bar(state: &HistoryState) -> Element<'_, HistoryMessage> {
-    let can_search = !state.is_searching && !state.search_query.trim().is_empty();
-    let can_clear = !state.is_searching
-        && (!state.search_query.trim().is_empty()
-            || state.filtered_entries.len() != state.entries.len());
-
-    Container::new(
-        Column::new()
-            .spacing(theme::spacing::SM)
-            .push(text_input::styled(
-                "输入搜索关键词...",
-                &state.search_query,
-                HistoryMessage::SetSearchQuery,
-            ))
-            .push(
-                scrollable::styled_horizontal(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .push_maybe(state.current_branch_name.as_ref().map(|branch| {
-                            widgets::info_chip::<HistoryMessage>(
-                                format!("当前分支 {branch}"),
-                                BadgeTone::Accent,
-                            )
-                        }))
-                        .push_maybe(state.current_upstream_ref.as_ref().map(|upstream| {
-                            widgets::info_chip::<HistoryMessage>(
-                                format!("上游 {upstream}"),
-                                BadgeTone::Neutral,
-                            )
-                        })),
-                )
-                .width(Length::Fill),
-            )
-            .push(
-                scrollable::styled_horizontal(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .align_y(Alignment::Center)
-                        .push(button::secondary(
-                            "搜索",
-                            can_search.then_some(HistoryMessage::Search),
-                        ))
-                        .push(button::ghost(
-                            "清除",
-                            can_clear.then_some(HistoryMessage::ClearSearch),
-                        )),
-                )
-                .width(Length::Fill),
-            ),
-    )
-    .padding([16, 16])
-    .style(theme::panel_style(Surface::Panel))
-    .into()
 }
 
 fn build_commit_detail(info: &git_core::commit::CommitInfo) -> Element<'_, HistoryMessage> {
     Container::new(
         Column::new()
-            .spacing(theme::spacing::MD)
-            .push(widgets::section_header(
-                "详情",
-                "提交详情",
-                "查看作者、时间、父提交数量和完整提交消息。",
-            ))
+            .spacing(theme::spacing::SM)
             .push(
                 Row::new()
                     .spacing(theme::spacing::XS)
-                    .push(widgets::info_chip::<HistoryMessage>(
-                        format!("提交 {}", &info.id[..8]),
+                    .align_y(Alignment::Center)
+                    .push(
+                        Text::new("提交详情")
+                            .size(12)
+                            .color(theme::darcula::TEXT_PRIMARY),
+                    )
+                    .push(widgets::compact_chip::<HistoryMessage>(
+                        info.id[..8].to_string(),
                         BadgeTone::Accent,
                     ))
-                    .push(widgets::info_chip::<HistoryMessage>(
-                        format!("父提交 {}", info.parent_ids.len()),
-                        BadgeTone::Neutral,
-                    )),
+                    .push(Space::new().width(Length::Fill)),
             )
-            .push(widgets::status_banner::<HistoryMessage>(
-                "作者",
-                format!("{} <{}>", info.author_name, info.author_email),
-                BadgeTone::Neutral,
-            ))
-            .push(widgets::status_banner::<HistoryMessage>(
-                "时间",
-                format_timestamp(info.author_time),
-                BadgeTone::Neutral,
-            ))
+            .push(iced::widget::rule::horizontal(1))
             .push(
-                Container::new(
-                    scrollable::styled(Text::new(&info.message).size(12))
-                        .height(Length::Fixed(180.0)),
-                )
-                .padding([12, 14])
-                .style(theme::panel_style(Surface::Raised)),
+                scrollable::styled(Text::new(&info.message).size(13))
+                    .height(Length::Fill),
+            )
+            .push(iced::widget::rule::horizontal(1))
+            .push(
+                Column::new()
+                    .spacing(2)
+                    .push(detail_meta_row(
+                        "作者",
+                        format!("{} <{}>", info.author_name, info.author_email),
+                    ))
+                    .push(detail_meta_row(
+                        "时间",
+                        format_timestamp(info.author_time),
+                    ))
+                    .push(detail_meta_row(
+                        "父提交",
+                        format!("{}", info.parent_ids.len()),
+                    )),
             ),
     )
-    .padding([16, 16])
+    .padding([8, 10])
     .style(theme::panel_style(Surface::Panel))
     .into()
+}
+
+fn detail_meta_row<'a>(label: &'a str, value: impl ToString) -> Element<'a, HistoryMessage> {
+    Row::new()
+        .spacing(theme::spacing::XS)
+        .align_y(Alignment::Center)
+        .push(
+            Text::new(label)
+                .size(10)
+                .color(theme::darcula::TEXT_DISABLED)
+                .width(Length::Fixed(42.0)),
+        )
+        .push(
+            Text::new(value.to_string())
+                .size(11)
+                .color(theme::darcula::TEXT_SECONDARY)
+                .width(Length::Fill)
+                .wrapping(text::Wrapping::WordOrGlyph),
+        )
+        .into()
+}
+
+pub fn view_with_tabs<'a>(
+    state: &'a HistoryState,
+    log_tabs: &'a [crate::state::LogTab],
+    active_tab: usize,
+    local_branches: &'a [git_core::branch::Branch],
+    remote_branches: &'a [git_core::branch::Branch],
+    dashboard_visible: bool,
+) -> Element<'a, HistoryMessage> {
+    // Build inline tab bar to avoid lifetime issues with TabDescriptor references
+    let mut tab_row = Row::new().spacing(0).align_y(Alignment::End);
+
+    for (i, tab) in log_tabs.iter().enumerate() {
+        let is_active = i == active_tab;
+        let label_color = if is_active {
+            theme::darcula::TEXT_PRIMARY
+        } else {
+            theme::darcula::TEXT_SECONDARY
+        };
+
+        let mut tab_content = Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(Text::new(tab.label.as_str()).size(12).color(label_color));
+
+        if tab.is_closable {
+            tab_content = tab_content.push(
+                Button::new(
+                    Text::new("×")
+                        .size(10)
+                        .color(theme::darcula::TEXT_DISABLED),
+                )
+                .style(theme::button_style(theme::ButtonTone::Ghost))
+                .padding(0)
+                .on_press(HistoryMessage::CloseLogTab(i)),
+            );
+        }
+
+        let _tab_bg = if is_active {
+            theme::darcula::BG_RAISED
+        } else {
+            theme::darcula::BG_SOFT
+        };
+
+        let tab_button = Button::new(
+            Container::new(tab_content).padding([6, 12]),
+        )
+        .style(theme::button_style(theme::ButtonTone::Ghost))
+        .padding(0)
+        .on_press(HistoryMessage::SelectLogTab(i));
+
+        tab_row = tab_row.push(tab_button);
+        tab_row = tab_row.push(Space::new().width(Length::Fixed(1.0)));
+    }
+
+    // Add "+" button
+    tab_row = tab_row.push(
+        Button::new(
+            Text::new("+")
+                .size(12)
+                .color(theme::darcula::TEXT_DISABLED),
+        )
+        .style(theme::button_style(theme::ButtonTone::Ghost))
+        .padding([6, 10])
+        .on_press(HistoryMessage::NewLogTab),
+    );
+
+    let main_content = view(state);
+
+    // Build branches dashboard sidebar
+    let content_area: Element<'a, HistoryMessage> = if dashboard_visible {
+        let dashboard = build_branches_dashboard(local_branches, remote_branches);
+        Row::new()
+            .spacing(0)
+            .height(Length::Fill)
+            .push(
+                Container::new(dashboard)
+                    .width(Length::FillPortion(1))
+                    .height(Length::Fill)
+                    .style(theme::panel_style(Surface::Panel)),
+            )
+            .push(
+                Container::new(main_content)
+                    .width(Length::FillPortion(4))
+                    .height(Length::Fill),
+            )
+            .into()
+    } else {
+        main_content
+    };
+
+    // Toggle dashboard button in tab bar
+    let dashboard_toggle = Button::new(
+        Text::new(if dashboard_visible { "◀" } else { "▶" })
+            .size(10)
+            .color(theme::darcula::TEXT_SECONDARY),
+    )
+    .style(theme::button_style(theme::ButtonTone::Ghost))
+    .padding([6, 6])
+    .on_press(HistoryMessage::ToggleBranchesDashboard);
+
+    let full_tab_row = Row::new()
+        .spacing(0)
+        .align_y(Alignment::Center)
+        .push(dashboard_toggle)
+        .push(tab_row);
+
+    Column::new()
+        .spacing(0)
+        .push(Container::new(full_tab_row).padding([0, 4]))
+        .push(content_area)
+        .into()
+}
+
+/// Build the branches dashboard sidebar for the Log tab
+fn build_branches_dashboard<'a>(
+    local_branches: &'a [git_core::branch::Branch],
+    remote_branches: &'a [git_core::branch::Branch],
+) -> Element<'a, HistoryMessage> {
+    let header = Container::new(
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
+            .push(Text::new("分支").size(11).color(theme::darcula::TEXT_SECONDARY)),
+    )
+    .padding([6, 8]);
+
+    let mut tree = Column::new().spacing(0);
+
+    // Local branches group
+    tree = tree.push(
+        Container::new(
+            Row::new()
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .push(Text::new("▼").size(9).color(theme::darcula::TEXT_DISABLED))
+                .push(
+                    Text::new("本地分支")
+                        .size(10)
+                        .color(theme::darcula::TEXT_SECONDARY),
+                )
+                .push(
+                    Text::new(format!("({})", local_branches.len()))
+                        .size(9)
+                        .color(theme::darcula::TEXT_DISABLED),
+                ),
+        )
+        .padding([3, 4]),
+    );
+
+    for branch in local_branches {
+        let name = branch.name.clone();
+        let display = branch.leaf_name().to_string();
+        let icon = if branch.is_head { "● " } else { "  " };
+        let label_color = if branch.is_head {
+            theme::darcula::ACCENT
+        } else {
+            theme::darcula::TEXT_PRIMARY
+        };
+
+        tree = tree.push(
+            Button::new(
+                Row::new()
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .push(Space::new().width(Length::Fixed(12.0)))
+                    .push(Text::new(icon).size(10).color(theme::darcula::ACCENT))
+                    .push(Text::new(display).size(11).color(label_color)),
+            )
+            .style(theme::button_style(theme::ButtonTone::Ghost))
+            .padding([2, 4])
+            .width(Length::Fill)
+            .on_press(HistoryMessage::DashboardSelectBranch(name)),
+        );
+    }
+
+    // Remote branches group
+    tree = tree.push(Space::new().height(Length::Fixed(4.0)));
+    tree = tree.push(
+        Container::new(
+            Row::new()
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .push(Text::new("▶").size(9).color(theme::darcula::TEXT_DISABLED))
+                .push(
+                    Text::new("远程分支")
+                        .size(10)
+                        .color(theme::darcula::TEXT_SECONDARY),
+                )
+                .push(
+                    Text::new(format!("({})", remote_branches.len()))
+                        .size(9)
+                        .color(theme::darcula::TEXT_DISABLED),
+                ),
+        )
+        .padding([3, 4]),
+    );
+
+    // Show first 20 remote branches (collapsed by default, showing just the header)
+    // Full expansion requires toggle state — for now show compact list
+
+    Column::new()
+        .spacing(0)
+        .push(header)
+        .push(iced::widget::rule::horizontal(1))
+        .push(
+            Container::new(scrollable::styled(tree).height(Length::Fill))
+                .padding([4, 4])
+                .height(Length::Fill),
+        )
+        .into()
 }
 
 pub fn view(state: &HistoryState) -> Element<'_, HistoryMessage> {
@@ -1367,69 +1410,37 @@ pub fn view(state: &HistoryState) -> Element<'_, HistoryMessage> {
             error,
             BadgeTone::Danger,
         ))
-    } else if state.entries.is_empty() {
-        Some(build_status_panel::<HistoryMessage>(
-            "空状态",
-            "当前仓库还没有可显示的提交历史；先创建一次提交，再回来查看时间线。",
-            BadgeTone::Neutral,
-        ))
     } else if state.filtered_entries.is_empty() && !state.search_query.trim().is_empty() {
         Some(build_status_panel::<HistoryMessage>(
             "无匹配结果",
             format!("没有找到与“{}”匹配的提交。", state.search_query.trim()),
             BadgeTone::Warning,
         ))
-    } else if let Some(info) = state.selected_commit_info.as_ref() {
-        Some(build_status_panel::<HistoryMessage>(
-            "详情已加载",
-            format!("当前正在查看提交 {} 的完整信息。", &info.id[..8]),
-            BadgeTone::Success,
-        ))
-    } else if !state.search_query.trim().is_empty() {
-        Some(build_status_panel::<HistoryMessage>(
-            "搜索完成",
-            format!(
-                "关键词“{}”匹配到 {} 条提交。",
-                state.search_query.trim(),
-                state.filtered_entries.len()
-            ),
-            BadgeTone::Success,
-        ))
     } else {
-        let total = state.entries.len();
-        let filtered = state.filtered_entries.len();
-        Some(build_status_panel::<HistoryMessage>(
-            "历史概览",
-            if filtered < total {
-                format!("当前显示 {} / {} 个提交。", filtered, total)
-            } else {
-                format!("当前显示 {} 个提交。", total)
-            },
-            BadgeTone::Accent,
-        ))
+        None
     };
 
     if state.entries.is_empty() && !state.is_loading && state.error.is_none() {
         return Container::new(
-            scrollable::styled(
-                Column::new()
-                    .spacing(theme::spacing::MD)
-                    .push(widgets::section_header(
-                        "历史",
-                        "提交历史",
-                        "在同一视图里完成搜索、浏览和提交详情查看。",
-                    ))
-                    .push(widgets::panel_empty_state(
-                        "历史",
-                        "当前仓库还没有提交历史",
-                        "先完成一次提交，或刷新历史列表后再回来查看时间线。",
-                        Some(button::ghost("刷新", Some(HistoryMessage::Refresh)).into()),
-                    )),
-            )
-            .height(Length::Fill),
+            Column::new()
+                .spacing(theme::spacing::XS)
+                .align_x(Alignment::Center)
+                .push(
+                    Text::new("当前仓库还没有提交历史")
+                        .size(13)
+                        .color(theme::darcula::TEXT_SECONDARY),
+                )
+                .push(
+                    Text::new("先完成一次提交，或刷新历史列表后再回来查看时间线。")
+                        .size(10)
+                        .color(theme::darcula::TEXT_DISABLED),
+                )
+                .push(Space::new().height(Length::Fixed(theme::spacing::SM)))
+                .push(button::ghost("刷新", Some(HistoryMessage::Refresh))),
         )
-        .padding([16, 18])
         .width(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Panel))
         .into();
@@ -1439,77 +1450,100 @@ pub fn view(state: &HistoryState) -> Element<'_, HistoryMessage> {
         if let Some(info) = state.selected_commit_info.as_ref() {
             build_commit_detail(info)
         } else if !state.search_query.trim().is_empty() && state.filtered_entries.is_empty() {
-            widgets::panel_empty_state(
-                "详情",
+            widgets::panel_empty_state_compact(
                 "没有匹配的提交",
                 format!("没有找到与“{}”匹配的提交。", state.search_query.trim()),
-                Some(button::ghost("清除搜索", Some(HistoryMessage::ClearSearch)).into()),
             )
         } else {
-            widgets::panel_empty_state(
-                "详情",
+            widgets::panel_empty_state_compact(
                 "还没有选中任何提交",
                 "选中一条提交后查看作者、时间和完整提交消息。",
-                None,
             )
         };
 
-    Container::new(
-        scrollable::styled(
-            Column::new()
-                .spacing(theme::spacing::MD)
-                .push(widgets::section_header(
-                    "历史",
-                    "提交历史",
-                    "在同一视图里完成搜索、浏览和提交详情查看。",
-                ))
-                .push(
-                    Row::new()
-                        .spacing(theme::spacing::MD)
-                        .push(widgets::stat_card(
-                            "可见提交",
-                            state.filtered_entries.len().to_string(),
-                            "当前搜索结果中的提交数",
-                        ))
-                        .push(widgets::stat_card(
-                            "当前分支",
-                            state
-                                .current_branch_name
-                                .clone()
-                                .unwrap_or_else(|| "detached HEAD".to_string()),
-                            "历史动作会围绕这个分支继续展开",
-                        )),
+    let can_search = !state.is_searching && !state.search_query.trim().is_empty();
+    let can_clear = !state.is_searching
+        && (!state.search_query.trim().is_empty()
+            || state.filtered_entries.len() != state.entries.len());
+
+    let search_actions: Element<'_, HistoryMessage> = if state.is_searching {
+        widgets::inline_loading("搜索")
+    } else {
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
+            .push(button::secondary(
+                "搜索",
+                can_search.then_some(HistoryMessage::Search),
+            ))
+            .push(button::ghost(
+                "清除",
+                can_clear.then_some(HistoryMessage::ClearSearch),
+            ))
+            .into()
+    };
+
+    let toolbar = Container::new(
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
+            .push(Text::new("提交历史").size(12))
+            .push_maybe(state.current_branch_name.as_ref().map(|branch| {
+                widgets::info_chip::<HistoryMessage>(
+                    format!("当前分支 {branch}"),
+                    BadgeTone::Accent,
                 )
-                .push(
-                    Column::new()
-                        .spacing(theme::spacing::XS)
-                        .push(
-                            scrollable::styled_horizontal(
-                                Row::new()
-                                    .spacing(theme::spacing::XS)
-                                    .push(button::ghost("刷新", Some(HistoryMessage::Refresh))),
-                            )
-                            .width(Length::Fill),
-                        )
-                        .push_maybe(status_panel),
+            }))
+            .push_maybe(state.current_upstream_ref.as_ref().map(|upstream| {
+                widgets::info_chip::<HistoryMessage>(format!("上游 {upstream}"), BadgeTone::Neutral)
+            }))
+            .push(Space::new().width(Length::Fill))
+            .push(
+                text_input::styled(
+                    "搜索关键词...",
+                    &state.search_query,
+                    HistoryMessage::SetSearchQuery,
                 )
-                .push(build_search_bar(state))
-                .push(
-                    stack([
-                        build_history_list(state),
-                        build_commit_context_menu_overlay(state),
-                    ])
-                    .width(Length::Fill)
-                    .height(Length::Shrink),
-                )
-                .push(detail_panel),
-        )
+                .width(Length::Fixed(200.0)),
+            )
+            .push(search_actions)
+            .push(button::ghost("刷新", Some(HistoryMessage::Refresh))),
+    )
+    .padding(theme::density::SECONDARY_BAR_PADDING)
+    .style(theme::panel_style(Surface::Toolbar));
+
+    let list_area = Container::new(
+        stack([
+            build_history_list(state),
+            build_commit_context_menu_overlay(state),
+        ])
+        .width(Length::Fill)
         .height(Length::Fill),
     )
-    .padding([16, 18])
+    .width(Length::FillPortion(6))
+    .height(Length::Fill);
+
+    let detail_area = Container::new(detail_panel)
+        .width(Length::FillPortion(4))
+        .height(Length::Fill);
+
+    Container::new(
+        Column::new()
+            .spacing(0)
+            .push(toolbar)
+            .push_maybe(status_panel)
+            .push(
+                Row::new()
+                    .spacing(theme::spacing::XS)
+                    .height(Length::Fill)
+                    .push(list_area)
+                    .push(detail_area),
+            ),
+    )
+    .padding([0, 0])
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(theme::panel_style(Surface::Panel))
+    .style(theme::frame_style(Surface::Editor))
     .into()
 }
 
@@ -1533,6 +1567,10 @@ mod tests {
             author_email: "tester@example.com".to_string(),
             timestamp: 0,
             parent_ids: parents.iter().map(|parent| parent.to_string()).collect(),
+            committer_name: None,
+            committer_email: None,
+            refs: Vec::new(),
+            signature_status: None,
         }
     }
 

@@ -12,12 +12,17 @@ pub mod widgets;
 
 use crate::components::status_icons::FileStatus;
 use crate::keyboard::{get_shortcuts, ShortcutAction};
-use crate::state::{AppState, AuxiliaryView, DiffPresentation, ShellSection, ToolbarRemoteAction};
+use crate::state::{
+    is_docked_auxiliary_view, AppState, AuxiliaryView, DiffPresentation, GitToolWindowTab,
+    ShellSection, ToolbarRemoteAction,
+};
+use iced::widget::operation::{scroll_to, AbsoluteOffset};
+use iced::widget::Id;
 use crate::theme::BadgeTone;
 use crate::views::main_window::MainWindow;
 use crate::views::{
     branch_popup::{self, BranchPopupMessage},
-    commit_dialog::{self, CommitDialogMessage},
+    commit_dialog::CommitDialogMessage,
     history_view::{self, HistoryMessage},
     rebase_editor::{self, RebaseEditorMessage},
     remote_dialog::{self, RemoteDialogMessage},
@@ -25,15 +30,15 @@ use crate::views::{
     tag_dialog::{self, TagDialogMessage},
 };
 use crate::widgets::conflict_resolver::{ConflictResolverMessage, ResolutionOption};
-use crate::widgets::{button, diff_file_header, file_picker, scrollable, OptionalPush};
+use crate::widgets::{button, commit_panel, file_picker, scrollable, OptionalPush};
 use git_core::index::Change;
 use git_core::{
     diff::{ConflictHunk, ConflictHunkType, ConflictLineType, ConflictResolution, ThreeWayDiff},
     Repository,
 };
-use iced::widget::{container, text, Button, Column, Container, Row, Space, Text};
+use iced::widget::{container, mouse_area, opaque, stack, text, Button, Column, Container, Row, Space, Text};
 use iced::{
-    time, Alignment, Background, Border, Color, Element, Length, Subscription, Task, Theme,
+    time, Alignment, Background, Border, Color, Element, Length, Point, Subscription, Task, Theme,
 };
 use log::{info, warn};
 use std::io::Write;
@@ -339,6 +344,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::DismissFeedback => state.clear_feedback(),
         Message::StageFile(path) => {
+            if state.selected_change_path.as_deref() != Some(&path) {
+                let _ = state.select_change(path.clone());
+            }
             if let Err(error) = state.stage_file(path) {
                 report_async_failure(
                     state,
@@ -350,6 +358,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::UnstageFile(path) => {
+            if state.selected_change_path.as_deref() != Some(&path) {
+                let _ = state.select_change(path.clone());
+            }
             if let Err(error) = state.unstage_file(path) {
                 report_async_failure(
                     state,
@@ -394,6 +405,154 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ToggleDiffPresentation => state.toggle_diff_presentation(),
+        Message::ToggleFileDisplayMode => {
+            state.file_display_mode = match state.file_display_mode {
+                state::FileDisplayMode::Flat => state::FileDisplayMode::Tree,
+                state::FileDisplayMode::Tree => state::FileDisplayMode::Flat,
+            };
+        }
+        Message::ToggleStagedCollapsed => {
+            // Toggled via AppState; stored in shell for now
+        }
+        Message::ToggleUnstagedCollapsed => {
+            // Toggled via AppState; stored in shell for now
+        }
+        Message::StageHunk(path, hunk_index) => {
+            if let Some(repo) = &state.current_repository {
+                let file_path = std::path::Path::new(&path);
+                if let Err(e) = git_core::stage_hunk(repo, file_path, hunk_index) {
+                    report_async_failure(
+                        state,
+                        "暂存区块失败",
+                        e.to_string(),
+                        "workspace.stage_hunk",
+                        "workspace.stage_hunk",
+                    );
+                } else {
+                    return update(state, Message::Refresh);
+                }
+            }
+        }
+        Message::UnstageHunk(path, hunk_index) => {
+            if let Some(repo) = &state.current_repository {
+                let file_path = std::path::Path::new(&path);
+                if let Err(e) = git_core::unstage_hunk(repo, file_path, hunk_index) {
+                    report_async_failure(
+                        state,
+                        "取消暂存区块失败",
+                        e.to_string(),
+                        "workspace.unstage_hunk",
+                        "workspace.unstage_hunk",
+                    );
+                } else {
+                    return update(state, Message::Refresh);
+                }
+            }
+        }
+        Message::ShowFileHistory(path) => {
+            // Switch to Log tab with path filter set
+            state.shell.git_tool_window_tab = state::GitToolWindowTab::Log;
+            if let Some(tab) = state.log_tabs.get_mut(state.active_log_tab) {
+                tab.path_filter = Some(path);
+            }
+            state.change_context_menu_path = None;
+            if let Some(repo) = state.current_repository.clone() {
+                state.history_view.load_history(&repo);
+            }
+        }
+        Message::ToggleBlameAnnotation => {
+            state.blame_active = !state.blame_active;
+        }
+        Message::CancelNetworkOperation => {
+            state.network_operation = None;
+        }
+        Message::TogglePullStrategy => {
+            state.pull_strategy = match state.pull_strategy {
+                state::PullStrategy::Merge => state::PullStrategy::Rebase,
+                state::PullStrategy::Rebase => state::PullStrategy::Merge,
+            };
+        }
+        Message::ForcePushCurrent => {
+            if let Some(repo) = &state.current_repository {
+                if let Ok(Some(branch)) = repo.current_branch() {
+                    let remote = repo
+                        .current_upstream_remote()
+                        .unwrap_or_else(|| "origin".to_string());
+                    state.network_operation = Some(state::NetworkOperation {
+                        label: format!("强制推送 {} → {}", branch, remote),
+                        progress: None,
+                        status: Some("--force-with-lease".to_string()),
+                    });
+                    match git_core::force_push(repo, &remote, &branch) {
+                        Ok(()) => {
+                            state.network_operation = None;
+                            state.set_success(
+                                "强制推送成功",
+                                Some(format!("{branch} → {remote}")),
+                                "workspace.push.force",
+                            );
+                        }
+                        Err(e) => {
+                            state.network_operation = None;
+                            report_async_failure(
+                                state,
+                                "强制推送失败",
+                                e.to_string(),
+                                "workspace.push.force",
+                                "workspace.push.force",
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        Message::SetUpstreamAndPush { branch, remote } => {
+            if let Some(repo) = &state.current_repository {
+                let upstream = format!("{remote}/{branch}");
+                if let Err(e) = repo.set_branch_upstream(&branch, &upstream) {
+                    report_async_failure(
+                        state,
+                        "设置上游失败",
+                        e.to_string(),
+                        "workspace.push.upstream",
+                        "workspace.push.upstream",
+                    );
+                } else {
+                    return update(state, Message::Push);
+                }
+            }
+        }
+        Message::ShowWorktrees => {
+            if let Ok(repo) = require_repository(state) {
+                state.worktree_state.load_worktrees(&repo);
+                state.open_auxiliary_view(state::AuxiliaryView::Worktrees);
+            }
+        }
+        Message::WorktreeMessage(msg) => {
+            use views::worktree_view::WorktreeMessage;
+            match msg {
+                WorktreeMessage::Refresh => {
+                    if let Ok(repo) = require_repository(state) {
+                        state.worktree_state.load_worktrees(&repo);
+                    }
+                }
+                WorktreeMessage::Remove(path) => {
+                    if let Ok(repo) = require_repository(state) {
+                        state.worktree_state.remove_worktree(&repo, path);
+                    }
+                }
+                WorktreeMessage::Close => state.close_auxiliary_view(),
+            }
+        }
+        Message::OpenInEditor(path) => {
+            state.change_context_menu_path = None;
+            if let Some(repo) = &state.current_repository {
+                let full_path = repo.path().join(&path);
+                if let Err(e) = std::process::Command::new("open").arg(&full_path).spawn() {
+                    log::warn!("Failed to open file in editor: {}", e);
+                }
+            }
+        }
         Message::SwitchProject(path) => {
             if let Err(error) = state.switch_to_project(&path) {
                 report_async_failure(
@@ -407,7 +566,90 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::NavigatePrevFile => select_relative_file(state, -1),
         Message::NavigateNextFile => select_relative_file(state, 1),
+        Message::PrevHunk => return navigate_hunk(state, -1),
+        Message::NextHunk => return navigate_hunk(state, 1),
+        Message::TrackChangeContextMenuCursor(position) => {
+            state.track_change_context_menu_cursor(position);
+        }
+        Message::OpenChangeContextMenu(path) => {
+            state.open_change_context_menu(path);
+        }
+        Message::CloseChangeContextMenu => {
+            state.close_change_context_menu();
+        }
+        Message::RevertFile(path) => {
+            if let Some(repo) = state.current_repository.as_ref() {
+                if let Err(error) = git_core::index::discard_file(repo, std::path::Path::new(&path)) {
+                    report_async_failure(
+                        state,
+                        "回滚文件失败",
+                        error.to_string(),
+                        "workspace.revert",
+                        "workspace.revert",
+                    );
+                } else {
+                    state.refresh_changes();
+                    state.close_change_context_menu();
+                    state.set_success("文件已回滚", Some(path), "workspace.revert");
+                }
+            }
+        }
+        Message::CopyChangePath(path) => {
+            if let Err(error) = copy_text_to_clipboard(&path) {
+                report_async_failure(
+                    state,
+                    "复制路径失败",
+                    error,
+                    "workspace.copy_path",
+                    "workspace.copy_path",
+                );
+            } else {
+                state.set_success("路径已复制到剪贴板", Some(path), "workspace.copy_path");
+                state.close_change_context_menu();
+            }
+        }
         Message::KeyboardShortcut(action) => match action {
+            ShortcutAction::StageFile => {
+                if let Some(path) = state.selected_change_path.clone() {
+                    let can_stage = state.unstaged_changes.iter().any(|c| c.path == path)
+                        || state.untracked_files.iter().any(|c| c.path == path);
+                    if can_stage {
+                        if let Err(error) = state.stage_file(path) {
+                            report_async_failure(
+                                state,
+                                "暂存文件失败",
+                                error,
+                                "keyboard.stage",
+                                "keyboard.stage",
+                            );
+                        }
+                    } else {
+                        state.set_info("文件已暂存或无法暂存", None, "keyboard.stage");
+                    }
+                } else {
+                    state.set_info("请先选择一个文件", None, "keyboard.stage");
+                }
+            }
+            ShortcutAction::UnstageFile => {
+                if let Some(path) = state.selected_change_path.clone() {
+                    let can_unstage = state.staged_changes.iter().any(|c| c.path == path);
+                    if can_unstage {
+                        if let Err(error) = state.unstage_file(path) {
+                            report_async_failure(
+                                state,
+                                "取消暂存失败",
+                                error,
+                                "keyboard.unstage",
+                                "keyboard.unstage",
+                            );
+                        }
+                    } else {
+                        state.set_info("文件未暂存", None, "keyboard.unstage");
+                    }
+                } else {
+                    state.set_info("请先选择一个文件", None, "keyboard.unstage");
+                }
+            }
             ShortcutAction::StageAll => {
                 if let Err(error) = state.stage_all() {
                     report_async_failure(
@@ -431,6 +673,71 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             ShortcutAction::Refresh => return update(state, Message::Refresh),
+            ShortcutAction::OpenCommitDialog => {
+                if let Err(error) = open_commit_dialog(state) {
+                    report_async_failure(
+                        state,
+                        "无法打开提交面板",
+                        error,
+                        "workspace.commit",
+                        "workspace.commit",
+                    );
+                }
+            }
+            ShortcutAction::ToggleAmendCommitMode => {
+                if let Err(error) = toggle_commit_dialog_amend_mode(state) {
+                    report_async_failure(
+                        state,
+                        "无法切换 amend 模式",
+                        error,
+                        "workspace.commit",
+                        "workspace.commit.amend",
+                    );
+                }
+            }
+            ShortcutAction::OpenPushDialog => {
+                if let Err(error) = open_remote_dialog(state) {
+                    report_async_failure(
+                        state,
+                        "无法打开远程面板",
+                        error,
+                        "workspace.push",
+                        "workspace.push",
+                    );
+                } else {
+                    state.set_info("已打开远程面板", None, "keyboard.shortcut");
+                }
+            }
+            ShortcutAction::ShowFileDiff => {
+                if let Some(path) = state.selected_change_path.clone() {
+                    if let Err(error) = state.load_diff_for_file(&path) {
+                        report_async_failure(
+                            state,
+                            "加载差异失败",
+                            error,
+                            "keyboard.diff",
+                            "keyboard.diff",
+                        );
+                    }
+                } else {
+                    state.set_info("请先选择一个文件以查看差异", None, "keyboard.diff");
+                }
+            }
+            ShortcutAction::NavigatePrevFile => select_relative_file(state, -1),
+            ShortcutAction::NavigateNextFile => select_relative_file(state, 1),
+            ShortcutAction::PrevHunk => return update(state, Message::PrevHunk),
+            ShortcutAction::NextHunk => return update(state, Message::NextHunk),
+            ShortcutAction::Commit => {
+                if let Err(error) = submit_commit_dialog(state) {
+                    report_async_failure(
+                        state,
+                        "提交失败",
+                        error,
+                        "workspace.commit",
+                        "workspace.commit",
+                    );
+                }
+            }
             _ => {}
         },
         Message::Commit => {
@@ -496,6 +803,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::CloseToolbarRemoteMenu => state.close_toolbar_remote_menu(),
+        Message::CloseAuxiliary => state.close_auxiliary_view(),
         Message::ToolbarRemoteActionSelected { action, remote } => {
             if let Err(error) = run_toolbar_remote_action(state, action, remote) {
                 let (title, source) = match action {
@@ -528,14 +836,17 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ShowHistory => {
-            if let Err(error) = open_history_view(state) {
-                report_async_failure(
-                    state,
-                    "无法打开历史视图",
-                    error,
-                    "workspace.history",
-                    "workspace.history",
-                );
+            state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+            if let Some(repo) = state.current_repository.as_ref() {
+                state.history_view.load_history(repo);
+            }
+        }
+        Message::SwitchGitToolWindowTab(tab) => {
+            state.switch_git_tool_window_tab(tab);
+            if tab == GitToolWindowTab::Log {
+                if let Some(repo) = state.current_repository.as_ref() {
+                    state.history_view.load_history(repo);
+                }
             }
         }
         Message::ShowRemotes => {
@@ -739,12 +1050,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     );
                 }
             }
-            CommitDialogMessage::AmendPressed => {
-                if let Err(error) = switch_commit_dialog_to_amend(state) {
+            CommitDialogMessage::SetAmendMode(enabled) => {
+                let result = if enabled {
+                    switch_commit_dialog_to_amend(state)
+                } else {
+                    switch_commit_dialog_to_new_commit_mode(state)
+                };
+
+                if let Err(error) = result {
                     state.commit_dialog.set_error(error.clone());
                     report_async_failure(
                         state,
-                        "无法切换到 amend 模式",
+                        "无法切换提交模式",
                         error,
                         "workspace.commit",
                         "workspace.commit.amend",
@@ -752,6 +1069,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             CommitDialogMessage::CancelPressed => state.close_auxiliary_view(),
+            CommitDialogMessage::CommitAndPushPressed => {
+                // TODO: Implement commit-and-push flow
+                state.record_defect_observation("commit_and_push", "提交并推送流程尚未实现");
+            }
+            CommitDialogMessage::ToggleRecentMessages => {
+                // TODO: Show recent messages dropdown
+                state.record_defect_observation("toggle_recent_messages", "最近消息下拉尚未实现");
+            }
+            CommitDialogMessage::SelectRecentMessage(_index) => {
+                // TODO: Insert selected recent message into editor
+                state.record_defect_observation("select_recent_message", "选择历史消息尚未实现");
+            }
         },
         Message::BranchPopupMessage(message) => {
             if branch_popup_message_closes_context_menu(&message) {
@@ -800,6 +1129,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::SetSearchQuery(query) => {
                     let selection_changed = state.branch_popup.set_search_query(query);
+                    if selection_changed {
+                        if let Ok(repo) = require_repository(state) {
+                            state.branch_popup.load_selected_branch_history(&repo);
+                        }
+                    }
+                }
+                BranchPopupMessage::ClearSearch => {
+                    let selection_changed = state.branch_popup.set_search_query(String::new());
                     if selection_changed {
                         if let Ok(repo) = require_repository(state) {
                             state.branch_popup.load_selected_branch_history(&repo);
@@ -904,6 +1241,24 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             }
                         }
                     }
+                }
+                BranchPopupMessage::PrepareDeleteBranch(name) => {
+                    if let Ok(repo) = require_repository(state) {
+                        state.branch_popup.prepare_delete_branch(&repo, name);
+                    }
+                }
+                BranchPopupMessage::ConfirmDeleteBranch => {
+                    if let Some(name) = state.branch_popup.pending_delete_branch.take() {
+                        state.branch_popup.pending_delete_not_merged = false;
+                        return update(
+                            state,
+                            Message::BranchPopupMessage(BranchPopupMessage::DeleteBranch(name)),
+                        );
+                    }
+                }
+                BranchPopupMessage::CancelDeleteBranch => {
+                    state.branch_popup.pending_delete_branch = None;
+                    state.branch_popup.pending_delete_not_merged = false;
                 }
                 BranchPopupMessage::CheckoutBranch(name) => {
                     if let Ok(repo) = require_repository(state) {
@@ -1508,7 +1863,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     state.history_view.load_history(&repo);
                     state.history_view.context_menu_commit = None;
-                    state.open_auxiliary_view(AuxiliaryView::History);
                     if let Some(error) = state.history_view.error.clone() {
                         report_async_failure(
                             state,
@@ -1551,7 +1905,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.history_view.context_menu_commit = Some(commit_id);
                     state.history_view.context_menu_anchor =
                         Some(state.history_view.context_menu_cursor);
-                    state.open_auxiliary_view(AuxiliaryView::History);
                     if let Some(error) = state.history_view.error.clone() {
                         report_async_failure(
                             state,
@@ -1578,7 +1931,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     );
                 } else {
                     state.history_view.context_menu_commit = None;
-                    state.open_auxiliary_view(AuxiliaryView::History);
                     state.show_toast(
                         crate::state::FeedbackLevel::Success,
                         "已复制提交哈希",
@@ -1593,7 +1945,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         match git_core::export_commit_patch(&repo, &commit_id, &path) {
                             Ok(()) => {
                                 state.history_view.context_menu_commit = None;
-                                state.open_auxiliary_view(AuxiliaryView::History);
                                 state.set_success(
                                     "已导出补丁",
                                     Some(path.display().to_string()),
@@ -1759,7 +2110,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     );
                                 }
                             } else {
-                                state.open_auxiliary_view(AuxiliaryView::History);
                                 state.set_success(
                                     format!("已准备修改提交 {}", short_commit_id(&commit_id)),
                                     Some("当前历史已刷新，可继续查看后续状态。".to_string()),
@@ -1812,7 +2162,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     "workspace.history.fixup",
                                 );
                             } else {
-                                state.open_auxiliary_view(AuxiliaryView::History);
                                 state.set_success(
                                     format!("已完成 Fixup {}", short_commit_id(&commit_id)),
                                     Some(
@@ -1867,7 +2216,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     "workspace.history.squash",
                                 );
                             } else {
-                                state.open_auxiliary_view(AuxiliaryView::History);
                                 state.set_success(
                                     format!("已压缩提交 {}", short_commit_id(&commit_id)),
                                     Some(
@@ -1922,7 +2270,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     "workspace.history.drop",
                                 );
                             } else {
-                                state.open_auxiliary_view(AuxiliaryView::History);
                                 state.set_success(
                                     format!("已删除提交 {}", short_commit_id(&commit_id)),
                                     Some(
@@ -1978,6 +2325,98 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             HistoryMessage::ClearSearch => state.history_view.clear_search(),
+            HistoryMessage::SelectLogTab(index) => {
+                if index < state.log_tabs.len() {
+                    state.active_log_tab = index;
+                }
+            }
+            HistoryMessage::CloseLogTab(index) => {
+                if index < state.log_tabs.len() && state.log_tabs[index].is_closable {
+                    state.log_tabs.remove(index);
+                    if state.active_log_tab >= state.log_tabs.len() {
+                        state.active_log_tab = state.log_tabs.len().saturating_sub(1);
+                    }
+                }
+            }
+            HistoryMessage::NewLogTab => {
+                let id = state.next_log_tab_id;
+                state.next_log_tab_id += 1;
+                state.log_tabs.push(state::LogTab {
+                    id,
+                    label: format!("标签页 {}", id),
+                    is_closable: true,
+                    branch_filter: None,
+                    text_filter: String::new(),
+                    author_filter: None,
+                    date_range: None,
+                    path_filter: None,
+                    scroll_offset: 0.0,
+                    selected_commit: None,
+                });
+                state.active_log_tab = state.log_tabs.len() - 1;
+            }
+            HistoryMessage::OpenInNewTab(branch) => {
+                let id = state.next_log_tab_id;
+                state.next_log_tab_id += 1;
+                state.log_tabs.push(state::LogTab::for_branch(id, branch));
+                state.active_log_tab = state.log_tabs.len() - 1;
+            }
+            HistoryMessage::SetBranchFilter(branch) => {
+                if let Some(tab) = state.log_tabs.get_mut(state.active_log_tab) {
+                    tab.branch_filter = branch;
+                }
+            }
+            HistoryMessage::SetAuthorFilter(author) => {
+                if let Some(tab) = state.log_tabs.get_mut(state.active_log_tab) {
+                    tab.author_filter = author;
+                }
+            }
+            HistoryMessage::SetPathFilter(path) => {
+                if let Some(tab) = state.log_tabs.get_mut(state.active_log_tab) {
+                    tab.path_filter = path;
+                }
+            }
+            HistoryMessage::ToggleBranchesDashboard => {
+                state.log_branches_dashboard_visible = !state.log_branches_dashboard_visible;
+            }
+            HistoryMessage::DashboardSelectBranch(branch) => {
+                // Filter log to this branch
+                if let Some(tab) = state.log_tabs.get_mut(state.active_log_tab) {
+                    tab.branch_filter = Some(branch);
+                }
+            }
+            HistoryMessage::DashboardCheckoutBranch(name) => {
+                return update(
+                    state,
+                    Message::BranchPopupMessage(
+                        crate::views::branch_popup::BranchPopupMessage::CheckoutBranch(name),
+                    ),
+                );
+            }
+            HistoryMessage::DashboardMergeBranch(name) => {
+                return update(
+                    state,
+                    Message::BranchPopupMessage(
+                        crate::views::branch_popup::BranchPopupMessage::MergeBranch(name),
+                    ),
+                );
+            }
+            HistoryMessage::DashboardRebaseOnto(name) => {
+                return update(
+                    state,
+                    Message::BranchPopupMessage(
+                        crate::views::branch_popup::BranchPopupMessage::RebaseCurrentOnto(name),
+                    ),
+                );
+            }
+            HistoryMessage::DashboardDeleteBranch(name) => {
+                return update(
+                    state,
+                    Message::BranchPopupMessage(
+                        crate::views::branch_popup::BranchPopupMessage::PrepareDeleteBranch(name),
+                    ),
+                );
+            }
         },
         Message::RemoteDialogMessage(message) => match message {
             RemoteDialogMessage::SelectRemote(name) => {
@@ -2143,6 +2582,38 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     }
                 }
             }
+            TagDialogMessage::PushTag(name) => {
+                if let Ok(repo) = require_repository(state) {
+                    let remote = repo
+                        .current_upstream_remote()
+                        .unwrap_or_else(|| "origin".to_string());
+                    match git_core::push_tag(&repo, &name, &remote) {
+                        Ok(()) => {
+                            state.tag_dialog.success_message =
+                                Some(format!("标签 {name} 已推送到 {remote}"));
+                        }
+                        Err(e) => {
+                            state.tag_dialog.error = Some(format!("推送标签失败: {e}"));
+                        }
+                    }
+                }
+            }
+            TagDialogMessage::DeleteRemoteTag(name) => {
+                if let Ok(repo) = require_repository(state) {
+                    let remote = repo
+                        .current_upstream_remote()
+                        .unwrap_or_else(|| "origin".to_string());
+                    match git_core::delete_remote_tag(&repo, &name, &remote) {
+                        Ok(()) => {
+                            state.tag_dialog.success_message =
+                                Some(format!("远程标签 {name} 已从 {remote} 删除"));
+                        }
+                        Err(e) => {
+                            state.tag_dialog.error = Some(format!("删除远程标签失败: {e}"));
+                        }
+                    }
+                }
+            }
             TagDialogMessage::SetTagName(value) => state.tag_dialog.tag_name = value,
             TagDialogMessage::SetTarget(value) => state.tag_dialog.target = value,
             TagDialogMessage::SetMessage(value) => state.tag_dialog.message = value,
@@ -2264,6 +2735,25 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             StashPanelMessage::Close => state.close_auxiliary_view(),
+            StashPanelMessage::PopStash(index) => {
+                if let Ok(repo) = require_repository(state) {
+                    state.stash_panel.apply_stash(&repo, index);
+                    if state.stash_panel.error.is_none() {
+                        let _ = refresh_repository_after_action(state, &repo, false);
+                        if let Some(current) = state.current_repository.clone() {
+                            state.stash_panel.load_stashes(&current);
+                        }
+                    }
+                }
+            }
+            StashPanelMessage::ToggleIncludeUntracked => {
+                state.stash_panel.include_untracked = !state.stash_panel.include_untracked;
+            }
+            StashPanelMessage::TogglePreview(index) => {
+                if let Ok(repo) = require_repository(state) {
+                    state.stash_panel.toggle_preview(&repo, index);
+                }
+            }
         },
         Message::RebaseEditorMessage(message) => match message {
             RebaseEditorMessage::SetBaseBranch(value) => state.rebase_editor.onto_branch = value,
@@ -2502,12 +2992,14 @@ fn refresh_open_auxiliary_view(state: &mut AppState) {
 
     match state.auxiliary_view {
         Some(AuxiliaryView::Branches) => state.branch_popup.load_branches(&repo),
-        Some(AuxiliaryView::History) => state.history_view.load_history(&repo),
         Some(AuxiliaryView::Remotes) => state.remote_dialog.load_remotes(&repo),
         Some(AuxiliaryView::Tags) => state.tag_dialog.load_tags(&repo),
         Some(AuxiliaryView::Stashes) => state.stash_panel.load_stashes(&repo),
         Some(AuxiliaryView::Rebase) => state.rebase_editor.load_status(&repo),
-        Some(AuxiliaryView::Commit) | None => {}
+        Some(AuxiliaryView::Worktrees) => state.worktree_state.load_worktrees(&repo),
+        Some(AuxiliaryView::Commit)
+        | Some(AuxiliaryView::History)
+        | None => {}
     }
 }
 
@@ -2637,13 +3129,10 @@ fn run_toolbar_remote_action(
 }
 
 fn open_commit_dialog(state: &mut AppState) -> Result<(), String> {
-    let repo = require_repository(state)?;
-    let diff = build_staged_diff(&repo, &state.staged_changes)?;
+    require_repository(state)?;
 
     state.navigate_to(ShellSection::Changes);
-    state.commit_dialog =
-        commit_dialog::CommitDialogState::for_new_commit(state.staged_changes.clone(), &diff);
-    state.open_auxiliary_view(AuxiliaryView::Commit);
+    state.switch_git_tool_window_tab(GitToolWindowTab::Changes);
     state.set_info(
         "已打开提交面板",
         Some("确认暂存文件与提交说明后，即可创建提交。".to_string()),
@@ -2663,9 +3152,9 @@ fn switch_commit_dialog_to_amend(state: &mut AppState) -> Result<(), String> {
     let commit = git_core::commit::get_commit(&repo, &head_commit.id)
         .map_err(|error| format!("加载提交详情失败: {}", error))?;
 
-    state.commit_dialog =
-        commit_dialog::CommitDialogState::for_amend(state.staged_changes.clone(), commit, &diff);
-    state.open_auxiliary_view(AuxiliaryView::Commit);
+    state.commit_dialog.diff = diff;
+    state.commit_dialog.staged_files = state.staged_changes.clone();
+    state.commit_dialog.enable_amend_mode(commit);
     state.set_info(
         "已切换到 amend 模式",
         Some("你可以修改提交说明，或只保留部分暂存文件后更新最近一次提交。".to_string()),
@@ -2674,21 +3163,34 @@ fn switch_commit_dialog_to_amend(state: &mut AppState) -> Result<(), String> {
     Ok(())
 }
 
+fn switch_commit_dialog_to_new_commit_mode(state: &mut AppState) -> Result<(), String> {
+    if state.commit_dialog.is_amend {
+        state.commit_dialog.diff =
+            build_staged_diff(&require_repository(state)?, &state.staged_changes)?;
+        state.commit_dialog.staged_files = state.staged_changes.clone();
+        state.commit_dialog.disable_amend_mode();
+        state.set_info(
+            "已切回普通提交模式",
+            Some("当前提交面板会按暂存文件创建新的提交。".to_string()),
+            "workspace.commit",
+        );
+        Ok(())
+    } else {
+        open_commit_dialog(state)
+    }
+}
+
+fn toggle_commit_dialog_amend_mode(state: &mut AppState) -> Result<(), String> {
+    if state.commit_dialog.is_amend {
+        switch_commit_dialog_to_new_commit_mode(state)
+    } else {
+        switch_commit_dialog_to_amend(state)
+    }
+}
+
 fn submit_commit_dialog(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
     state.commit_dialog.start_commit();
-
-    if !state.commit_dialog.is_amend {
-        let selected_files = state.commit_dialog.selected_files.clone();
-        for change in state
-            .staged_changes
-            .iter()
-            .filter(|change| !selected_files.contains(&change.path))
-        {
-            git_core::index::unstage_file(&repo, Path::new(&change.path))
-                .map_err(|error| format!("更新待提交文件集合失败: {}", error))?;
-        }
-    }
 
     let commit_id = if state.commit_dialog.is_amend {
         let commit_to_amend = state
@@ -2756,6 +3258,7 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
             | BranchPopupMessage::SelectBranchCommit(_)
             | BranchPopupMessage::ToggleFolder(_)
             | BranchPopupMessage::SetSearchQuery(_)
+            | BranchPopupMessage::ClearSearch
             | BranchPopupMessage::CloseCommitContextMenu
             | BranchPopupMessage::PrepareCreateFromSelected(_)
             | BranchPopupMessage::PrepareRenameBranch(_)
@@ -2774,6 +3277,9 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
             | BranchPopupMessage::AbortInProgressCommitAction
             | BranchPopupMessage::OpenConflictList
             | BranchPopupMessage::DeleteBranch(_)
+            | BranchPopupMessage::PrepareDeleteBranch(_)
+            | BranchPopupMessage::ConfirmDeleteBranch
+            | BranchPopupMessage::CancelDeleteBranch
             | BranchPopupMessage::CheckoutBranch(_)
             | BranchPopupMessage::CheckoutRemoteBranch(_)
             | BranchPopupMessage::MergeBranch(_)
@@ -2795,17 +3301,6 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
             | BranchPopupMessage::OpenRebase
             | BranchPopupMessage::Close
     )
-}
-
-fn open_history_view(state: &mut AppState) -> Result<(), String> {
-    let repo = require_repository(state)?;
-    state.history_view.load_history(&repo);
-    if let Some(error) = state.history_view.error.clone() {
-        return Err(error);
-    }
-    state.open_auxiliary_view(AuxiliaryView::History);
-    state.set_info("已打开历史", None, "workspace.history");
-    Ok(())
 }
 
 fn open_remote_dialog(state: &mut AppState) -> Result<(), String> {
@@ -2978,6 +3473,17 @@ fn select_relative_file(state: &mut AppState, delta: isize) {
     }
 }
 
+fn navigate_hunk(state: &mut AppState, delta: isize) -> Task<Message> {
+    if let Some(offset) = state.navigate_hunk(delta) {
+        scroll_to(
+            Id::new("diff-scroll"),
+            AbsoluteOffset { x: 0.0, y: offset },
+        )
+    } else {
+        Task::none()
+    }
+}
+
 fn report_async_failure(
     state: &mut AppState,
     title: impl Into<String>,
@@ -3139,11 +3645,13 @@ fn remote_panel_hint(repo: &Repository, action_label: &str) -> String {
 fn view(state: &AppState) -> Element<'_, Message> {
     let i18n = &i18n::ZH_CN;
     let body = build_body(state, i18n);
+    let bottom_tool_window = build_docked_tool_window(state);
 
     MainWindow::new(
         i18n,
         state,
         body,
+        bottom_tool_window,
         Message::OpenRepository,
         Message::SwitchProject,
         Message::InitRepository,
@@ -3162,6 +3670,8 @@ fn view(state: &AppState) -> Element<'_, Message> {
         Message::ShowTags,
         Message::Stash,
         Message::ShowRebase,
+        Message::CloseAuxiliary,
+        Message::SwitchGitToolWindowTab,
         Message::DismissFeedback,
         Message::DismissToast,
     )
@@ -3173,16 +3683,13 @@ fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Mess
         return build_welcome_body(i18n);
     }
 
-    if let Some(auxiliary) = state.auxiliary_view {
+    if let Some(auxiliary) = state
+        .auxiliary_view
+        .filter(|view| !is_docked_auxiliary_view(*view))
+    {
         return match auxiliary {
-            AuxiliaryView::Commit => {
-                commit_dialog::view(&state.commit_dialog).map(Message::CommitDialogMessage)
-            }
             AuxiliaryView::Branches => {
                 branch_popup::view(&state.branch_popup).map(Message::BranchPopupMessage)
-            }
-            AuxiliaryView::History => {
-                history_view::view(&state.history_view).map(Message::HistoryMessage)
             }
             AuxiliaryView::Remotes => {
                 remote_dialog::view(&state.remote_dialog).map(Message::RemoteDialogMessage)
@@ -3196,14 +3703,27 @@ fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Mess
             AuxiliaryView::Rebase => {
                 rebase_editor::view(&state.rebase_editor).map(Message::RebaseEditorMessage)
             }
+            AuxiliaryView::Worktrees => {
+                views::worktree_view::view(&state.worktree_state)
+                    .map(Message::WorktreeMessage)
+            }
+            AuxiliaryView::Commit => build_changes_body(state, i18n),
+            AuxiliaryView::History => build_log_body(state),
         };
     }
 
     match state.shell.active_section {
-        ShellSection::Changes => build_changes_body(state, i18n),
+        ShellSection::Changes => match state.shell.git_tool_window_tab {
+            GitToolWindowTab::Changes => build_changes_body(state, i18n),
+            GitToolWindowTab::Log => build_log_body(state),
+        },
         ShellSection::Conflicts => build_conflict_body(state),
         ShellSection::Welcome => build_welcome_body(i18n),
     }
+}
+
+fn build_docked_tool_window<'a>(_state: &'a AppState) -> Option<Element<'a, Message>> {
+    None
 }
 
 fn build_welcome_body<'a>(i18n: &'a i18n::I18n) -> Element<'a, Message> {
@@ -3226,29 +3746,30 @@ fn build_welcome_body<'a>(i18n: &'a i18n::I18n) -> Element<'a, Message> {
     )
 }
 
+fn build_log_body<'a>(state: &'a AppState) -> Element<'a, Message> {
+    history_view::view_with_tabs(
+        &state.history_view,
+        &state.log_tabs,
+        state.active_log_tab,
+        &state.branch_popup.local_branches,
+        &state.branch_popup.remote_branches,
+        state.log_branches_dashboard_visible,
+    )
+    .map(Message::HistoryMessage)
+}
+
 fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     let can_stage_all = !state.unstaged_changes.is_empty() || !state.untracked_files.is_empty();
     let can_unstage_all = !state.staged_changes.is_empty();
-    let mut changes_content = Column::new()
+    let changes_content = Column::new()
         .spacing(theme::spacing::XS)
         .height(Length::Fill)
-        .push(
-            Row::new()
-                .spacing(theme::spacing::XS)
-                .align_y(Alignment::Center)
-                .push(Text::new(i18n.changes).size(13))
-                .push(widgets::info_chip::<Message>(
-                    state.workspace_change_count().to_string(),
-                    BadgeTone::Neutral,
-                )),
-        )
         .push(Container::new(build_change_sections(state, i18n)).height(Length::Fill));
 
-    if state.workspace_change_count() > 0 {
-        changes_content = changes_content
-            .push(iced::widget::rule::horizontal(1))
-            .push(build_commit_footer(state, i18n));
-    }
+    let display_mode_icon = match state.file_display_mode {
+        state::FileDisplayMode::Flat => "≡",
+        state::FileDisplayMode::Tree => "▤",
+    };
 
     let changes_panel = Container::new(
         Column::new()
@@ -3258,20 +3779,16 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
                     Row::new()
                         .spacing(theme::spacing::XS)
                         .align_y(Alignment::Center)
-                        .push(button::tab("提交", true, None::<Message>))
-                        .push(button::tab("搁置", false, None::<Message>))
-                        .push(button::tab("储藏", false, None::<Message>))
-                        .push(Space::new().width(Length::Fill)),
-                )
-                .padding(theme::density::SECONDARY_BAR_PADDING)
-                .style(theme::frame_style(theme::Surface::Toolbar)),
-            )
-            .push(iced::widget::rule::horizontal(1))
-            .push(
-                Container::new(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .align_y(Alignment::Center)
+                        .push(Text::new(i18n.changes).size(12))
+                        .push(widgets::info_chip::<Message>(
+                            state.workspace_change_count().to_string(),
+                            BadgeTone::Neutral,
+                        ))
+                        .push(Space::new().width(Length::Fill))
+                        .push(button::toolbar_icon(
+                            display_mode_icon,
+                            Some(Message::ToggleFileDisplayMode),
+                        ))
                         .push(button::toolbar_icon("⟳", Some(Message::Refresh)))
                         .push(button::toolbar_icon(
                             "✓",
@@ -3280,21 +3797,32 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
                         .push(button::toolbar_icon(
                             "↶",
                             can_unstage_all.then_some(Message::UnstageAll),
-                        ))
-                        .push(Space::new().width(Length::Fill)),
+                        )),
                 )
                 .padding(theme::density::SECONDARY_BAR_PADDING)
-                .style(theme::frame_style(theme::Surface::Nav)),
+                .style(theme::frame_style(theme::Surface::Toolbar)),
             )
             .push(iced::widget::rule::horizontal(1))
             .push(
                 Container::new(changes_content)
-                    .padding(theme::density::PANE_PADDING)
+                    .padding([4, 4])
                     .height(Length::Fill),
             ),
     )
-    .width(Length::FillPortion(5))
+    .width(Length::Fill)
+    .height(Length::Fill)
     .style(theme::panel_style(theme::Surface::Panel));
+
+    let changes_stack = Container::new(
+        stack([
+            changes_panel.into(),
+            build_change_context_menu_overlay(state),
+        ])
+        .width(Length::Fill)
+        .height(Length::Fill),
+    )
+    .width(Length::FillPortion(5))
+    .height(Length::Fill);
 
     let diff_panel = Container::new(
         Column::new()
@@ -3306,31 +3834,58 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
                     .height(Length::Fill),
             ),
     )
-    .width(Length::FillPortion(8))
+    .height(Length::Fill)
     .style(theme::panel_style(theme::Surface::Panel));
+
+    let commit_panel = commit_panel::view(&state.commit_dialog, &state.recent_commit_messages).map(Message::CommitDialogMessage);
+
+    let right_panel = Column::new()
+        .spacing(0)
+        .height(Length::Fill)
+        .push(diff_panel.height(Length::FillPortion(10)))
+        .push(iced::widget::rule::horizontal(1))
+        .push(
+            Container::new(commit_panel)
+                .height(Length::FillPortion(2)),
+        );
 
     Row::new()
         .spacing(theme::spacing::XS)
         .height(Length::Fill)
-        .push(changes_panel)
-        .push(diff_panel)
+        .push(changes_stack)
+        .push(right_panel.width(Length::FillPortion(8)))
         .into()
 }
 
 fn build_change_sections<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     if state.workspace_change_count() == 0 {
-        let action_row = Row::new()
-            .spacing(theme::spacing::XS)
-            .push(button::secondary(i18n.refresh, Some(Message::Refresh)))
-            .push(button::ghost("分支", Some(Message::ShowBranches)))
-            .push(button::ghost("历史", Some(Message::ShowHistory)));
-
-        return widgets::panel_empty_state(
-            i18n.changes,
-            i18n.clean_workspace,
-            i18n.clean_workspace_detail,
-            Some(action_row.into()),
-        );
+        return Container::new(
+            Column::new()
+                .spacing(theme::spacing::XS)
+                .align_x(Alignment::Center)
+                .push(
+                    Text::new(i18n.clean_workspace)
+                        .size(13)
+                        .color(theme::darcula::TEXT_SECONDARY),
+                )
+                .push(
+                    Text::new(i18n.clean_workspace_detail)
+                        .size(10)
+                        .color(theme::darcula::TEXT_DISABLED),
+                )
+                .push(Space::new().height(Length::Fixed(theme::spacing::SM)))
+                .push(
+                    Row::new()
+                        .spacing(theme::spacing::XS)
+                        .push(button::secondary(i18n.refresh, Some(Message::Refresh)))
+                        .push(button::ghost("分支", Some(Message::ShowBranches)))
+                        .push(button::ghost("历史", Some(Message::ShowHistory))),
+                ),
+        )
+        .width(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
+        .into();
     }
 
     widgets::changelist::ChangesList::new(
@@ -3340,147 +3895,234 @@ fn build_change_sections<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Eleme
         &state.untracked_files,
     )
     .with_selected_path(state.selected_change_path.as_deref())
+    .with_display_mode(state.file_display_mode)
     .with_select_handler(Message::SelectChange)
     .with_stage_handler(Message::StageFile)
     .with_unstage_handler(Message::UnstageFile)
+    .with_context_menu_handler(Message::OpenChangeContextMenu)
+    .with_track_cursor_handler(Message::TrackChangeContextMenuCursor)
+    .with_toggle_display_mode(Message::ToggleFileDisplayMode)
+    .with_toggle_staged(Message::ToggleStagedCollapsed)
+    .with_toggle_unstaged(Message::ToggleUnstagedCollapsed)
     .view()
 }
 
-fn build_commit_footer<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
-    let staged_count = state.staged_changes.len();
-    let can_commit = staged_count > 0;
-    let status_text = if can_commit {
-        format!("已暂存 {staged_count} 个文件，直接打开提交面板继续填写说明。")
+const CHANGE_CONTEXT_MENU_WIDTH: f32 = 228.0;
+const CHANGE_CONTEXT_MENU_ESTIMATED_HEIGHT: f32 = 180.0;
+const CHANGE_CONTEXT_MENU_EDGE_PADDING: f32 = 8.0;
+
+fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Message> {
+    let Some(path) = state.change_context_menu_path.as_deref() else {
+        return Space::new().width(Length::Shrink).into();
+    };
+    let anchor = state
+        .change_context_menu_anchor
+        .unwrap_or(state.change_context_menu_cursor);
+
+    let is_staged = state.staged_changes.iter().any(|c| c.path == path);
+    let _is_unstaged = state.unstaged_changes.iter().any(|c| c.path == path);
+
+    let stage_label = if is_staged { "取消暂存" } else { "暂存" };
+    let stage_detail = if is_staged {
+        "将该文件从暂存区移回工作区".to_string()
     } else {
-        "先勾选要提交的文件，提交按钮就会可用。".to_string()
+        "将该文件添加到暂存区".to_string()
+    };
+    let stage_message = if is_staged {
+        Some(Message::UnstageFile(path.to_string()))
+    } else {
+        Some(Message::StageFile(path.to_string()))
     };
 
-    Container::new(
-        Row::new()
-            .spacing(theme::spacing::XS)
-            .align_y(Alignment::Center)
-            .push(Text::new("提交准备").size(11))
-            .push(
-                Container::new(
-                    Text::new(status_text)
-                        .size(10)
-                        .width(Length::Fill)
-                        .wrapping(text::Wrapping::WordOrGlyph)
-                        .color(theme::darcula::TEXT_SECONDARY),
-                )
-                .width(Length::Fill),
+    let show_diff_enabled = state.selected_change_path.as_deref() != Some(path);
+
+    let actions = Column::new()
+        .spacing(theme::spacing::XS)
+        .push(change_context_group(
+            "文件操作",
+            "针对选中文件的快速操作。",
+            vec![
+                change_context_action_row(
+                    "查看差异",
+                    "在右侧 diff 面板中显示该文件".to_string(),
+                    show_diff_enabled.then_some(Message::SelectChange(path.to_string())),
+                    widgets::menu::MenuTone::Neutral,
+                ),
+                change_context_action_row(
+                    stage_label,
+                    stage_detail,
+                    stage_message,
+                    widgets::menu::MenuTone::Accent,
+                ),
+                change_context_action_row(
+                    "回滚修改",
+                    "放弃该文件的所有本地修改（不可撤销）".to_string(),
+                    Some(Message::RevertFile(path.to_string())),
+                    widgets::menu::MenuTone::Danger,
+                ),
+                change_context_action_row(
+                    "复制路径",
+                    "将文件的相对路径复制到剪贴板".to_string(),
+                    Some(Message::CopyChangePath(path.to_string())),
+                    widgets::menu::MenuTone::Neutral,
+                ),
+                change_context_action_row(
+                    "显示历史",
+                    "在日志中查看该文件的提交记录".to_string(),
+                    Some(Message::ShowFileHistory(path.to_string())),
+                    widgets::menu::MenuTone::Neutral,
+                ),
+                change_context_action_row(
+                    "在编辑器中打开",
+                    "使用系统默认编辑器打开文件".to_string(),
+                    Some(Message::OpenInEditor(path.to_string())),
+                    widgets::menu::MenuTone::Neutral,
+                ),
+            ],
+        ));
+
+    let menu = Container::new(actions)
+        .padding([8, 10])
+        .width(Length::Fixed(CHANGE_CONTEXT_MENU_WIDTH))
+        .style(widgets::menu::panel_style);
+
+    build_change_context_menu_layer(anchor, menu.into())
+}
+
+fn change_context_group<'a>(
+    title: &'static str,
+    detail: &'static str,
+    rows: Vec<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    widgets::menu::group(title, detail, widgets::menu::MenuTone::Neutral, rows)
+}
+
+fn change_context_action_row<'a>(
+    title: &'static str,
+    detail: String,
+    message: Option<Message>,
+    tone: widgets::menu::MenuTone,
+) -> Element<'a, Message> {
+    widgets::menu::action_row(None, title, Some(detail), None, message, tone)
+}
+
+fn build_change_context_menu_layer<'a>(
+    anchor: Point,
+    menu: Element<'a, Message>,
+) -> Element<'a, Message> {
+    let origin = change_context_menu_origin(anchor);
+
+    opaque(
+        mouse_area(
+            Container::new(
+                Column::new()
+                    .push(Space::new().height(Length::Fixed(origin.y)))
+                    .push(
+                        Row::new()
+                            .width(Length::Fill)
+                            .push(Space::new().width(Length::Fixed(origin.x)))
+                            .push(menu)
+                            .push(Space::new().width(Length::Fill)),
+                    )
+                    .push(Space::new().height(Length::Fill)),
             )
-            .push(button::primary(
-                i18n.commit,
-                can_commit.then_some(Message::Commit),
-            )),
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(widgets::menu::scrim_style),
+        )
+        .on_press(Message::CloseChangeContextMenu),
     )
-    .padding([6, 0])
-    .style(theme::frame_style(theme::Surface::Nav))
-    .into()
+}
+
+fn change_context_menu_origin(anchor: Point) -> Point {
+    let x = if anchor.x > CHANGE_CONTEXT_MENU_WIDTH * 0.68 {
+        (anchor.x - CHANGE_CONTEXT_MENU_WIDTH + 28.0).max(CHANGE_CONTEXT_MENU_EDGE_PADDING)
+    } else {
+        (anchor.x + 6.0).max(CHANGE_CONTEXT_MENU_EDGE_PADDING)
+    };
+    let y = if anchor.y > CHANGE_CONTEXT_MENU_ESTIMATED_HEIGHT * 0.52 {
+        (anchor.y - CHANGE_CONTEXT_MENU_ESTIMATED_HEIGHT + 18.0)
+            .max(CHANGE_CONTEXT_MENU_EDGE_PADDING)
+    } else {
+        (anchor.y + 6.0).max(CHANGE_CONTEXT_MENU_EDGE_PADDING)
+    };
+
+    Point::new(x, y)
 }
 
 fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
-    let title = state
+    let file_name = state
         .selected_change_path
         .as_ref()
-        .map(|path| {
-            std::path::Path::new(path)
-                .file_name()
-                .and_then(|value| value.to_str())
-                .unwrap_or(path.as_str())
-                .to_string()
-        })
-        .unwrap_or_else(|| "差异".to_string());
+        .and_then(|path| std::path::Path::new(path).file_name()?.to_str())
+        .unwrap_or("差异");
 
     let path_hint = state.selected_change_path.as_ref().and_then(|path| {
         std::path::Path::new(path)
             .parent()
-            .and_then(|value| value.to_str())
-            .filter(|value| !value.is_empty())
-            .map(|value| value.to_string())
+            .and_then(|p| p.to_str())
+            .filter(|p| !p.is_empty())
     });
-    let total_hunks = state.current_diff.as_ref().map(|diff| {
-        diff.files
-            .iter()
-            .map(|file| file.hunks.len())
-            .sum::<usize>()
-    });
-    let single_file_summary = state.current_diff.as_ref().and_then(|diff| {
-        (diff.files.len() == 1)
-            .then(|| diff_file_header::DiffFileToolbarSummary::from_file_diff(&diff.files[0]))
-    });
-    let context_hint = single_file_summary
+
+    let summary = state
+        .current_diff
         .as_ref()
-        .and_then(|summary| {
-            summary
-                .meta
-                .rename_hint
-                .clone()
-                .or(summary.meta.parent_path.clone())
-        })
-        .or(path_hint);
-    let context_slot: Element<'a, Message> = if let Some(hint) = context_hint {
-        Container::new(
-            Text::new(hint)
-                .size(10)
-                .wrapping(text::Wrapping::WordOrGlyph)
-                .color(theme::darcula::TEXT_SECONDARY),
-        )
-        .width(Length::Fill)
-        .into()
-    } else {
-        Space::new().width(Length::Fill).into()
-    };
+        .and_then(|diff| diff.files.first().map(|f| (f.additions, f.deletions)));
+
+    let file_position = state.current_diff.as_ref().and_then(|diff| {
+        (diff.files.len() > 1).then(|| {
+            state.selected_change_path.as_ref().and_then(|selected| {
+                diff.files
+                    .iter()
+                    .position(|f| f.new_path.as_deref().or(f.old_path.as_deref()) == Some(selected))
+                    .map(|idx| (idx + 1, diff.files.len()))
+            })
+        })?
+    });
 
     Container::new(
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(button::tab(title, true, None::<Message>))
-            .push(context_slot)
-            .push_maybe(single_file_summary.as_ref().map(|summary| {
-                widgets::compact_chip::<Message>(
-                    summary.meta.status_label,
-                    summary.meta.status_tone,
-                )
+            .push(
+                Column::new()
+                    .spacing(1)
+                    .width(Length::Fill)
+                    .push(Text::new(file_name).size(11))
+                    .push_maybe(path_hint.map(|hint| {
+                        Text::new(hint)
+                            .size(9)
+                            .color(theme::darcula::TEXT_SECONDARY)
+                    })),
+            )
+            .push_maybe(summary.map(|(add, del)| {
+                widgets::compact_chip::<Message>(format!("+{add} / -{del}"), BadgeTone::Neutral)
             }))
-            .push_maybe(single_file_summary.as_ref().map(|summary| {
-                widgets::compact_chip::<Message>(summary.change_summary.clone(), BadgeTone::Neutral)
+            .push_maybe(file_position.map(|(cur, tot)| {
+                widgets::compact_chip::<Message>(format!("{cur} / {tot}"), BadgeTone::Accent)
             }))
-            .push_maybe(total_hunks.map(|count| {
-                widgets::compact_chip::<Message>(format!("{} 区块", count), BadgeTone::Accent)
-            }))
-            .push_maybe(state.current_diff.as_ref().map(|diff| {
-                widgets::compact_chip::<Message>(
-                    format!("{} 文件", diff.files.len()),
-                    BadgeTone::Neutral,
-                )
-            }))
+            .push(Space::new().width(Length::Fill))
             .push(button::tab(
                 "统一",
                 state.diff_presentation == DiffPresentation::Unified,
-                (state.show_diff
-                    && state.current_diff.is_some()
-                    && state.diff_presentation != DiffPresentation::Unified)
-                    .then_some(Message::ToggleDiffPresentation),
+                state.current_diff.is_some().then_some(Message::ToggleDiffPresentation),
             ))
             .push(button::tab(
                 "分栏",
                 state.diff_presentation == DiffPresentation::Split,
-                (state.show_diff
-                    && state.current_diff.is_some()
-                    && state.diff_presentation != DiffPresentation::Split)
-                    .then_some(Message::ToggleDiffPresentation),
+                state.current_diff.is_some().then_some(Message::ToggleDiffPresentation),
             ))
-            .push(button::compact_ghost(
-                "上个",
-                Some(Message::NavigatePrevFile),
-            ))
-            .push(button::compact_ghost(
-                "下个",
-                Some(Message::NavigateNextFile),
-            )),
+            .push_maybe(state.current_diff.as_ref().and_then(|diff| {
+                let total_hunks: usize = diff.files.iter().map(|f| f.hunks.len()).sum();
+                (total_hunks > 1).then(|| {
+                    let nav: Element<'_, Message> = Row::new()
+                        .spacing(theme::spacing::XS)
+                        .push(button::compact_ghost("▲", Some(Message::PrevHunk)))
+                        .push(button::compact_ghost("▼", Some(Message::NextHunk)))
+                        .into();
+                    nav
+                })
+            })),
     )
     .padding(theme::density::SECONDARY_BAR_PADDING)
     .style(theme::frame_style(theme::Surface::Toolbar))
@@ -3489,26 +4131,39 @@ fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
 
 fn build_diff_content<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     if !state.show_diff || state.current_diff.is_none() {
-        return widgets::panel_empty_state(
-            i18n.diff,
+        return widgets::panel_empty_state_compact(
             i18n.diff_empty,
             i18n.diff_empty_detail,
-            Some(button::secondary("查看变更列表", Some(Message::ShowChanges)).into()),
         );
     }
 
     let diff = state.current_diff.as_ref().expect("diff checked");
     if diff.files.is_empty() {
-        return widgets::panel_empty_state(
-            i18n.diff,
+        return widgets::panel_empty_state_compact(
             i18n.no_changes,
             i18n.diff_empty_detail,
-            Some(button::secondary(i18n.refresh, Some(Message::Refresh)).into()),
         );
     }
 
+    // Determine if selected file is staged or unstaged for hunk action buttons
+    let selected_is_staged = state
+        .selected_change_path
+        .as_ref()
+        .map(|p| state.staged_changes.iter().any(|c| &c.path == p))
+        .unwrap_or(false);
+
     match state.diff_presentation {
-        DiffPresentation::Unified => widgets::diff_viewer::DiffViewer::new(diff).view(),
+        DiffPresentation::Unified => {
+            let mut viewer = widgets::diff_viewer::DiffViewer::new(diff);
+            if selected_is_staged {
+                viewer = viewer
+                    .with_unstage_hunk_handler(Message::UnstageHunk);
+            } else {
+                viewer = viewer
+                    .with_stage_hunk_handler(Message::StageHunk);
+            }
+            viewer.view()
+        }
         DiffPresentation::Split => widgets::split_diff_viewer::SplitDiffViewer::new(diff).view(),
     }
 }
@@ -4211,6 +4866,7 @@ pub enum Message {
     Push,
     ToggleToolbarRemoteMenu(ToolbarRemoteAction),
     CloseToolbarRemoteMenu,
+    CloseAuxiliary,
     ToolbarRemoteActionSelected {
         action: ToolbarRemoteAction,
         remote: String,
@@ -4221,11 +4877,19 @@ pub enum Message {
     ShowRemotes,
     ShowTags,
     ShowRebase,
+    SwitchGitToolWindowTab(GitToolWindowTab),
     SwitchProject(PathBuf),
     SelectChange(String),
     ToggleDiffPresentation,
     NavigatePrevFile,
     NavigateNextFile,
+    PrevHunk,
+    NextHunk,
+    TrackChangeContextMenuCursor(Point),
+    OpenChangeContextMenu(String),
+    CloseChangeContextMenu,
+    RevertFile(String),
+    CopyChangePath(String),
     OpenConflictResolver,
     CloseConflictResolver,
     SelectConflict(usize),
@@ -4240,4 +4904,37 @@ pub enum Message {
     TagDialogMessage(TagDialogMessage),
     StashPanelMessage(StashPanelMessage),
     RebaseEditorMessage(RebaseEditorMessage),
+    ToggleFileDisplayMode,
+    ToggleStagedCollapsed,
+    ToggleUnstagedCollapsed,
+    StageHunk(String, usize),
+    UnstageHunk(String, usize),
+    ShowFileHistory(String),
+    OpenInEditor(String),
+    ShowWorktrees,
+    WorktreeMessage(views::worktree_view::WorktreeMessage),
+    ToggleBlameAnnotation,
+    CancelNetworkOperation,
+    TogglePullStrategy,
+    ForcePushCurrent,
+    SetUpstreamAndPush { branch: String, remote: String },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state::ViewMode;
+
+    #[test]
+    fn open_commit_dialog_navigates_to_changes_tab() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let repo = git_core::Repository::init(temp_dir.path())
+            .expect("repository should initialize");
+        let mut state = AppState::new();
+        state.set_repository(repo);
+        state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+        open_commit_dialog(&mut state).expect("should open commit dialog");
+        assert_eq!(state.shell.git_tool_window_tab, GitToolWindowTab::Changes);
+        assert_eq!(state.view_mode, ViewMode::Repository);
+    }
 }

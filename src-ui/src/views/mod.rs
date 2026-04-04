@@ -8,6 +8,7 @@ pub mod rebase_editor;
 pub mod remote_dialog;
 pub mod stash_panel;
 pub mod tag_dialog;
+pub mod worktree_view;
 
 use crate::state::{FeedbackLevel, FeedbackState, ToastNotificationState};
 use crate::theme::{self, BadgeTone, Surface};
@@ -27,6 +28,35 @@ pub fn render_feedback_banner<'a, Message: Clone + 'a>(
         FeedbackLevel::Loading => (BadgeTone::Neutral, "处理中"),
         FeedbackLevel::Empty => (BadgeTone::Neutral, "空状态"),
     };
+
+    // IDEA-style: compact mode for inline feedback without full banner
+    if feedback.compact {
+        let content = Row::new()
+            .spacing(theme::spacing::SM)
+            .align_y(Alignment::Center)
+            .push(widgets::compact_chip::<Message>(label, tone))
+            .push(
+                Text::new(&feedback.title)
+                    .size(12)
+                    .color(theme::darcula::TEXT_PRIMARY),
+            )
+            .push_maybe(feedback.detail.as_ref().map(|detail| {
+                Text::new(detail)
+                    .size(11)
+                    .color(theme::darcula::TEXT_SECONDARY)
+            }));
+
+        return Container::new(content)
+            .padding([6, 10])
+            .style(theme::panel_style(match feedback.level {
+                FeedbackLevel::Info => Surface::Accent,
+                FeedbackLevel::Success => Surface::Success,
+                FeedbackLevel::Warning => Surface::Warning,
+                FeedbackLevel::Error => Surface::Danger,
+                FeedbackLevel::Loading | FeedbackLevel::Empty => Surface::Raised,
+            }))
+            .into();
+    }
 
     let dismiss_button: Option<Element<'a, Message>> = on_dismiss.map(|message| {
         Button::new(Text::new("收起").size(12))

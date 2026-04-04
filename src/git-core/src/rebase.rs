@@ -179,8 +179,7 @@ fn commit_subject_for_oid(
     Ok(commit
         .summary()
         .unwrap_or("(no subject)")
-        .replace('\n', " ")
-        .replace('\r', " "))
+        .replace(['\n', '\r'], " "))
 }
 
 fn ensure_local_interactive_rebase_allowed(

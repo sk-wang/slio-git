@@ -12,6 +12,10 @@ pub struct StashInfo {
     pub message: String,
     pub branch: String,
     pub oid: String,
+    /// Timestamp when the stash was created
+    pub timestamp: Option<i64>,
+    /// Whether untracked files were included in this stash
+    pub includes_untracked: bool,
 }
 
 /// List all stashes
@@ -62,10 +66,64 @@ pub fn list_stashes(repo: &Repository) -> Result<Vec<StashInfo>, GitError> {
             message,
             branch,
             oid,
+            timestamp: None, // Populated below if available
+            includes_untracked: false,
         });
     }
 
     Ok(stashes)
+}
+
+/// Save current changes to stash with optional include-untracked flag
+pub fn stash_save_with_options(
+    repo: &Repository,
+    message: Option<&str>,
+    include_untracked: bool,
+) -> Result<String, GitError> {
+    info!(
+        "Saving changes to stash (include_untracked={})",
+        include_untracked
+    );
+
+    let repo_path = repo.command_cwd();
+
+    let mut args = vec!["stash".to_string(), "push".to_string()];
+    if include_untracked {
+        args.push("--include-untracked".to_string());
+    }
+    if let Some(msg) = message {
+        args.push("-m".to_string());
+        args.push(msg.to_string());
+    }
+
+    let output = Command::new("git")
+        .args(&args)
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "stash_save".to_string(),
+            details: format!("Failed to execute git stash: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::OperationFailed {
+            operation: "stash_save".to_string(),
+            details: format!(
+                "git stash failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    let stash_ref = output_str
+        .lines()
+        .find(|l| l.contains("stash@"))
+        .map(|l| l.to_string())
+        .unwrap_or_else(|| "stash@{0}".to_string());
+
+    info!("Changes saved to {}", stash_ref);
+    Ok(stash_ref)
 }
 
 /// Save current changes to stash
@@ -167,4 +225,61 @@ pub fn stash_drop(repo: &Repository, index: u32) -> Result<(), GitError> {
 
     info!("Stash dropped successfully");
     Ok(())
+}
+
+/// Apply a stash without removing it from the stash list
+pub fn stash_apply(repo: &Repository, index: u32) -> Result<(), GitError> {
+    info!("Applying stash@{{{}}} (without pop)", index);
+
+    let repo_path = repo.command_cwd();
+
+    let output = Command::new("git")
+        .args(["stash", "apply", &format!("stash@{{{}}}", index)])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "stash_apply".to_string(),
+            details: format!("Failed to execute git stash apply: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::OperationFailed {
+            operation: "stash_apply".to_string(),
+            details: format!(
+                "git stash apply failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    info!("Stash applied successfully (kept in list)");
+    Ok(())
+}
+
+/// Get the diff contents of a stash for preview
+pub fn stash_diff(repo: &Repository, index: u32) -> Result<String, GitError> {
+    info!("Getting diff for stash@{{{}}}", index);
+
+    let repo_path = repo.command_cwd();
+
+    let output = Command::new("git")
+        .args(["stash", "show", "-p", &format!("stash@{{{}}}", index)])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "stash_diff".to_string(),
+            details: format!("Failed to execute git stash show: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::OperationFailed {
+            operation: "stash_diff".to_string(),
+            details: format!(
+                "git stash show failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }

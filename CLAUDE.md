@@ -1,10 +1,13 @@
 # slio-git Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-03-22
+Auto-generated from all feature plans. Last updated: 2026-04-04
 
 ## Active Technologies
-- Rust 2021+ + iced 0.13 (UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching) (002-jetbrains-ui-refactor)
+- Rust 2021+ + iced 0.14 (UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching) (002-jetbrains-ui-refactor)
 - N/A (git repositories are file-based) (002-jetbrains-ui-refactor)
+- Rust 2021+ + Iced 0.14 (pure Rust UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching) (010-idea-git-tool-window)
+- Rust (edition 2021+) + Iced 0.14 (UI), git2 0.19 (libgit2 bindings), notify 8 (file watching), syntect (syntax highlighting) (011-idea-git-parity)
+- File-based (git repositories); commit message history stored in `~/.config/slio-git/` (011-idea-git-parity)
 
 - Rust (edition 2021+) + Pure Iced (native Rust UI), git2-rs (libgit2 bindings), notify (file watching) (001-gitlight-intellij-replica)
 
@@ -24,10 +27,10 @@ cargo test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECH
 Rust (edition 2021+): Follow standard conventions
 
 ## Recent Changes
-- 003-jetbrains-diff-ui: Added Rust 2021+ + iced 0.13 (UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching)
-- 002-jetbrains-ui-refactor: Added Rust 2021+ + iced 0.13 (UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching)
+- 011-idea-git-parity: Added Rust (edition 2021+) + Iced 0.14 (UI), git2 0.19 (libgit2 bindings), notify 8 (file watching), syntect (syntax highlighting)
+- 010-idea-git-tool-window: Added Rust 2021+ + Iced 0.14 (pure Rust UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching)
+- 003-jetbrains-diff-ui: Added Rust 2021+ + iced 0.14 (UI framework), git2 0.19 (libgit2 bindings), notify 8 (file watching)
 
-- 001-gitlight-intellij-replica: Added Rust (edition 2021+) + Pure Iced, git2-rs, notify
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

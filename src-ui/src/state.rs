@@ -11,6 +11,7 @@ use git_core::diff::{AutoMergeResult, Diff, ThreeWayDiff};
 use git_core::index::Change;
 use git_core::remote::RemoteInfo;
 use git_core::repository::{Repository, SyncStatus};
+use iced::Point;
 use log::warn;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,6 +23,81 @@ pub enum ViewMode {
     Welcome,
     Repository,
     ConflictResolver,
+}
+
+/// File display mode for the change list
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FileDisplayMode {
+    /// Flat list showing filenames with relative paths
+    #[default]
+    Flat,
+    /// Directory tree grouped by folder hierarchy
+    Tree,
+}
+
+/// State for a single tab in the multi-tab log view
+#[derive(Debug, Clone)]
+pub struct LogTab {
+    /// Unique tab identifier
+    pub id: usize,
+    /// Display label (branch name or "全部")
+    pub label: String,
+    /// Whether this tab can be closed (false for "All" tab)
+    pub is_closable: bool,
+    /// Branch to filter by (None = all branches)
+    pub branch_filter: Option<String>,
+    /// Text search filter
+    pub text_filter: String,
+    /// Author name filter
+    pub author_filter: Option<String>,
+    /// Date range filter (start, end) as Unix timestamps
+    pub date_range: Option<(i64, i64)>,
+    /// File path filter
+    pub path_filter: Option<String>,
+    /// Vertical scroll position
+    pub scroll_offset: f32,
+    /// Currently selected commit hash
+    pub selected_commit: Option<String>,
+}
+
+impl LogTab {
+    /// Create the default "All" tab
+    pub fn all() -> Self {
+        Self {
+            id: 0,
+            label: "全部".to_string(),
+            is_closable: false,
+            branch_filter: None,
+            text_filter: String::new(),
+            author_filter: None,
+            date_range: None,
+            path_filter: None,
+            scroll_offset: 0.0,
+            selected_commit: None,
+        }
+    }
+
+    /// Create a branch-pinned tab
+    pub fn for_branch(id: usize, branch: String) -> Self {
+        Self {
+            id,
+            label: branch.clone(),
+            is_closable: true,
+            branch_filter: Some(branch),
+            text_filter: String::new(),
+            author_filter: None,
+            date_range: None,
+            path_filter: None,
+            scroll_offset: 0.0,
+            selected_commit: None,
+        }
+    }
+}
+
+impl Default for LogTab {
+    fn default() -> Self {
+        Self::all()
+    }
 }
 
 /// Diff presentation mode inside the changes workspace.
@@ -177,6 +253,14 @@ pub enum ShellSection {
     Conflicts,
 }
 
+/// Tabs inside the Git tool-window workspace (IDEA-style).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GitToolWindowTab {
+    #[default]
+    Changes,
+    Log,
+}
+
 /// Auxiliary full-screen surfaces that temporarily replace the shell body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuxiliaryView {
@@ -187,6 +271,7 @@ pub enum AuxiliaryView {
     Tags,
     Stashes,
     Rebase,
+    Worktrees,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,6 +395,7 @@ pub struct LightweightStatusSurface {
 #[derive(Debug, Clone)]
 pub struct AppShellState {
     pub active_section: ShellSection,
+    pub git_tool_window_tab: GitToolWindowTab,
     pub title: String,
     pub subtitle: String,
     pub primary_action_label: String,
@@ -345,6 +431,9 @@ pub struct CompactChromeProfile {
     pub has_selected_change: bool,
     pub has_staged_changes: bool,
     pub has_secondary_actions: bool,
+    pub editor_tab_label: String,
+    pub editor_tab_detail: Option<String>,
+    pub tool_window_title: Option<String>,
 }
 
 pub type WorkspaceContextSwitcher = WorkspaceContextStrip;
@@ -390,6 +479,10 @@ pub struct AppState {
     pub current_diff: Option<Diff>,
     pub diff_presentation: DiffPresentation,
     pub selected_change_path: Option<String>,
+    pub selected_hunk_index: Option<usize>,
+    pub change_context_menu_path: Option<String>,
+    pub change_context_menu_cursor: Point,
+    pub change_context_menu_anchor: Option<Point>,
     pub commit_dialog: CommitDialogState,
     pub branch_popup: BranchPopupState,
     pub history_view: HistoryState,
@@ -399,6 +492,42 @@ pub struct AppState {
     pub rebase_editor: RebaseEditorState,
     pub toolbar_remote_menu: Option<ToolbarRemoteMenuState>,
     auto_refresh: AutoRefreshState,
+    /// File display mode for the change list (flat vs tree)
+    pub file_display_mode: FileDisplayMode,
+    /// Multi-tab log state
+    pub log_tabs: Vec<LogTab>,
+    /// Active log tab index
+    pub active_log_tab: usize,
+    /// Next log tab ID counter
+    pub next_log_tab_id: usize,
+    /// Whether the branches dashboard sidebar is visible in the log view
+    pub log_branches_dashboard_visible: bool,
+    /// Whether blame/annotate gutter is active
+    pub blame_active: bool,
+    /// Recent commit messages for the current repository (last 10)
+    pub recent_commit_messages: Vec<String>,
+    /// Working tree management state
+    pub worktree_state: crate::views::worktree_view::WorktreeState,
+    /// In-progress network operation for progress bar display
+    pub network_operation: Option<NetworkOperation>,
+    /// Pull strategy preference (merge or rebase)
+    pub pull_strategy: PullStrategy,
+}
+
+/// In-progress network operation state for progress indicator
+#[derive(Debug, Clone)]
+pub struct NetworkOperation {
+    pub label: String,
+    pub progress: Option<f32>,
+    pub status: Option<String>,
+}
+
+/// Pull strategy preference
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PullStrategy {
+    #[default]
+    Merge,
+    Rebase,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -412,6 +541,7 @@ impl AppShellState {
     fn new() -> Self {
         Self {
             active_section: ShellSection::Welcome,
+            git_tool_window_tab: GitToolWindowTab::Changes,
             title: "Git 工作区".to_string(),
             subtitle: "打开一个仓库后直接进入改动处理主线。".to_string(),
             primary_action_label: "打开仓库".to_string(),
@@ -447,6 +577,10 @@ impl AppState {
             current_diff: None,
             diff_presentation: DiffPresentation::Unified,
             selected_change_path: None,
+            selected_hunk_index: None,
+            change_context_menu_path: None,
+            change_context_menu_cursor: Point::new(0.0, 0.0),
+            change_context_menu_anchor: None,
             commit_dialog: CommitDialogState::default(),
             branch_popup: BranchPopupState::default(),
             history_view: HistoryState::default(),
@@ -456,6 +590,16 @@ impl AppState {
             rebase_editor: RebaseEditorState::default(),
             toolbar_remote_menu: None,
             auto_refresh: AutoRefreshState::default(),
+            file_display_mode: FileDisplayMode::default(),
+            log_tabs: vec![LogTab::all()],
+            active_log_tab: 0,
+            next_log_tab_id: 1,
+            log_branches_dashboard_visible: true,
+            blame_active: false,
+            recent_commit_messages: Vec::new(),
+            worktree_state: Default::default(),
+            network_operation: None,
+            pull_strategy: PullStrategy::default(),
         };
 
         state.sync_context_feedback();
@@ -589,6 +733,10 @@ impl AppState {
         }
         self.show_diff = false;
         self.current_diff = None;
+        self.selected_hunk_index = None;
+        self.change_context_menu_path = None;
+        self.change_context_menu_cursor = Point::new(0.0, 0.0);
+        self.change_context_menu_anchor = None;
         self.toolbar_remote_menu = None;
         self.conflict_files.clear();
         self.selected_conflict_index = None;
@@ -683,6 +831,13 @@ impl AppState {
     pub fn close_auxiliary_view(&mut self) {
         self.close_toolbar_remote_menu();
         self.auxiliary_view = None;
+        self.sync_shell_state();
+    }
+
+    pub fn switch_git_tool_window_tab(&mut self, tab: GitToolWindowTab) {
+        self.close_toolbar_remote_menu();
+        self.auxiliary_view = None;
+        self.shell.git_tool_window_tab = tab;
         self.sync_shell_state();
     }
 
@@ -1055,6 +1210,9 @@ impl AppState {
                             self.selected_change_path = None;
                             self.show_diff = false;
                             self.current_diff = None;
+                            self.selected_hunk_index = None;
+                            self.change_context_menu_path = None;
+                            self.change_context_menu_anchor = None;
                         }
                     }
 
@@ -1074,7 +1232,44 @@ impl AppState {
             }
         }
 
+        self.sync_commit_dialog_state();
         self.sync_shell_state();
+    }
+
+    fn sync_commit_dialog_state(&mut self) {
+        let Some(repo) = self.current_repository.as_ref() else {
+            return;
+        };
+
+        let mut diff = git_core::diff::Diff {
+            files: Vec::new(),
+            total_additions: 0,
+            total_deletions: 0,
+        };
+
+        for change in &self.staged_changes {
+            if let Ok(file_diff) = git_core::diff::diff_index_to_head(repo, Path::new(&change.path))
+                .or_else(|_| git_core::diff::diff_file_to_index(repo, Path::new(&change.path)))
+            {
+                diff.total_additions += file_diff.total_additions;
+                diff.total_deletions += file_diff.total_deletions;
+                diff.files.extend(file_diff.files);
+            }
+        }
+
+        self.commit_dialog.staged_files = self.staged_changes.clone();
+        self.commit_dialog.diff = diff;
+        self.commit_dialog
+            .selected_files
+            .retain(|path| self.staged_changes.iter().any(|c| &c.path == path));
+        if self.commit_dialog.selected_files.is_empty() && !self.staged_changes.is_empty() {
+            self.commit_dialog.selected_files = self
+                .staged_changes
+                .iter()
+                .map(|c| c.path.clone())
+                .collect();
+        }
+        self.commit_dialog.ensure_preview_target();
     }
 
     pub fn refresh_current_repository(&mut self, prefer_conflicts: bool) -> Result<(), String> {
@@ -1252,11 +1447,38 @@ impl AppState {
         self.conflict_resolver = None;
     }
 
+    fn compute_next_selection(&self, path: &str, source_list: &[Change]) -> Option<String> {
+        if source_list.len() <= 1 {
+            return None;
+        }
+        let index = source_list.iter().position(|c| c.path == path)?;
+        if index + 1 < source_list.len() {
+            Some(source_list[index + 1].path.clone())
+        } else {
+            Some(source_list[index - 1].path.clone())
+        }
+    }
+
     pub fn stage_file(&mut self, path: String) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
+            let source_list = if self.unstaged_changes.iter().any(|c| c.path == path) {
+                &self.unstaged_changes
+            } else if self.untracked_files.iter().any(|c| c.path == path) {
+                &self.untracked_files
+            } else {
+                &[][..]
+            };
+            let next_path = self.compute_next_selection(&path, source_list);
+
             git_core::index::stage_file(repo, std::path::Path::new(&path))
                 .map_err(|error| format!("暂存文件失败: {}", error))?;
             self.refresh_changes();
+
+            if let Some(next) = next_path {
+                self.selected_change_path = Some(next.clone());
+                let _ = self.load_diff_for_file(&next);
+            }
+
             self.set_success("文件已暂存", Some(path), "workspace.stage_file");
             Ok(())
         } else {
@@ -1266,9 +1488,17 @@ impl AppState {
 
     pub fn unstage_file(&mut self, path: String) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
+            let next_path = self.compute_next_selection(&path, &self.staged_changes);
+
             git_core::index::unstage_file(repo, std::path::Path::new(&path))
                 .map_err(|error| format!("取消暂存失败: {}", error))?;
             self.refresh_changes();
+
+            if let Some(next) = next_path {
+                self.selected_change_path = Some(next.clone());
+                let _ = self.load_diff_for_file(&next);
+            }
+
             self.set_success("已取消暂存", Some(path), "workspace.unstage_file");
             Ok(())
         } else {
@@ -1304,6 +1534,7 @@ impl AppState {
             match git_core::diff::diff_workdir_to_index(repo) {
                 Ok(diff) => {
                     self.current_diff = Some(diff);
+                    self.selected_hunk_index = Some(0);
                     self.show_diff = true;
                     Ok(())
                 }
@@ -1345,6 +1576,7 @@ impl AppState {
             };
 
             self.current_diff = Some(diff);
+            self.selected_hunk_index = Some(0);
             self.show_diff = true;
             Ok(())
         } else {
@@ -1352,6 +1584,71 @@ impl AppState {
         }
     }
 
+    pub fn navigate_hunk(&mut self, delta: isize) -> Option<f32> {
+        let diff = self.current_diff.as_ref()?;
+        let total_hunks: usize = diff.files.iter().map(|f| f.hunks.len()).sum();
+        if total_hunks == 0 {
+            return None;
+        }
+        let current = self.selected_hunk_index.unwrap_or(0) as isize;
+        let next = (current + delta).clamp(0, (total_hunks - 1) as isize) as usize;
+        self.selected_hunk_index = Some(next);
+        Some(compute_hunk_offset(diff, next))
+    }
+
+    pub fn track_change_context_menu_cursor(&mut self, position: Point) {
+        self.change_context_menu_cursor = position;
+    }
+
+    pub fn open_change_context_menu(&mut self, path: String) {
+        self.change_context_menu_path = Some(path);
+        self.change_context_menu_anchor = Some(self.change_context_menu_cursor);
+    }
+
+    pub fn close_change_context_menu(&mut self) {
+        self.change_context_menu_path = None;
+        self.change_context_menu_anchor = None;
+    }
+}
+
+fn compute_hunk_offset(diff: &git_core::diff::Diff, hunk_index: usize) -> f32 {
+    const FILE_HEADER_APPROX: f32 = 32.0;
+    const FILE_SPACING: f32 = 4.0;
+    const HUNK_DIVIDER_HEIGHT: f32 = 18.0;
+    const HUNK_HEADER_HEIGHT: f32 = 22.0;
+    const ROW_HEIGHT: f32 = 22.0;
+
+    let show_file_header = diff.files.len() > 1;
+    let mut offset = 0.0;
+    let mut current_index = 0;
+
+    for (file_idx, file) in diff.files.iter().enumerate() {
+        if file_idx > 0 {
+            offset += FILE_SPACING;
+        }
+        if show_file_header {
+            offset += FILE_HEADER_APPROX + FILE_SPACING;
+        }
+        for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
+            if current_index == hunk_index {
+                return offset;
+            }
+            offset += HUNK_HEADER_HEIGHT;
+            offset += hunk.lines.len() as f32 * ROW_HEIGHT;
+            if hunk_idx + 1 < file.hunks.len() {
+                offset += HUNK_DIVIDER_HEIGHT;
+            }
+            current_index += 1;
+        }
+        // If file has no hunks, render_empty_editor_row() consumes roughly a row height.
+        if file.hunks.is_empty() {
+            offset += ROW_HEIGHT;
+        }
+    }
+    offset
+}
+
+impl AppState {
     fn sync_shell_state(&mut self) {
         if let Some(repo) = &self.current_repository {
             let branch = repo.current_branch_display();
@@ -1361,10 +1658,12 @@ impl AppState {
             let sync_label = sync_label(&sync_status);
             let state_hint = repo.state_hint();
             let sync_hint = repo.sync_status_hint();
+            let preserved_tab = self.shell.git_tool_window_tab;
 
             let mut shell = match self.shell.active_section {
                 ShellSection::Changes | ShellSection::Welcome => AppShellState {
                     active_section: ShellSection::Changes,
+                    git_tool_window_tab: preserved_tab,
                     title: repo_name.clone(),
                     subtitle: branch.clone(),
                     primary_action_label: "分支与操作".to_string(),
@@ -1374,6 +1673,7 @@ impl AppState {
                 },
                 ShellSection::Conflicts => AppShellState {
                     active_section: ShellSection::Conflicts,
+                    git_tool_window_tab: preserved_tab,
                     title: repo_name.clone(),
                     subtitle: "冲突".to_string(),
                     primary_action_label: "处理冲突".to_string(),
@@ -1385,52 +1685,17 @@ impl AppState {
 
             if let Some(auxiliary) = self.auxiliary_view {
                 match auxiliary {
-                    AuxiliaryView::Commit => {
-                        shell.title = if self.commit_dialog.is_amend {
-                            "修改提交".to_string()
-                        } else {
-                            "提交".to_string()
-                        };
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = if self.commit_dialog.is_amend {
-                            "应用修改".to_string()
-                        } else {
-                            "创建提交".to_string()
-                        };
-                    }
+                    AuxiliaryView::Commit
+                    | AuxiliaryView::History
+                    | AuxiliaryView::Remotes
+                    | AuxiliaryView::Tags
+                    | AuxiliaryView::Stashes
+                    | AuxiliaryView::Rebase
+                    | AuxiliaryView::Worktrees => {}
                     AuxiliaryView::Branches => {
                         shell.title = "分支与操作".to_string();
                         shell.subtitle = branch.clone();
                         shell.primary_action_label = "关闭".to_string();
-                    }
-                    AuxiliaryView::History => {
-                        shell.title = "历史".to_string();
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = "刷新".to_string();
-                    }
-                    AuxiliaryView::Remotes => {
-                        shell.title = "远程".to_string();
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = "刷新".to_string();
-                    }
-                    AuxiliaryView::Tags => {
-                        shell.title = "标签".to_string();
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = "创建标签".to_string();
-                    }
-                    AuxiliaryView::Stashes => {
-                        shell.title = "储藏".to_string();
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = "保存储藏".to_string();
-                    }
-                    AuxiliaryView::Rebase => {
-                        shell.title = "Rebase".to_string();
-                        shell.subtitle = branch.clone();
-                        shell.primary_action_label = if self.rebase_editor.is_rebasing {
-                            "继续变基".to_string()
-                        } else {
-                            "开始变基".to_string()
-                        };
                     }
                 }
             }
@@ -1442,17 +1707,41 @@ impl AppState {
                 sync_label,
                 sync_hint,
                 state_hint,
-                secondary_label: self.auxiliary_view.map(auxiliary_label).or_else(|| {
-                    self.selected_change_path
-                        .as_ref()
-                        .map(|_| "当前焦点".to_string())
-                }),
+                secondary_label: self
+                    .auxiliary_view
+                    .filter(|view| is_docked_auxiliary_view(*view))
+                    .map(auxiliary_label)
+                    .or_else(|| {
+                        self.selected_change_path
+                            .as_ref()
+                            .map(|_| "当前焦点".to_string())
+                    }),
                 overflow_behavior: if repo_name.len() > 28 || shell.subtitle.len() > 20 {
                     OverflowBehavior::HorizontalScroll
                 } else {
                     OverflowBehavior::TruncateTail
                 },
             };
+            let editor_tab_label = self
+                .selected_change_path
+                .as_deref()
+                .and_then(|path| {
+                    std::path::Path::new(path)
+                        .file_name()
+                        .and_then(|value| value.to_str())
+                        .map(str::to_string)
+                })
+                .unwrap_or_else(|| match self.shell.active_section {
+                    ShellSection::Conflicts => "Conflicts".to_string(),
+                    _ => "Changes".to_string(),
+                });
+            let editor_tab_detail = self.selected_change_path.as_ref().and_then(|path| {
+                std::path::Path::new(path)
+                    .parent()
+                    .and_then(|value| value.to_str())
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            });
             shell.chrome = PrimaryWorkspaceChrome {
                 max_visible_top_bars: 2,
                 toolbar_height: theme::layout::TOP_BAR_HEIGHT as u16,
@@ -1471,6 +1760,12 @@ impl AppState {
                 has_selected_change: self.selected_change_path.is_some(),
                 has_staged_changes: !self.staged_changes.is_empty(),
                 has_secondary_actions: true,
+                editor_tab_label,
+                editor_tab_detail,
+                tool_window_title: self
+                    .auxiliary_view
+                    .filter(|view| is_docked_auxiliary_view(*view))
+                    .map(auxiliary_label),
             };
 
             self.shell = shell;
@@ -1689,7 +1984,12 @@ fn auxiliary_label(view: AuxiliaryView) -> String {
         AuxiliaryView::Tags => "标签".to_string(),
         AuxiliaryView::Stashes => "储藏".to_string(),
         AuxiliaryView::Rebase => "Rebase".to_string(),
+        AuxiliaryView::Worktrees => "工作树".to_string(),
     }
+}
+
+pub fn is_docked_auxiliary_view(_view: AuxiliaryView) -> bool {
+    false
 }
 
 #[cfg(test)]
@@ -1820,6 +2120,23 @@ mod tests {
     }
 
     #[test]
+    fn history_view_keeps_repository_context_in_shell_metadata() {
+        let temp_dir = tempdir().expect("temp dir");
+        let repo =
+            git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
+        let expected_title = repo.name();
+        let expected_subtitle = repo.current_branch_display();
+        let mut state = AppState::new();
+
+        state.set_repository(repo);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+
+        assert_eq!(state.shell.title, expected_title);
+        assert_eq!(state.shell.subtitle, expected_subtitle);
+        assert_eq!(state.shell.chrome.tool_window_title, None);
+    }
+
+    #[test]
     fn clean_changes_feedback_recovers_with_refresh_instead_of_overview() {
         let temp_dir = tempdir().expect("temp dir");
         let repo =
@@ -1831,5 +2148,48 @@ mod tests {
 
         let next_step = state.feedback_next_step().expect("expected next step");
         assert_eq!(next_step.action, RecoveryAction::Refresh);
+    }
+
+    #[test]
+    fn git_tool_window_tab_switching_clears_auxiliary_view() {
+        let temp_dir = tempdir().expect("temp dir");
+        let repo =
+            git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
+        let mut state = AppState::new();
+        state.set_repository(repo);
+        state.auxiliary_view = Some(super::AuxiliaryView::Branches);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+        assert!(state.auxiliary_view.is_none());
+        assert_eq!(state.shell.git_tool_window_tab, super::GitToolWindowTab::Log);
+    }
+
+    #[test]
+    fn close_conflict_resolver_returns_to_repository_and_changes() {
+        let temp_dir = tempdir().expect("temp dir");
+        let repo =
+            git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
+        let mut state = AppState::new();
+        state.set_repository(repo);
+        state.view_mode = super::ViewMode::ConflictResolver;
+        state.shell.active_section = super::ShellSection::Conflicts;
+        state.close_conflict_resolver();
+        assert_eq!(state.view_mode, super::ViewMode::Repository);
+        assert_eq!(state.shell.active_section, super::ShellSection::Changes);
+        assert!(state.conflict_files.is_empty());
+    }
+
+    #[test]
+    fn commit_action_from_log_switches_to_changes_tab() {
+        let temp_dir = tempdir().expect("temp dir");
+        let repo =
+            git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
+        let mut state = AppState::new();
+        state.set_repository(repo);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+        // Simulate what the toolbar Commit button handler does.
+        state.navigate_to(super::ShellSection::Changes);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Changes);
+        assert_eq!(state.shell.git_tool_window_tab, super::GitToolWindowTab::Changes);
+        assert_eq!(state.view_mode, super::ViewMode::Repository);
     }
 }

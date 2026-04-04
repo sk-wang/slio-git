@@ -125,7 +125,7 @@ pub fn view<'a, Message: Clone + 'static>(
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
     )
-    .padding([5, 8])
+    .padding([4, 6])
     .style(theme::panel_style(theme::Surface::ToolbarField))
     .into()
 }

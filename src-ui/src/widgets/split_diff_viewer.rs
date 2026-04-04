@@ -3,12 +3,14 @@
 use crate::theme;
 use crate::widgets::{self, diff_file_header, scrollable, syntax_highlighting};
 use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
-use iced::widget::{container, text, Column, Container, Row, Space, Text};
+use iced::widget::{self, container, text, Column, Container, Row, Space, Text};
 use iced::{Alignment, Background, Border, Color, Element, Font, Length, Theme};
 const MARKER_WIDTH: f32 = 4.0;
 const GUTTER_WIDTH: f32 = 46.0;
 const PREFIX_WIDTH: f32 = 12.0;
 const SEPARATOR_WIDTH: f32 = 1.0;
+const DIFF_ROW_HEIGHT: f32 = 22.0;
+const HUNK_HEADER_HEIGHT: f32 = 22.0;
 
 #[derive(Clone)]
 struct SplitCell {
@@ -28,11 +30,9 @@ impl<'a> SplitDiffViewer<'a> {
 
     pub fn view<Message: Clone + 'static>(&self) -> Element<'a, Message> {
         if self.diff.files.is_empty() {
-            return widgets::panel_empty_state(
-                "差异",
+            return widgets::panel_empty_state_compact(
                 "当前没有可显示的分栏 diff",
                 "先选择有差异的文件，或刷新状态后再切换到分栏查看。",
-                None,
             );
         }
 
@@ -43,7 +43,10 @@ impl<'a> SplitDiffViewer<'a> {
             content = content.push(render_file_diff(file_diff, show_file_header));
         }
 
-        scrollable::styled(content).height(Length::Fill).into()
+        scrollable::styled(content)
+            .id(widget::Id::new("diff-scroll"))
+            .height(Length::Fill)
+            .into()
     }
 }
 
@@ -103,6 +106,14 @@ fn render_editor_surface<'a, Message: Clone + 'static>(
     .into()
 }
 
+fn split_row_width() -> Length {
+    Length::Shrink
+}
+
+fn split_code_cell_width() -> Length {
+    Length::Shrink
+}
+
 fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'static, Message> {
     let header = if hunk.header.is_empty() {
         format!(
@@ -114,13 +125,21 @@ fn render_hunk_header<Message: Clone + 'static>(hunk: &DiffHunk) -> Element<'sta
     };
 
     Container::new(
-        Text::new(header)
-            .size(10)
-            .font(Font::MONOSPACE)
-            .wrapping(text::Wrapping::None)
-            .color(theme::darcula::TEXT_SECONDARY),
+        Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(
+                Text::new(header)
+                    .size(10)
+                    .font(Font::MONOSPACE)
+                    .wrapping(text::Wrapping::None)
+                    .color(theme::darcula::TEXT_SECONDARY),
+            ),
+        // Hunk stage/unstage buttons can be added here via builder pattern in future
     )
-    .padding([4, 10])
+    .padding([2, 8])
+    .height(Length::Fixed(HUNK_HEADER_HEIGHT))
+    .width(split_row_width())
     .style(hunk_header_style())
     .into()
 }
@@ -183,6 +202,8 @@ fn render_split_row<Message: Clone + 'static>(
 ) -> Element<'static, Message> {
     Row::new()
         .spacing(0)
+        .align_y(Alignment::Center)
+        .width(split_row_width())
         .push(render_side(left))
         .push(center_divider())
         .push(render_side(right))
@@ -197,6 +218,8 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
 
             Row::new()
                 .spacing(0)
+                .align_y(Alignment::Center)
+                .width(split_row_width())
                 .push(marker_bar(marker_color(&cell.origin)))
                 .push(
                     Container::new(
@@ -206,7 +229,8 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                             .color(theme::darcula::TEXT_SECONDARY)
                             .width(Length::Fixed(28.0)),
                     )
-                    .padding([1, 8])
+                    .padding([0, 8])
+                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
                     .width(Length::Fixed(GUTTER_WIDTH))
                     .style(simple_fill_style(gutter_background)),
                 )
@@ -215,7 +239,7 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                     Container::new(
                         Row::new()
                             .spacing(6)
-                            .align_y(Alignment::Start)
+                            .align_y(Alignment::Center)
                             .push(
                                 Text::new(prefix_for_origin(&cell.origin))
                                     .size(11)
@@ -223,20 +247,25 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
                                     .color(prefix_color(&cell.origin))
                                     .width(Length::Fixed(PREFIX_WIDTH)),
                             )
-                            .push(syntax_highlighting::HighlightedSegment::render(
+                            .push(syntax_highlighting::HighlightedSegment::render_diff_code(
                                 &cell.segments,
                             )),
                     )
-                    .padding([1, 10])
+                    .padding([0, 10])
+                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
+                    .width(split_code_cell_width())
                     .style(simple_fill_style(code_background)),
                 )
                 .into()
         }
         None => Row::new()
             .spacing(0)
+            .align_y(Alignment::Center)
+            .width(split_row_width())
             .push(marker_bar(Color::TRANSPARENT))
             .push(
                 Container::new(Space::new().width(Length::Fixed(GUTTER_WIDTH)))
+                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
                     .width(Length::Fixed(GUTTER_WIDTH))
                     .style(simple_fill_style(mix_colors(
                         theme::darcula::BG_EDITOR,
@@ -247,7 +276,8 @@ fn render_side<Message: Clone + 'static>(cell: Option<SplitCell>) -> Element<'st
             .push(vertical_separator())
             .push(
                 Container::new(Text::new(" "))
-                    .padding([1, 10])
+                    .padding([0, 10])
+                    .height(Length::Fixed(DIFF_ROW_HEIGHT))
                     .style(simple_fill_style(mix_colors(
                         theme::darcula::BG_EDITOR,
                         theme::darcula::BG_RAISED,
@@ -265,6 +295,7 @@ fn render_empty_row<Message: Clone + 'static>() -> Element<'static, Message> {
             .color(theme::darcula::TEXT_SECONDARY),
     )
     .padding([8, 10])
+    .width(split_row_width())
     .style(simple_fill_style(theme::darcula::BG_EDITOR))
     .into()
 }
@@ -338,11 +369,17 @@ fn code_background(origin: &DiffLineOrigin) -> Color {
     }
 }
 
+// IDEA-style hunk divider: more prominent with accent color and spacing
 fn editor_divider<Message: Clone + 'static>() -> Element<'static, Message> {
-    Container::new(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-        .style(simple_fill_style(
-            theme::darcula::SEPARATOR.scale_alpha(0.72),
-        ))
+    Column::new()
+        .spacing(theme::spacing::XS)
+        .width(Length::Fill)
+        .push(Space::new().height(Length::Fixed(6.0)))
+        .push(
+            Container::new(Space::new().width(Length::Fill).height(Length::Fixed(2.0)))
+                .style(split_divider_style()),
+        )
+        .push(Space::new().height(Length::Fixed(theme::spacing::XS)))
         .into()
 }
 
@@ -400,8 +437,13 @@ fn hunk_header_style() -> impl Fn(&Theme) -> container::Style {
         background: Some(Background::Color(mix_colors(
             theme::darcula::BG_EDITOR,
             theme::darcula::ACCENT_WEAK,
-            0.36,
+            0.45,
         ))),
+        border: Border {
+            width: 1.0,
+            color: theme::darcula::ACCENT.scale_alpha(0.25),
+            radius: theme::radius::SM.into(),
+        },
         ..Default::default()
     }
 }
@@ -410,5 +452,37 @@ fn simple_fill_style(color: Color) -> impl Fn(&Theme) -> container::Style {
     move |_theme| container::Style {
         background: Some(Background::Color(color)),
         ..Default::default()
+    }
+}
+
+// IDEA-style divider for split view
+fn split_divider_style() -> impl Fn(&Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: Some(Background::Color(
+            theme::darcula::ACCENT_WEAK.scale_alpha(0.8),
+        )),
+        border: Border {
+            width: 0.0,
+            color: Color::TRANSPARENT,
+            radius: 0.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: theme::darcula::ACCENT.scale_alpha(0.15),
+            offset: iced::Vector::new(0.0, 1.0),
+            blur_radius: 4.0,
+        },
+        ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{split_code_cell_width, split_row_width};
+    use iced::Length;
+
+    #[test]
+    fn split_diff_rows_keep_intrinsic_width_to_avoid_code_overlap() {
+        assert_eq!(split_row_width(), Length::Shrink);
+        assert_eq!(split_code_cell_width(), Length::Shrink);
     }
 }

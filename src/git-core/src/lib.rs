@@ -36,23 +36,29 @@ mod tests {
     }
 }
 
+pub mod blame;
 pub mod branch;
 pub mod commit;
 pub mod commit_actions;
 pub mod diff;
 pub mod error;
 pub mod git_utils;
+pub mod graph;
 pub mod history;
 pub mod index;
 pub mod rebase;
 pub mod remote;
 pub mod repository;
+pub mod signature;
 pub mod stash;
+pub mod submodule;
 pub mod tag;
+pub mod worktree;
 
 pub use branch::Branch;
 pub use commit::{
-    amend_commit, create_commit, create_signature, get_commit, get_default_signature, CommitInfo,
+    amend_commit, create_commit, create_signature, get_commit, get_default_signature,
+    load_recent_messages, save_recent_message, CommitInfo,
 };
 pub use commit_actions::{
     abort_in_progress_commit_action, cherry_pick_commit, continue_in_progress_commit_action,
@@ -68,7 +74,10 @@ pub use diff::{
     DiffLineOrigin, FileDiff, ThreeWayDiff,
 };
 pub use error::GitError;
-pub use history::{get_history, get_history_for_ref, search_history, HistoryEntry};
+pub use history::{
+    get_history, get_history_for_author, get_history_for_date_range, get_history_for_path,
+    get_history_for_ref, search_history, HistoryEntry,
+};
 pub use index::{
     get_file_hunks, stage_hunk, unstage_hunk, Change, ChangeStatus, Hunk, HunkLine, Index,
     IndexEntry,
@@ -78,10 +87,24 @@ pub use rebase::{
     prepare_interactive_rebase_plan, rebase_abort, rebase_continue, rebase_skip, rebase_start,
     start_interactive_rebase, InteractiveRebasePlan, RebaseResult, RebaseStatus, RebaseTodoEntry,
 };
-pub use remote::{fetch, list_branch_scoped_remotes, list_remotes, pull, push, RemoteInfo};
+pub use remote::{
+    fetch, force_push, list_branch_scoped_remotes, list_remotes, pull, push, RemoteInfo,
+};
 pub use repository::{Repository, RepositoryManager, SyncStatus};
-pub use stash::{list_stashes, stash_drop, stash_pop, stash_save, StashInfo};
-pub use tag::{create_lightweight_tag, create_tag, delete_tag, list_tags, TagInfo};
+pub use stash::{
+    list_stashes, stash_apply, stash_diff, stash_drop, stash_pop, stash_save,
+    stash_save_with_options, StashInfo,
+};
+pub use tag::{
+    create_lightweight_tag, create_tag, delete_remote_tag, delete_tag, list_tags, push_tag, TagInfo,
+};
+
+// New modules for IDEA git parity
+pub use blame::{blame_file, BlameEntry};
+pub use graph::{compute_graph, compute_ref_labels, EdgeType, GraphEdge, GraphNode, RefLabel, RefType};
+pub use signature::{verify_commit_signature, SignatureCache, SignatureStatus, SignatureType};
+pub use submodule::{is_submodule, list_submodules, submodule_summary, SubmoduleChange};
+pub use worktree::{create_worktree, list_worktrees, remove_worktree, WorkingTree};
 
 use log::info;
 use std::path::Path;

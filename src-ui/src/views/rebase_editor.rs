@@ -552,7 +552,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
             Column::new()
                 .spacing(theme::spacing::SM)
                 .push(widgets::section_header(
-                    "进度",
+                    "进度".to_uppercase(),
                     "当前变基状态",
                     "继续、跳过或中止前先确认当前步骤和剩余操作。",
                 ))
@@ -599,7 +599,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
                 }))
                 .push(scrollable::styled(build_todo_list(state)).height(Length::Fixed(200.0))),
         )
-        .padding([16, 16])
+        .padding([12, 12])
         .style(theme::panel_style(Surface::Panel))
         .into()
     } else if state.has_interactive_draft() {
@@ -607,7 +607,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
             Column::new()
                 .spacing(theme::spacing::SM)
                 .push(widgets::section_header(
-                    "Todo",
+                    "待办".to_uppercase(),
                     "交互式变基待办",
                     "点击动作可循环切换 pick / reword / edit / fixup / squash / drop，用上下箭头调整顺序。",
                 ))
@@ -618,7 +618,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
                 ))
                 .push(scrollable::styled(build_todo_list(state)).height(Length::Fixed(260.0))),
         )
-        .padding([16, 16])
+        .padding([12, 12])
         .style(theme::panel_style(Surface::Panel))
         .into()
     } else {
@@ -632,12 +632,24 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
 }
 
 pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
-    let status_panel = if state.is_loading {
-        Some(build_status_panel::<RebaseEditorMessage>(
-            "处理中",
-            "正在执行 rebase 操作，请稍候。",
-            BadgeTone::Neutral,
-        ))
+    // IDEA-style: compact loading indicator when processing
+    let status_panel: Option<Element<'_, RebaseEditorMessage>> = if state.is_loading {
+        Some(
+            Container::new(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .align_y(Alignment::Center)
+                    .push(widgets::loading_spinner::<RebaseEditorMessage>())
+                    .push(
+                        Text::new("正在执行 rebase 操作...")
+                            .size(12)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    ),
+            )
+            .padding([8, 12])
+            .style(theme::panel_style(Surface::Raised))
+            .into(),
+        )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<RebaseEditorMessage>(
             "失败",
@@ -694,7 +706,7 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                 Column::new()
                     .spacing(theme::spacing::SM)
                     .push(widgets::section_header(
-                        "目标",
+                        "目标".to_uppercase(),
                         "普通变基选项",
                         "输入 onto 分支，确认要把当前工作流重新整理到哪里。",
                     ))
@@ -704,100 +716,95 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                         RebaseEditorMessage::SetBaseBranch,
                     )),
             )
-            .padding([16, 16])
+            .padding([12, 12])
             .style(theme::panel_style(Surface::Panel))
             .into()
         } else {
             Column::new().into()
         };
 
-    let context_panel: Option<Element<'_, RebaseEditorMessage>> =
-        (!state.base_branch.trim().is_empty()).then(|| {
-            Container::new(
-                Column::new()
-                    .spacing(theme::spacing::XS)
-                    .push(widgets::section_header(
-                        "上下文",
-                        "历史整理入口",
-                        "编辑待执行的 rebase 步骤，调整动作与顺序后继续。",
-                    ))
-                    .push(
-                        Row::new()
-                            .spacing(theme::spacing::XS)
-                            .push(widgets::info_chip::<RebaseEditorMessage>(
-                                format!("起点 {}", short_commit_id(&state.base_branch)),
-                                BadgeTone::Accent,
-                            ))
-                            .push(widgets::info_chip::<RebaseEditorMessage>(
-                                state.todo_base_ref.as_deref().map_or_else(
-                                    || "从根提交开始".to_string(),
-                                    |base| format!("基点 {}", short_commit_id(base)),
-                                ),
-                                BadgeTone::Neutral,
-                            )),
-                    )
-                    .push(
-                        Text::new(if state.todo_is_editable {
-                            "直接编辑 todo 列表：`edit` 停下来改说明，`fixup/squash/drop` 自动继续。"
-                        } else {
-                            "当前正在执行或查看这次历史整理流程；下方会显示剩余 todo 与下一步操作。"
-                        })
-                        .size(11)
-                        .width(Length::Fill)
-                        .wrapping(text::Wrapping::WordOrGlyph)
-                        .color(theme::darcula::TEXT_SECONDARY),
-                    ),
-            )
-            .padding([16, 16])
-            .style(theme::panel_style(Surface::Panel))
-            .into()
-        });
+    let context_panel: Option<Element<'_, RebaseEditorMessage>> = (!state
+        .base_branch
+        .trim()
+        .is_empty())
+    .then(|| {
+        Container::new(
+            Column::new()
+                .spacing(theme::spacing::XS)
+                .push(widgets::section_header(
+                    "上下文".to_uppercase(),
+                    "历史整理入口",
+                    "编辑待执行的 rebase 步骤，调整动作与顺序后继续。",
+                ))
+                .push(
+                    Row::new()
+                        .spacing(theme::spacing::XS)
+                        .push(widgets::info_chip::<RebaseEditorMessage>(
+                            format!("起点 {}", short_commit_id(&state.base_branch)),
+                            BadgeTone::Accent,
+                        ))
+                        .push(widgets::info_chip::<RebaseEditorMessage>(
+                            state.todo_base_ref.as_deref().map_or_else(
+                                || "从根提交开始".to_string(),
+                                |base| format!("基点 {}", short_commit_id(base)),
+                            ),
+                            BadgeTone::Neutral,
+                        )),
+                )
+                .push(
+                    Text::new(if state.todo_is_editable {
+                        "直接编辑 todo 列表：`edit` 停下来改说明，`fixup/squash/drop` 自动继续。"
+                    } else {
+                        "当前正在执行或查看这次历史整理流程；下方会显示剩余 todo 与下一步操作。"
+                    })
+                    .size(11)
+                    .width(Length::Fill)
+                    .wrapping(text::Wrapping::WordOrGlyph)
+                    .color(theme::darcula::TEXT_SECONDARY),
+                ),
+        )
+        .padding([12, 12])
+        .style(theme::panel_style(Surface::Panel))
+        .into()
+    });
 
     Container::new(
         scrollable::styled(
             Column::new()
                 .spacing(theme::spacing::MD)
-                .push(widgets::section_header(
-                    "变基",
-                    "Rebase 编辑器",
-                    "管理交互式变基的待办步骤、进度和操作。",
-                ))
                 .push(
-                    Row::new()
-                        .spacing(theme::spacing::MD)
-                        .push(widgets::stat_card(
-                            "Todo 项",
-                            state.todo_list.len().to_string(),
-                            "交互式变基时调整动作与顺序",
-                        ))
-                        .push(widgets::stat_card(
-                            "当前进度",
-                            if state.is_rebasing {
-                                format!("{}/{}", state.current_step, state.total_steps)
-                            } else {
-                                "未开始".to_string()
-                            },
-                            "变基进行中时显示当前推进到哪一步",
-                        )),
+                    Container::new(
+                        Row::new()
+                            .spacing(theme::spacing::XS)
+                            .align_y(Alignment::Center)
+                            .push(Text::new("Rebase 编辑器").size(16))
+                            .push(widgets::info_chip::<RebaseEditorMessage>(
+                                format!("Todo {}", state.todo_list.len()),
+                                BadgeTone::Neutral,
+                            ))
+                            .push(widgets::info_chip::<RebaseEditorMessage>(
+                                if state.is_rebasing {
+                                    format!("{}/{}", state.current_step, state.total_steps)
+                                } else {
+                                    "未开始".to_string()
+                                },
+                                BadgeTone::Accent,
+                            ))
+                            .push(button::ghost("刷新", Some(RebaseEditorMessage::Refresh)))
+                            .push(button::ghost("关闭", Some(RebaseEditorMessage::Close))),
+                    )
+                    .padding([10, 12])
+                    .style(theme::panel_style(Surface::Panel)),
                 )
                 .push_maybe(status_panel)
                 .push_maybe(context_panel)
                 .push(branch_inputs)
                 .push(build_progress(state))
-                .push(build_rebase_controls(state))
-                .push(
-                    scrollable::styled_horizontal(
-                        Row::new()
-                            .spacing(theme::spacing::XS)
-                            .push(button::ghost("刷新", Some(RebaseEditorMessage::Refresh)))
-                            .push(button::ghost("关闭", Some(RebaseEditorMessage::Close))),
-                    )
-                    .width(Length::Fill),
-                ),
+                .push(build_rebase_controls(state)),
         )
         .height(Length::Fill),
     )
-    .padding([16, 18])
+    .padding([10, 12])
     .width(Length::Fill)
     .height(Length::Fill)
     .style(theme::panel_style(Surface::Panel))

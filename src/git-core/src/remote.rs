@@ -312,6 +312,47 @@ pub fn push(
     Ok(())
 }
 
+/// Force push with --force-with-lease semantics
+pub fn force_push(
+    repo: &Repository,
+    remote_name: &str,
+    branch_name: &str,
+) -> Result<(), GitError> {
+    info!(
+        "Force pushing branch '{}' to remote '{}' (--force-with-lease)",
+        branch_name, remote_name
+    );
+
+    let repo_path = repo.command_cwd();
+
+    let output = std::process::Command::new("git")
+        .args([
+            "push",
+            "--force-with-lease",
+            remote_name,
+            branch_name,
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| GitError::OperationFailed {
+            operation: "force_push".to_string(),
+            details: format!("Failed to execute git push --force-with-lease: {}", e),
+        })?;
+
+    if !output.status.success() {
+        return Err(GitError::RemoteFailed {
+            remote: remote_name.to_string(),
+            details: format!(
+                "git push --force-with-lease failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            ),
+        });
+    }
+
+    info!("Force push completed successfully");
+    Ok(())
+}
+
 /// Pull from a remote (fetch + merge)
 pub fn pull(
     repo: &Repository,

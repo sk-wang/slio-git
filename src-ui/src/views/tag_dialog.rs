@@ -17,6 +17,8 @@ pub enum TagDialogMessage {
     SelectTag(String),
     CreateTag(String, String, bool),
     DeleteTag(String),
+    PushTag(String),
+    DeleteRemoteTag(String),
     SetTagName(String),
     SetTarget(String),
     SetMessage(String),
@@ -183,7 +185,7 @@ fn build_tag_row(tag: &TagInfo, is_selected: bool) -> Element<'_, TagDialogMessa
                 .color(theme::darcula::TEXT_SECONDARY),
             ),
     )
-    .padding([14, 16])
+    .padding([10, 12])
     .style(theme::panel_style(if is_selected {
         Surface::Selection
     } else {
@@ -241,7 +243,7 @@ fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
             )
             .push(scrollable::styled(list).height(Length::Fixed(150.0))),
     )
-    .padding([16, 16])
+    .padding([12, 12])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -251,7 +253,7 @@ fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         Column::new()
             .spacing(theme::spacing::SM)
             .push(widgets::section_header(
-                "创建",
+                "创建".to_uppercase(),
                 "新建标签",
                 "支持轻量标签与注释标签两种模式。",
             ))
@@ -278,7 +280,7 @@ fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                     .on_toggle(TagDialogMessage::SetLightweight),
             ),
     )
-    .padding([16, 16])
+    .padding([12, 12])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -313,12 +315,24 @@ fn build_action_buttons(state: &TagDialogState) -> Element<'_, TagDialogMessage>
 
 /// Build the tag dialog view.
 pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
-    let status_panel = if state.is_loading {
-        Some(build_status_panel::<TagDialogMessage>(
-            "处理中",
-            "正在刷新标签列表或执行标签操作。",
-            BadgeTone::Neutral,
-        ))
+    // IDEA-style: compact loading indicator when processing
+    let status_panel: Option<Element<'_, TagDialogMessage>> = if state.is_loading {
+        Some(
+            Container::new(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .align_y(Alignment::Center)
+                    .push(widgets::loading_spinner::<TagDialogMessage>())
+                    .push(
+                        Text::new("正在刷新标签列表...")
+                            .size(12)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    ),
+            )
+            .padding([8, 12])
+            .style(theme::panel_style(Surface::Raised))
+            .into(),
+        )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<TagDialogMessage>(
             "失败",
@@ -337,45 +351,34 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
             "当前仓库还没有标签；填写名称与目标后即可创建第一条标签。",
             BadgeTone::Neutral,
         ))
-    } else if let Some(tag) = state.selected_tag.as_ref() {
-        Some(build_status_panel::<TagDialogMessage>(
-            "已选择",
-            format!("当前选中标签 {tag}，可以直接删除或继续创建新标签。"),
-            BadgeTone::Accent,
-        ))
     } else {
-        Some(build_status_panel::<TagDialogMessage>(
-            "标签概览",
-            &format!("当前共有 {} 个标签。", state.tags.len()),
-            BadgeTone::Accent,
-        ))
+        None
     };
+
+    let toolbar = Container::new(
+        Row::new()
+            .spacing(theme::spacing::XS)
+            .align_y(Alignment::Center)
+            .push(Text::new("标签").size(16))
+            .push(widgets::info_chip::<TagDialogMessage>(
+                format!("总数 {}", state.tags.len()),
+                BadgeTone::Neutral,
+            ))
+            .push_maybe(
+                state
+                    .selected_tag
+                    .as_ref()
+                    .map(|tag| widgets::info_chip::<TagDialogMessage>(format!("已选 {tag}"), BadgeTone::Accent)),
+            )
+            .push(button::ghost("刷新", Some(TagDialogMessage::Refresh)))
+            .push(button::ghost("关闭", Some(TagDialogMessage::Close))),
+    )
+    .padding([10, 12])
+    .style(theme::panel_style(Surface::Panel));
 
     let content = Column::new()
         .spacing(theme::spacing::MD)
-        .push(widgets::section_header(
-            "标签",
-            "标签管理",
-            "集中查看现有标签，并通过统一表单创建或删除标签。",
-        ))
-        .push(
-            Row::new()
-                .spacing(theme::spacing::MD)
-                .push(widgets::stat_card(
-                    "标签数量",
-                    state.tags.len().to_string(),
-                    "当前仓库已存在的标签总数",
-                ))
-                .push(widgets::stat_card(
-                    "当前目标",
-                    if state.target.trim().is_empty() {
-                        "待填写".to_string()
-                    } else {
-                        state.target.clone()
-                    },
-                    "创建时支持 HEAD、哈希或任意可解析 ref",
-                )),
-        )
+        .push(toolbar)
         .push_maybe(status_panel)
         .push_maybe(
             (state.tags.is_empty() && !state.is_loading && state.error.is_none()).then(|| {
@@ -407,7 +410,7 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         .push(build_action_buttons(state));
 
     Container::new(scrollable::styled(content).height(Length::Fill))
-        .padding([16, 18])
+        .padding([10, 12])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Panel))

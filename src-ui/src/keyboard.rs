@@ -16,6 +16,20 @@ pub enum ShortcutAction {
     UnstageAll,
     Refresh,
     ToggleChangesPanel,
+    // Commit operations (IDEA: Ctrl+K)
+    OpenCommitDialog,
+    ToggleAmendCommitMode,
+    // Push operations (IDEA: Ctrl+Shift+K)
+    OpenPushDialog,
+    // Diff operations (IDEA: Ctrl+D)
+    ShowFileDiff,
+    // Navigation
+    NavigatePrevFile,
+    NavigateNextFile,
+    PrevHunk,
+    NextHunk,
+    // Commit (IDEA: Ctrl+Enter inside commit dialog)
+    Commit,
     // Stash operations
     StashSave,
     StashPop,
@@ -43,6 +57,7 @@ impl KeyboardShortcut {
 
 /// Get all registered keyboard shortcuts
 pub fn get_shortcuts() -> Vec<KeyboardShortcut> {
+    use keyboard::key::Named;
     use keyboard::{Key, Modifiers};
 
     vec![
@@ -76,6 +91,53 @@ pub fn get_shortcuts() -> Vec<KeyboardShortcut> {
             key: Key::Character("r".into()),
             action: ShortcutAction::Refresh,
         },
+        // Ctrl+K: Open commit dialog (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL,
+            key: Key::Character("k".into()),
+            action: ShortcutAction::OpenCommitDialog,
+        },
+        // IDEA: Alt+M / macOS Ctrl+Alt+M toggle amend commit mode
+        KeyboardShortcut {
+            modifiers: Modifiers::ALT,
+            key: Key::Character("m".into()),
+            action: ShortcutAction::ToggleAmendCommitMode,
+        },
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Character("m".into()),
+            action: ShortcutAction::ToggleAmendCommitMode,
+        },
+        // Ctrl+Shift+K: Open push dialog (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL | Modifiers::SHIFT,
+            key: Key::Character("k".into()),
+            action: ShortcutAction::OpenPushDialog,
+        },
+        // Ctrl+D: Show diff for file (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL,
+            key: Key::Character("d".into()),
+            action: ShortcutAction::ShowFileDiff,
+        },
+        // Ctrl+Alt+Left: Previous file
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Named(Named::ArrowLeft),
+            action: ShortcutAction::NavigatePrevFile,
+        },
+        // Ctrl+Alt+Right: Next file
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL | Modifiers::ALT,
+            key: Key::Named(Named::ArrowRight),
+            action: ShortcutAction::NavigateNextFile,
+        },
+        // Ctrl+Enter: Commit (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::CTRL,
+            key: Key::Named(Named::Enter),
+            action: ShortcutAction::Commit,
+        },
         // Ctrl+Shift+Z: Save stash
         KeyboardShortcut {
             modifiers: Modifiers::CTRL | Modifiers::SHIFT,
@@ -93,6 +155,18 @@ pub fn get_shortcuts() -> Vec<KeyboardShortcut> {
             modifiers: Modifiers::CTRL | Modifiers::ALT,
             key: Key::Character("z".into()),
             action: ShortcutAction::StashDrop,
+        },
+        // F7: Next hunk (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::empty(),
+            key: Key::Named(Named::F7),
+            action: ShortcutAction::NextHunk,
+        },
+        // Shift+F7: Previous hunk (IDEA style)
+        KeyboardShortcut {
+            modifiers: Modifiers::SHIFT,
+            key: Key::Named(Named::F7),
+            action: ShortcutAction::PrevHunk,
         },
     ]
 }
@@ -139,9 +213,55 @@ pub fn action_description(action: ShortcutAction) -> &'static str {
         ShortcutAction::UnstageAll => "取消暂存全部",
         ShortcutAction::Refresh => "刷新",
         ShortcutAction::ToggleChangesPanel => "切换变更面板",
+        ShortcutAction::OpenCommitDialog => "打开提交对话框",
+        ShortcutAction::ToggleAmendCommitMode => "切换 amend 模式",
+        ShortcutAction::OpenPushDialog => "打开推送对话框",
+        ShortcutAction::ShowFileDiff => "显示文件差异",
+        ShortcutAction::NavigatePrevFile => "上一个文件",
+        ShortcutAction::NavigateNextFile => "下一个文件",
+        ShortcutAction::PrevHunk => "上一个差异块",
+        ShortcutAction::NextHunk => "下一个差异块",
+        ShortcutAction::Commit => "提交",
         ShortcutAction::StashSave => "保存储藏",
         ShortcutAction::StashPop => "弹出储藏",
         ShortcutAction::StashDrop => "删除储藏",
         ShortcutAction::StashList => "列出储藏",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{action_description, get_shortcuts, KeyboardShortcut, ShortcutAction};
+    use iced::keyboard::{Key, Modifiers};
+
+    fn has_shortcut(shortcut: &KeyboardShortcut, modifiers: Modifiers, key: Key) -> bool {
+        shortcut.modifiers == modifiers && shortcut.key == key
+    }
+
+    #[test]
+    fn idea_style_toggle_amend_shortcuts_are_registered() {
+        let shortcuts = get_shortcuts();
+
+        assert!(shortcuts.iter().any(|shortcut| {
+            shortcut.action == ShortcutAction::ToggleAmendCommitMode
+                && has_shortcut(shortcut, Modifiers::ALT, Key::Character("m".into()))
+        }));
+
+        assert!(shortcuts.iter().any(|shortcut| {
+            shortcut.action == ShortcutAction::ToggleAmendCommitMode
+                && has_shortcut(
+                    shortcut,
+                    Modifiers::CTRL | Modifiers::ALT,
+                    Key::Character("m".into()),
+                )
+        }));
+    }
+
+    #[test]
+    fn toggle_amend_shortcut_has_user_facing_description() {
+        assert_eq!(
+            action_description(ShortcutAction::ToggleAmendCommitMode),
+            "切换 amend 模式"
+        );
     }
 }

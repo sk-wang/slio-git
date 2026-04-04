@@ -27,45 +27,45 @@ fn metrics(role: ButtonRole) -> ButtonMetrics {
     match role {
         ButtonRole::Standard => ButtonMetrics {
             text_size: 11,
-            padding: [6, 14],
-            height: 30,
+            padding: theme::density::TOOLBAR_PADDING,
+            height: theme::density::STANDARD_CONTROL_HEIGHT as u16,
             width: None,
         },
         ButtonRole::Compact => ButtonMetrics {
             text_size: 10,
-            padding: [4, 10],
-            height: 26,
+            padding: [2, 6],
+            height: theme::density::COMPACT_CONTROL_HEIGHT as u16,
             width: None,
         },
         ButtonRole::Tab => ButtonMetrics {
             text_size: 11,
-            padding: [5, 12],
-            height: 30,
+            padding: [3, 9],
+            height: theme::layout::EDITOR_TAB_HEIGHT as u16,
             width: None,
         },
         ButtonRole::Rail => ButtonMetrics {
             text_size: 12,
-            padding: [7, 0],
-            height: 40,
-            width: Some(40.0),
+            padding: [5, 0],
+            height: 34,
+            width: Some(34.0),
         },
         ButtonRole::ToolbarIcon => ButtonMetrics {
             text_size: 13,
             padding: [0, 0],
-            height: 30,
-            width: Some(30.0),
+            height: theme::density::STANDARD_CONTROL_HEIGHT as u16,
+            width: Some(theme::density::STANDARD_CONTROL_HEIGHT),
         },
         ButtonRole::ToolbarSplitMain => ButtonMetrics {
             text_size: 11,
-            padding: [6, 14],
-            height: 30,
+            padding: theme::density::TOOLBAR_PADDING,
+            height: theme::density::STANDARD_CONTROL_HEIGHT as u16,
             width: None,
         },
         ButtonRole::ToolbarSplitChevron => ButtonMetrics {
             text_size: 10,
-            padding: [6, 0],
-            height: 30,
-            width: Some(26.0),
+            padding: [3, 0],
+            height: theme::density::STANDARD_CONTROL_HEIGHT as u16,
+            width: Some(18.0),
         },
     }
 }
@@ -284,19 +284,19 @@ mod tests {
 
         assert_eq!(main.padding[0], chevron.padding[0]);
         assert_eq!(main.height, chevron.height);
-        assert_eq!(main.height, 30);
+        assert_eq!(main.height, 24);
     }
 
     #[test]
     fn tabs_share_the_standard_control_height() {
-        assert_eq!(metrics(ButtonRole::Tab).height, 30);
+        assert_eq!(metrics(ButtonRole::Tab).height, 28);
     }
 
     #[test]
     fn rail_buttons_use_fixed_square_footprint() {
         let metrics = metrics(ButtonRole::Rail);
 
-        assert_eq!(metrics.height, 40);
-        assert_eq!(metrics.width, Some(40.0));
+        assert_eq!(metrics.height, 34);
+        assert_eq!(metrics.width, Some(34.0));
     }
 }

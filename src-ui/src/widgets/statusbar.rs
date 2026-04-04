@@ -58,6 +58,12 @@ impl<'a> StatusBar<'a> {
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
             .push(
+                Text::new("Git")
+                    .size(10)
+                    .color(theme::darcula::TEXT_DISABLED),
+            )
+            .push(Self::separator())
+            .push(
                 Text::new(repo_text)
                     .size(10)
                     .color(theme::darcula::TEXT_SECONDARY)

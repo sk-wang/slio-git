@@ -12,7 +12,7 @@ use git_core::{
 use iced::widget::{
     container, mouse_area, opaque, stack, text, Button, Column, Container, Row, Space, Text,
 };
-use iced::{mouse, Alignment, Background, Border, Color, Element, Length, Theme, Vector};
+use iced::{mouse, Alignment, Background, Border, Color, Element, Length, Theme};
 
 #[derive(Debug, Clone)]
 pub enum BranchPopupMessage {
@@ -23,6 +23,7 @@ pub enum BranchPopupMessage {
     CloseBranchContextMenu,
     CloseCommitContextMenu,
     SetSearchQuery(String),
+    ClearSearch,
     SelectBranchCommit(String),
     SetNewBranchName(String),
     CreateBranch(String),
@@ -63,6 +64,9 @@ pub enum BranchPopupMessage {
     OpenTags,
     OpenStashes,
     OpenRebase,
+    PrepareDeleteBranch(String),
+    ConfirmDeleteBranch,
+    CancelDeleteBranch,
     Refresh,
     Close,
 }
@@ -143,6 +147,10 @@ pub struct BranchPopupState {
     pub folder_expansion: BTreeMap<String, bool>,
     pub context_menu_branch: Option<String>,
     pub context_menu_commit: Option<String>,
+    /// Branch name pending deletion confirmation (with merge check)
+    pub pending_delete_branch: Option<String>,
+    /// Whether the pending delete branch is not fully merged (shows warning)
+    pub pending_delete_not_merged: bool,
 }
 
 impl BranchPopupState {
@@ -173,6 +181,8 @@ impl BranchPopupState {
             folder_expansion: BTreeMap::new(),
             context_menu_branch: None,
             context_menu_commit: None,
+            pending_delete_branch: None,
+            pending_delete_not_merged: false,
         }
     }
 
@@ -471,6 +481,26 @@ impl BranchPopupState {
                 self.is_loading = false;
             }
         }
+    }
+
+    /// Prepare a branch for deletion by checking if it's fully merged.
+    /// Sets `pending_delete_branch` and `pending_delete_not_merged` for the confirmation dialog.
+    pub fn prepare_delete_branch(&mut self, repo: &Repository, name: String) {
+        let can_delete = self
+            .local_branches
+            .iter()
+            .any(|branch| branch.name == name && !branch.is_head);
+
+        if !can_delete {
+            self.error = Some("只能删除非当前本地分支".to_string());
+            return;
+        }
+
+        // Check if branch is fully merged into HEAD
+        let is_merged = repo.is_branch_merged(&name).unwrap_or(false);
+
+        self.pending_delete_branch = Some(name);
+        self.pending_delete_not_merged = !is_merged;
     }
 
     pub fn delete_branch(&mut self, repo: &Repository, name: String) {
@@ -1352,158 +1382,45 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
         .align_y(Alignment::Center)
         .push(Text::new("分支").size(16))
         .push_maybe(current_branch.map(|branch| {
-            widgets::info_chip::<BranchPopupMessage>(branch.name.clone(), BadgeTone::Accent)
+            widgets::info_chip::<BranchPopupMessage>(
+                truncate_branch_name(&branch.name),
+                BadgeTone::Accent,
+            )
         }))
         .push(Space::new().width(Length::Fill))
         .push(button::ghost("关闭", Some(BranchPopupMessage::Close)));
 
-    let current_summary_meta = scrollable::styled_horizontal(
+    let compact_toolbar = Container::new(
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push_maybe(state.current_branch_state_hint.as_ref().map(|hint| {
-                widgets::info_chip::<BranchPopupMessage>(hint.clone(), BadgeTone::Warning)
-            }))
-            .push_maybe(state.current_branch_sync_hint.as_ref().map(|hint| {
-                widgets::info_chip::<BranchPopupMessage>(hint.clone(), BadgeTone::Neutral)
-            }))
-            .push_maybe(current_branch.and_then(|branch| {
-                branch.recency_hint.as_ref().map(|hint| {
-                    widgets::info_chip::<BranchPopupMessage>(hint.clone(), BadgeTone::Neutral)
-                })
-            })),
-    )
-    .width(Length::Fill);
-
-    let current_summary = Container::new(
-        Row::new()
-            .spacing(theme::spacing::SM)
-            .align_y(Alignment::Center)
+            // Keep only branch-focused actions in the top area.
             .push(
-                Column::new()
-                    .spacing(2)
-                    .width(Length::Fill)
-                    .push(
-                        Text::new(
-                            current_branch
-                                .map(|branch| branch.name.clone())
-                                .unwrap_or_else(|| "detached HEAD".to_string()),
-                        )
-                        .size(13),
-                    )
-                    .push(current_summary_meta),
+                Container::new(text_input::search_with_clear(
+                    "搜索分支",
+                    &state.search_query,
+                    BranchPopupMessage::SetSearchQuery,
+                    BranchPopupMessage::ClearSearch,
+                ))
+                .width(Length::FillPortion(5)),
             )
             .push(
-                Text::new("当前工作区上下文")
-                    .size(10)
-                    .color(theme::darcula::TEXT_SECONDARY),
-            ),
-    )
-    .padding([14, 16])
-    .style(theme::panel_style(Surface::Panel));
-
-    let overview_cards = Row::new()
-        .spacing(theme::spacing::MD)
-        .push(widgets::stat_card(
-            "本地分支",
-            state.local_branches.len().to_string(),
-            "当前仓库可直接切换和维护的本地分支",
-        ))
-        .push(widgets::stat_card(
-            "远程分支",
-            state.remote_branches.len().to_string(),
-            "用于跟踪、比对和建立上游关系",
-        ))
-        .push(widgets::stat_card(
-            "当前分支",
-            current_branch
-                .map(|branch| branch.name.clone())
-                .unwrap_or_else(|| "detached HEAD".to_string()),
-            "针对当前分支的操作入口",
-        ));
-
-    let quick_actions = Container::new(
-        scrollable::styled_horizontal(
-            Column::new()
-                .spacing(theme::spacing::XS)
-                .push(
-                    Text::new("高频")
-                        .size(10)
-                        .color(theme::darcula::TEXT_SECONDARY),
+                text_input::styled(
+                    "新建分支",
+                    &state.new_branch_name,
+                    BranchPopupMessage::SetNewBranchName,
                 )
-                .push(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .push(button::secondary(
-                            "提交",
-                            Some(BranchPopupMessage::OpenCommit),
-                        ))
-                        .push(button::ghost("刷新", Some(BranchPopupMessage::Refresh)))
-                        .push(button::ghost("拉取", Some(BranchPopupMessage::OpenPull)))
-                        .push(button::ghost("推送", Some(BranchPopupMessage::OpenPush))),
-                ),
-        )
-        .width(Length::Fill),
-    )
-    .padding([14, 16])
-    .style(theme::panel_style(Surface::Panel));
-
-    let secondary_actions = Container::new(
-        scrollable::styled_horizontal(
-            Column::new()
-                .spacing(theme::spacing::XS)
-                .push(
-                    Text::new("更多")
-                        .size(10)
-                        .color(theme::darcula::TEXT_SECONDARY),
-                )
-                .push(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .push(button::ghost("历史", Some(BranchPopupMessage::OpenHistory)))
-                        .push(button::ghost("远程", Some(BranchPopupMessage::OpenRemotes)))
-                        .push(button::ghost("标签", Some(BranchPopupMessage::OpenTags)))
-                        .push(button::ghost("储藏", Some(BranchPopupMessage::OpenStashes)))
-                        .push(button::ghost(
-                            "Rebase",
-                            Some(BranchPopupMessage::OpenRebase),
-                        )),
-                ),
-        )
-        .width(Length::Fill),
-    )
-    .padding([14, 16])
-    .style(theme::panel_style(Surface::Panel));
-
-    let search_and_create = Container::new(
-        Column::new()
-            .spacing(theme::spacing::SM)
-            .push(text_input::styled(
-                "搜索分支",
-                &state.search_query,
-                BranchPopupMessage::SetSearchQuery,
+                .width(Length::FillPortion(3)),
+            )
+            .push(button::secondary(
+                "创建",
+                (!state.new_branch_name.trim().is_empty() && !state.is_loading)
+                    .then(|| BranchPopupMessage::CreateBranch(state.new_branch_name.clone())),
             ))
-            .push(
-                Row::new()
-                    .spacing(theme::spacing::XS)
-                    .push(
-                        text_input::styled(
-                            "新建分支",
-                            &state.new_branch_name,
-                            BranchPopupMessage::SetNewBranchName,
-                        )
-                        .width(Length::Fill),
-                    )
-                    .push(button::secondary(
-                        "创建",
-                        (!state.new_branch_name.trim().is_empty() && !state.is_loading).then(
-                            || BranchPopupMessage::CreateBranch(state.new_branch_name.clone()),
-                        ),
-                    )),
-            ),
+            .push(button::ghost("刷新", Some(BranchPopupMessage::Refresh))),
     )
-    .padding([14, 16])
-    .style(theme::panel_style(Surface::Panel));
+    .padding([8, 10])
+    .style(theme::panel_style(Surface::ToolbarField));
 
     let branch_workspace = Row::new()
         .spacing(theme::spacing::MD)
@@ -1529,16 +1446,12 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
     let content = Column::new()
         .spacing(theme::spacing::SM)
         .push(header)
-        .push(current_summary)
-        .push(overview_cards)
+        .push(compact_toolbar)
         .push_maybe(build_status_panel(state))
-        .push(quick_actions)
-        .push(secondary_actions)
-        .push(search_and_create)
         .push(branch_workspace);
 
     Container::new(scrollable::styled(content).height(Length::Fill))
-        .padding([16, 18])
+        .padding([8, 10])
         .width(Length::Fill)
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Panel))
@@ -1547,11 +1460,23 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
 
 fn build_status_panel<'a>(state: &'a BranchPopupState) -> Option<Element<'a, BranchPopupMessage>> {
     if state.is_loading {
-        return Some(status_panel(
-            "处理中",
-            "正在刷新分支列表或执行所选分支动作",
-            BadgeTone::Neutral,
-        ));
+        // IDEA-style: compact loading indicator in-place of full status banner
+        return Some(
+            Container::new(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .align_y(Alignment::Center)
+                    .push(widgets::loading_spinner::<BranchPopupMessage>())
+                    .push(
+                        Text::new("正在刷新分支列表...")
+                            .size(12)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    ),
+            )
+            .padding([8, 12])
+            .style(theme::panel_style(Surface::Raised))
+            .into(),
+        );
     }
 
     if let Some(error) = state.error.as_ref() {
@@ -1589,21 +1514,28 @@ fn build_branch_navigator<'a>(
             recent_branches,
             state,
         ));
+        // IDEA-style: add separator between recent and local branches
+        if !local_branches.is_empty() {
+            branch_lists = branch_lists.push(widgets::separator_with_text(Some("本地分支")));
+        }
     }
 
-    branch_lists = branch_lists
-        .push(build_tree_branch_section(
-            "本地分支",
-            BranchSection::Local,
-            local_branches,
-            state,
-        ))
-        .push(build_tree_branch_section(
-            "远程分支",
-            BranchSection::Remote,
-            remote_branches,
-            state,
-        ));
+    branch_lists = branch_lists.push(build_tree_branch_section(
+        "本地分支",
+        BranchSection::Local,
+        local_branches,
+        state,
+    ));
+    // IDEA-style: add separator between local and remote branches
+    if !remote_branches.is_empty() {
+        branch_lists = branch_lists.push(widgets::separator_with_text(Some("远程分支")));
+    }
+    branch_lists = branch_lists.push(build_tree_branch_section(
+        "远程分支",
+        BranchSection::Remote,
+        remote_branches,
+        state,
+    ));
 
     let navigator = Container::new(scrollable::styled(branch_lists).height(Length::Fill))
         .width(Length::Fill)
@@ -1688,8 +1620,8 @@ fn build_branch_section_shell<'a>(
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new(title)
-                            .size(11)
+                        Text::new(title.to_uppercase())
+                            .size(10)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
                     .push(widgets::info_chip::<BranchPopupMessage>(
@@ -1699,7 +1631,7 @@ fn build_branch_section_shell<'a>(
             )
             .push(list),
     )
-    .padding([14, 16])
+    .padding([10, 12])
     .width(Length::Fill)
     .style(theme::panel_style(Surface::Panel))
     .into()
@@ -1784,7 +1716,7 @@ fn build_folder_row<'a>(
                 BadgeTone::Neutral,
             )),
     )
-    .padding([8, 10])
+    .padding([6, 8])
     .width(Length::Fill);
 
     Button::new(row)
@@ -1804,8 +1736,12 @@ fn build_branch_row<'a>(
     let is_menu_open = state.is_context_menu_open_for(&branch.name);
     let is_current = branch.is_head;
 
-    // Ensure label is not empty
-    let display_label = if label.is_empty() { &branch.name } else { label };
+    // Ensure label is not empty and truncate long names (IDEA-style)
+    let display_label = if label.is_empty() {
+        truncate_branch_name(&branch.name)
+    } else {
+        truncate_branch_name(label)
+    };
 
     let label_color = if is_menu_open || is_selected {
         theme::darcula::TEXT_PRIMARY
@@ -1842,27 +1778,31 @@ fn build_branch_row<'a>(
                     .align_y(Alignment::Center)
                     .width(Length::Fill)
                     .push(tree_indent(depth))
+                    // IDEA-style: branch icon prefix (○ current, ● favorite, ◎ regular)
                     .push(
-                        Text::new(display_label)
-                            .size(12)
-                            .color(label_color),
+                        Text::new(if branch.is_head { "●" } else { "○" })
+                            .size(10)
+                            .color(if branch.is_head {
+                                theme::darcula::SUCCESS
+                            } else {
+                                theme::darcula::TEXT_SECONDARY
+                            }),
                     )
+                    .push(Text::new(display_label).size(12).color(label_color))
+                    // IDEA-style: show incoming/outgoing sync indicators with colored arrows
+                    .push_maybe(build_sync_indicators(branch))
                     .push_maybe(branch.is_head.then(|| -> Element<'_, BranchPopupMessage> {
-                        Container::new(
-                            Text::new("当前")
-                                .size(10)
-                                .color(theme::darcula::SUCCESS),
-                        )
-                        .padding([2, 5])
-                        .style(|_| container::Style {
-                            border: Border {
-                                width: 1.0,
-                                color: theme::darcula::SUCCESS.scale_alpha(0.45),
-                                radius: theme::radius::SM.into(),
-                            },
-                            ..Default::default()
-                        })
-                        .into()
+                        Container::new(Text::new("当前").size(10).color(theme::darcula::SUCCESS))
+                            .padding([2, 5])
+                            .style(|_| container::Style {
+                                border: Border {
+                                    width: 1.0,
+                                    color: theme::darcula::SUCCESS.scale_alpha(0.45),
+                                    radius: theme::radius::SM.into(),
+                                },
+                                ..Default::default()
+                            })
+                            .into()
                     }))
                     .push_maybe((branch.is_remote && !branch.is_head).then(|| {
                         widgets::info_chip::<BranchPopupMessage>("远程", BadgeTone::Neutral)
@@ -1874,11 +1814,7 @@ fn build_branch_row<'a>(
                         .spacing(theme::spacing::XS)
                         .width(Length::Fill)
                         .push(tree_indent(depth))
-                        .push(
-                            Text::new(meta)
-                                .size(10)
-                                .color(meta_color),
-                        ),
+                        .push(Text::new(meta).size(10).color(meta_color)),
                 )
             })),
     )
@@ -1949,12 +1885,12 @@ fn build_branch_context_menu_overlay<'a>(
                         .spacing(2)
                         .width(Length::Fill)
                         .push(
-                            Text::new("分支动作")
+                            Text::new("分支动作".to_uppercase())
                                 .size(10)
                                 .color(theme::darcula::TEXT_SECONDARY),
                         )
                         .push(
-                            Text::new(&selected_branch.name)
+                            Text::new(truncate_branch_name(&selected_branch.name))
                                 .size(14)
                                 .width(Length::Fill)
                                 .wrapping(text::Wrapping::WordOrGlyph),
@@ -2031,9 +1967,9 @@ fn build_branch_context_menu_overlay<'a>(
     let menu = Container::new(Column::new().spacing(theme::spacing::SM).push(header).push(
         Container::new(scrollable::styled(action_groups).height(Length::Fixed(360.0))),
     ))
-    .padding([9, 10])
+    .padding([8, 9])
     .width(Length::Fixed(374.0))
-    .style(commit_context_menu_style);
+    .style(widgets::menu::panel_style);
 
     opaque(
         mouse_area(
@@ -2043,14 +1979,13 @@ fn build_branch_context_menu_overlay<'a>(
                     .push(Space::new().width(Length::Fill))
                     .push(menu),
             )
-            .padding([12, 16])
+            .padding([10, 14])
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(context_menu_scrim_style),
+            .style(widgets::menu::scrim_style),
         )
         .on_press(BranchPopupMessage::CloseBranchContextMenu),
     )
-    .into()
 }
 
 fn build_selected_branch_panel<'a>(
@@ -2105,7 +2040,7 @@ fn build_selected_branch_summary<'a>(
                 Row::new()
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
-                    .push(Text::new(&selected_branch.name).size(14))
+                    .push(Text::new(truncate_branch_name(&selected_branch.name)).size(14))
                     .push(widgets::info_chip::<BranchPopupMessage>(
                         if selected_branch.is_remote {
                             "远程"
@@ -2141,7 +2076,7 @@ fn build_selected_branch_summary<'a>(
                     .color(theme::darcula::TEXT_SECONDARY)
             })),
     )
-    .padding([8, 10])
+    .padding([6, 8])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -2208,7 +2143,7 @@ fn build_selected_commit_history_panel<'a>(
                     .height(Length::Fixed(220.0)),
             ),
     )
-    .padding([8, 10])
+    .padding([6, 8])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
@@ -2665,7 +2600,7 @@ fn build_commit_context_menu_overlay<'a>(
     ))
     .padding([9, 10])
     .width(Length::Fixed(374.0))
-    .style(commit_context_menu_style);
+    .style(widgets::menu::panel_style);
 
     opaque(
         mouse_area(
@@ -2678,11 +2613,10 @@ fn build_commit_context_menu_overlay<'a>(
             .padding([12, 16])
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(context_menu_scrim_style),
+            .style(widgets::menu::scrim_style),
         )
         .on_press(BranchPopupMessage::CloseCommitContextMenu),
     )
-    .into()
 }
 
 fn build_commit_action_groups<'a>(
@@ -2707,7 +2641,7 @@ fn build_commit_action_groups<'a>(
         can_reset_current_branch && current_branch.is_some_and(|branch| branch.upstream.is_some());
 
     let compare_with_current_row = commit_menu_action_row(
-        "<>",
+        Some("<>"),
         "与当前分支比较",
         Some(
             can_compare_with_current
@@ -2722,7 +2656,7 @@ fn build_commit_action_groups<'a>(
         CommitMenuTone::Accent,
     );
     let parent_row = commit_menu_action_row(
-        "^",
+        Some("^"),
         "跳到父提交",
         Some(if parent_commit_id.is_some() {
             "把焦点移到当前提交的父提交".to_string()
@@ -2735,7 +2669,7 @@ fn build_commit_action_groups<'a>(
         CommitMenuTone::Accent,
     );
     let child_row = commit_menu_action_row(
-        "v",
+        Some("v"),
         "跳到子提交",
         Some(if child_commit_id.is_some() {
             "把焦点移到当前提交的直接子提交".to_string()
@@ -2750,12 +2684,12 @@ fn build_commit_action_groups<'a>(
 
     vec![
         build_commit_action_group(
-            "常用",
+            "常用".to_uppercase(),
             "复制版本号、导出补丁。",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
-                    "#",
+                    Some("#"),
                     "复制哈希",
                     Some("把完整提交哈希复制到系统剪贴板".to_string()),
                     (!state.is_loading)
@@ -2763,7 +2697,7 @@ fn build_commit_action_groups<'a>(
                     CommitMenuTone::Neutral,
                 ),
                 commit_menu_action_row(
-                    "PT",
+                    Some("PT"),
                     "导出 Patch",
                     Some("用 git format-patch 导出这条提交的补丁文件".to_string()),
                     (!state.is_loading)
@@ -2773,12 +2707,12 @@ fn build_commit_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "比较与定位",
+            "比较与定位".to_uppercase(),
             "比较当前上下文，沿着提交前后移动。",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
-                    "WT",
+                    None,
                     "查看与工作树差异",
                     Some("把这条提交和当前工作区直接做比较".to_string()),
                     (!state.is_loading)
@@ -2791,12 +2725,12 @@ fn build_commit_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "派生",
+            "派生".to_uppercase(),
             "保留现有历史，基于它继续工作。",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
-                    "BR",
+                    None,
                     "从该提交建分支",
                     Some("保留当前分支不动，基于这条提交创建新分支".to_string()),
                     (!state.is_loading).then_some(BranchPopupMessage::PrepareCreateFromSelected(
@@ -2805,7 +2739,7 @@ fn build_commit_action_groups<'a>(
                     CommitMenuTone::Neutral,
                 ),
                 commit_menu_action_row(
-                    "TG",
+                    Some("TG"),
                     "给该提交打标签",
                     Some("在这条提交上创建一个新的标签".to_string()),
                     (!state.is_loading)
@@ -2815,12 +2749,12 @@ fn build_commit_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "应用到当前分支",
+            "应用到当前分支".to_uppercase(),
             "会在当前分支生成新的提交。",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
-                    "CP",
+                    Some("CP"),
                     "Cherry-pick",
                     Some(if info.parent_ids.len() > 1 {
                         "merge 提交暂不支持直接 Cherry-pick".to_string()
@@ -2832,7 +2766,7 @@ fn build_commit_action_groups<'a>(
                     CommitMenuTone::Accent,
                 ),
                 commit_menu_action_row(
-                    "RV",
+                    Some("RV"),
                     "Revert",
                     Some(if info.parent_ids.len() > 1 {
                         "merge 提交暂不支持直接回退".to_string()
@@ -2846,12 +2780,12 @@ fn build_commit_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "危险动作",
+            "危险动作".to_uppercase(),
             "会移动分支指针或直接发布到当前上游。",
             CommitMenuTone::Danger,
             vec![
                 commit_menu_action_row(
-                    "!",
+                    None,
                     "重置当前分支到这里",
                     Some(if selected_branch.is_head {
                         "把当前分支硬重置到这个祖先提交".to_string()
@@ -2864,7 +2798,7 @@ fn build_commit_action_groups<'a>(
                     CommitMenuTone::Danger,
                 ),
                 commit_menu_action_row(
-                    "UP",
+                    None,
                     "推送当前分支到这里",
                     Some(if !selected_branch.is_head {
                         "只对当前分支启用".to_string()
@@ -2936,7 +2870,11 @@ fn build_branch_commit_row<'a>(
             Container::new(
                 Button::new(row)
                     .width(Length::Fill)
-                    .style(theme::button_style(theme::ButtonTone::Ghost))
+                    .style(widgets::menu::trigger_row_button_style(
+                        is_selected,
+                        is_menu_open,
+                        Some(theme::darcula::ACCENT),
+                    ))
                     .on_press(BranchPopupMessage::SelectBranchCommit(entry.id.clone())),
             )
             .width(Length::Fill),
@@ -2982,16 +2920,12 @@ fn build_branch_action_groups<'a>(
 
     vec![
         build_commit_action_group(
-            "常用",
+            "常用".to_uppercase(),
             "切换到这条分支，或基于它继续开工。",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
-                    if selected_branch.is_remote {
-                        "CK"
-                    } else {
-                        "SW"
-                    },
+                    None,
                     if selected_branch.is_remote {
                         "签出为本地分支"
                     } else {
@@ -3020,7 +2954,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Neutral,
                 ),
                 commit_menu_action_row(
-                    "BR",
+                    None,
                     format!("从 '{}' 新建分支...", selected_branch.name),
                     Some("保留当前分支不动，基于所选分支创建一个新分支".to_string()),
                     (!state.is_loading).then(|| {
@@ -3029,7 +2963,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Neutral,
                 ),
                 commit_menu_action_row(
-                    "RB",
+                    None,
                     checkout_and_rebase_target
                         .as_ref()
                         .map(|target| format!("签出并变基到 '{target}'"))
@@ -3052,12 +2986,12 @@ fn build_branch_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "比较",
+            "比较".to_uppercase(),
             "直接看它和当前上下文的差异。",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
-                    "<>",
+                    None,
                     compare_target
                         .as_ref()
                         .map(|target| format!("与 '{target}' 比较"))
@@ -3074,7 +3008,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Accent,
                 ),
                 commit_menu_action_row(
-                    "WT",
+                    None,
                     "显示与工作树的差异",
                     Some("预览所选分支与当前工作区（含已暂存改动）的差别".to_string()),
                     (!state.is_loading).then(|| {
@@ -3085,12 +3019,12 @@ fn build_branch_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "集成",
+            "集成".to_uppercase(),
             "把所选分支并入当前工作线，或让当前工作线基于它重排。",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
-                    "RB",
+                    None,
                     format!("将当前分支变基到 '{}'", selected_branch.name),
                     Some(if !selected_branch.is_head {
                         "把当前分支移动到所选分支之后，适合保持提交线性".to_string()
@@ -3103,7 +3037,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Accent,
                 ),
                 commit_menu_action_row(
-                    "MG",
+                    None,
                     current_branch_name
                         .as_ref()
                         .map(|current| {
@@ -3124,12 +3058,12 @@ fn build_branch_action_groups<'a>(
             ],
         ),
         build_commit_action_group(
-            "远程",
+            "远程".to_uppercase(),
             "获取、推送或建立跟踪关系。",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
-                    "RF",
+                    None,
                     "更新",
                     Some(
                         selected_remote_name
@@ -3147,7 +3081,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Accent,
                 ),
                 commit_menu_action_row(
-                    "UP",
+                    None,
                     "推送...",
                     Some(if selected_branch.is_remote {
                         "远程分支不能直接作为推送源".to_string()
@@ -3170,7 +3104,7 @@ fn build_branch_action_groups<'a>(
                     CommitMenuTone::Accent,
                 ),
                 commit_menu_action_row(
-                    "TR",
+                    None,
                     upstream_ref
                         .as_ref()
                         .map(|upstream| format!("跟踪分支 '{upstream}'"))
@@ -3203,7 +3137,7 @@ fn build_branch_action_groups<'a>(
             "整理命名，但不直接改写提交历史。",
             CommitMenuTone::Neutral,
             vec![commit_menu_action_row(
-                "RN",
+                None,
                 "重命名...",
                 Some(if can_rename {
                     "修改本地分支名称，支持直接编辑完整路径".to_string()
@@ -3220,7 +3154,7 @@ fn build_branch_action_groups<'a>(
             "删除分支前，请确认它不是当前工作分支。",
             CommitMenuTone::Danger,
             vec![commit_menu_action_row(
-                "!",
+                None,
                 "删除",
                 Some(if can_delete {
                     "删除这个本地分支；当前分支不可删除".to_string()
@@ -3240,17 +3174,6 @@ fn tree_indent(depth: usize) -> Space {
     const TREE_INDENT: f32 = 14.0;
 
     Space::new().width(Length::Fixed((depth as f32) * TREE_INDENT))
-}
-
-fn context_menu_scrim_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.08,
-            ..theme::darcula::BG_EDITOR
-        })),
-        border: Border::default(),
-        ..Default::default()
-    }
 }
 
 fn folder_key(section: BranchSection, path: &str) -> String {
@@ -3306,77 +3229,15 @@ fn branch_row_button_style(
     is_menu_open: bool,
     is_current: bool,
 ) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style {
-    move |_theme, status| {
-        let (base_background, base_border) = if is_menu_open {
-            (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::ACCENT_WEAK, 0.82),
-                theme::darcula::ACCENT.scale_alpha(0.78),
-            )
-        } else if is_selected {
-            (
-                blend_color(
-                    theme::darcula::BG_PANEL,
-                    theme::darcula::SELECTION_BG,
-                    0.60,
-                ),
-                theme::darcula::ACCENT.scale_alpha(0.22),
-            )
-        } else if is_current {
-            (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::SUCCESS, 0.10),
-                theme::darcula::SUCCESS.scale_alpha(0.28),
-            )
+    widgets::menu::trigger_row_button_style(
+        is_selected || is_current,
+        is_menu_open,
+        Some(if is_current && !is_selected && !is_menu_open {
+            theme::darcula::SUCCESS
         } else {
-            (Color::TRANSPARENT, Color::TRANSPARENT)
-        };
-
-        let (background, border_color) = match status {
-            iced::widget::button::Status::Active => (base_background, base_border),
-            iced::widget::button::Status::Hovered => (
-                if is_menu_open || is_selected || is_current {
-                    blend_color(base_background, Color::WHITE, 0.05)
-                } else {
-                    blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_RAISED, 0.74)
-                },
-                if is_menu_open || is_selected || is_current {
-                    blend_color(base_border, Color::WHITE, 0.08)
-                } else {
-                    theme::darcula::SEPARATOR.scale_alpha(0.74)
-                },
-            ),
-            iced::widget::button::Status::Pressed => (
-                if is_menu_open || is_selected || is_current {
-                    blend_color(base_background, theme::darcula::BG_MAIN, 0.12)
-                } else {
-                    blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_RAISED, 0.90)
-                },
-                if is_menu_open || is_selected || is_current {
-                    blend_color(base_border, theme::darcula::BG_MAIN, 0.14)
-                } else {
-                    theme::darcula::ACCENT.scale_alpha(0.30)
-                },
-            ),
-            iced::widget::button::Status::Disabled => (
-                blend_color(theme::darcula::BG_PANEL, base_background, 0.30),
-                blend_color(theme::darcula::BORDER, base_border, 0.26),
-            ),
-        };
-
-        iced::widget::button::Style {
-            background: Some(Background::Color(background)),
-            border: Border {
-                width: 1.0,
-                color: border_color,
-                radius: theme::radius::LG.into(),
-            },
-            text_color: if matches!(status, iced::widget::button::Status::Disabled) {
-                theme::darcula::TEXT_DISABLED
-            } else {
-                theme::darcula::TEXT_PRIMARY
-            },
-            ..Default::default()
-        }
-    }
+            theme::darcula::ACCENT
+        }),
+    )
 }
 
 fn branch_folder_row_button_style(
@@ -3520,134 +3381,29 @@ enum CommitMenuTone {
 }
 
 fn build_commit_action_group<'a>(
-    title: &'a str,
+    title: impl Into<String>,
     detail: &'a str,
     tone: CommitMenuTone,
     rows: Vec<Element<'a, BranchPopupMessage>>,
 ) -> Element<'a, BranchPopupMessage> {
-    let rows = rows
-        .into_iter()
-        .fold(Column::new().spacing(0), |column, row| column.push(row));
-
-    Container::new(
-        Column::new()
-            .spacing(theme::spacing::SM)
-            .push(
-                Column::new()
-                    .spacing(4)
-                    .push(
-                        Text::new(title)
-                            .size(10)
-                            .color(commit_menu_group_title_color(tone)),
-                    )
-                    .push(
-                        Text::new(detail)
-                            .size(10)
-                            .width(Length::Fill)
-                            .wrapping(text::Wrapping::WordOrGlyph)
-                            .color(theme::darcula::TEXT_SECONDARY),
-                    ),
-            )
-            .push(rows),
-    )
-    .padding([9, 11])
-    .style(commit_menu_group_style(tone))
-    .into()
+    widgets::menu::group(title, detail, map_commit_menu_tone(tone), rows)
 }
 
 fn commit_menu_action_row<'a>(
-    icon: &'static str,
+    icon: Option<&'static str>,
     title: impl Into<String>,
     detail: Option<String>,
     on_press: Option<BranchPopupMessage>,
     tone: CommitMenuTone,
 ) -> Element<'a, BranchPopupMessage> {
-    let title = title.into();
-    let enabled = on_press.is_some();
-    let title_color = if enabled {
-        match tone {
-            CommitMenuTone::Danger => {
-                blend_color(theme::darcula::TEXT_PRIMARY, theme::darcula::DANGER, 0.16)
-            }
-            _ => theme::darcula::TEXT_PRIMARY,
-        }
-    } else {
-        theme::darcula::TEXT_DISABLED
-    };
-    let detail_color = if enabled {
-        theme::darcula::TEXT_SECONDARY
-    } else {
-        theme::darcula::TEXT_DISABLED
-    };
-
-    let button = Button::new(
-        Container::new(
-            Row::new()
-                .spacing(theme::spacing::SM)
-                .align_y(Alignment::Center)
-                .push(build_commit_action_icon(icon, tone, enabled))
-                .push(
-                    Column::new()
-                        .spacing(1)
-                        .width(Length::Fill)
-                        .push(Text::new(title).size(12).color(title_color))
-                        .push_maybe(detail.map(|detail| {
-                            Text::new(detail)
-                                .size(10)
-                                .width(Length::Fill)
-                                .wrapping(text::Wrapping::WordOrGlyph)
-                                .color(detail_color)
-                        })),
-                )
-                .push(
-                    Text::new(if enabled { ">" } else { "" })
-                        .size(11)
-                        .color(if enabled {
-                            commit_menu_group_title_color(tone)
-                        } else {
-                            theme::darcula::TEXT_DISABLED
-                        }),
-                ),
-        )
-        .padding([13, 10])
-        .width(Length::Fill),
+    widgets::menu::action_row(
+        icon,
+        title,
+        detail,
+        None,
+        on_press,
+        map_commit_menu_tone(tone),
     )
-    .width(Length::Fill)
-    .style(commit_menu_row_button_style(tone, enabled));
-
-    if let Some(message) = on_press {
-        button.on_press(message).into()
-    } else {
-        button.into()
-    }
-}
-
-fn build_commit_action_icon<'a>(
-    icon: &'static str,
-    tone: CommitMenuTone,
-    enabled: bool,
-) -> Element<'a, BranchPopupMessage> {
-    let badge_tone = if enabled {
-        commit_menu_badge_tone(tone)
-    } else {
-        BadgeTone::Neutral
-    };
-
-    Container::new(
-        Text::new(icon)
-            .size(if icon.len() > 1 { 8 } else { 10 })
-            .color(if enabled {
-                theme::darcula::TEXT_PRIMARY
-            } else {
-                theme::darcula::TEXT_DISABLED
-            }),
-    )
-    .width(Length::Fixed(28.0))
-    .height(Length::Fixed(20.0))
-    .center_x(Length::Fill)
-    .center_y(Length::Fill)
-    .style(theme::badge_style(badge_tone))
-    .into()
 }
 
 fn build_inline_action_panel<'a>(
@@ -3688,7 +3444,7 @@ fn build_inline_action_panel<'a>(
                         )),
                 ),
         )
-        .padding([16, 16])
+        .padding([10, 12])
         .style(theme::panel_style(Surface::Selection))
         .into(),
     )
@@ -3727,10 +3483,108 @@ fn build_comparison_panel<'a>(
                         .height(Length::Fixed(280.0)),
                 ),
         )
-        .padding([16, 16])
+        .padding([10, 12])
         .style(theme::panel_style(Surface::Panel))
         .into(),
     )
+}
+
+/// Represents incoming/outgoing sync state for a branch
+#[derive(Debug, Clone, Default)]
+pub struct BranchSyncState {
+    pub incoming: Option<u32>, // Number of commits behind (incoming)
+    pub outgoing: Option<u32>, // Number of commits ahead (outgoing)
+}
+
+impl BranchSyncState {
+    /// Parse sync state from tracking_status string like "3↓" or "↑2" or "↕3/5"
+    pub fn from_tracking_status(status: &Option<String>) -> Self {
+        let Some(status) = status else {
+            return Self::default();
+        };
+
+        // Handle diverged case: ↕3/5
+        if let Some(after_arrow) = status.strip_prefix('↕') {
+            if let Some((ahead, behind)) = after_arrow.split_once('/') {
+                let incoming = behind.trim().parse().ok();
+                let outgoing = ahead.trim().parse().ok();
+                return BranchSyncState { incoming, outgoing };
+            }
+        }
+
+        // Handle single arrow cases: ↓3 or ↑2
+        if let Some(after_arrow) = status.strip_prefix('↓') {
+            let count: Option<u32> = after_arrow.trim().parse().ok();
+            return BranchSyncState {
+                incoming: count,
+                outgoing: None,
+            };
+        }
+        if let Some(after_arrow) = status.strip_prefix('↑') {
+            let count: Option<u32> = after_arrow.trim().parse().ok();
+            return BranchSyncState {
+                incoming: None,
+                outgoing: count,
+            };
+        }
+
+        // Handle special cases: ✓ (synced), ? (unknown), or plain text
+        Self::default()
+    }
+}
+
+/// IDEA-style: shrink large commit counts to "99+"
+/// Matches GitIncomingOutgoingUi.shrinkTo99 in IDEA
+fn shrink_to_99(commits: u32) -> String {
+    if commits > 99 {
+        "99+".to_string()
+    } else {
+        commits.to_string()
+    }
+}
+
+/// IDEA-style: Build sync indicator arrows for branch display
+/// Shows colored arrows: blue ↓ for incoming, green ↑ for outgoing
+fn build_sync_indicators<'a>(branch: &Branch) -> Option<Element<'a, BranchPopupMessage>> {
+    if branch.is_remote {
+        return None;
+    }
+
+    let sync_state = BranchSyncState::from_tracking_status(&branch.tracking_status);
+
+    if sync_state.incoming.is_none() && sync_state.outgoing.is_none() {
+        return None;
+    }
+
+    let incoming_indicator: Option<Element<'a, BranchPopupMessage>> =
+        sync_state.incoming.map(|count| {
+            Container::new(
+                Text::new(format!("↓{}", shrink_to_99(count)))
+                    .size(10)
+                    .color(theme::darcula::INCOMING),
+            )
+            .into()
+        });
+
+    let outgoing_indicator: Option<Element<'a, BranchPopupMessage>> =
+        sync_state.outgoing.map(|count| {
+            Container::new(
+                Text::new(format!("↑{}", shrink_to_99(count)))
+                    .size(10)
+                    .color(theme::darcula::OUTGOING),
+            )
+            .into()
+        });
+
+    let mut row = Row::new().spacing(2).align_y(Alignment::Center);
+    if let Some(elem) = incoming_indicator {
+        row = row.push(elem);
+    }
+    if let Some(elem) = outgoing_indicator {
+        row = row.push(elem);
+    }
+
+    Some(row.into())
 }
 
 fn branch_meta_summary(branch: &Branch) -> Option<String> {
@@ -3800,6 +3654,21 @@ fn branch_leaf_name(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)
 }
 
+/// IDEA-style branch name truncation at 40 characters
+const MAX_BRANCH_NAME_LENGTH: usize = 40;
+
+fn truncate_branch_name(name: &str) -> String {
+    if name.chars().count() <= MAX_BRANCH_NAME_LENGTH {
+        name.to_string()
+    } else {
+        // Truncate middle: show start and end
+        let half = (MAX_BRANCH_NAME_LENGTH - 3) / 2;
+        let prefix: String = name.chars().take(half).collect();
+        let suffix: String = name.chars().rev().take(half).collect();
+        format!("{}...{}", prefix, suffix.chars().rev().collect::<String>())
+    }
+}
+
 fn selected_commit_parent_in_history(state: &BranchPopupState) -> Option<String> {
     let entry = selected_history_entry(state)?;
     let parent_id = entry.parent_ids.first()?;
@@ -3854,133 +3723,11 @@ fn short_commit_id(id: &str) -> &str {
     &id[..id.len().min(8)]
 }
 
-fn commit_context_menu_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(Background::Color(blend_color(
-            theme::darcula::BG_PANEL,
-            theme::darcula::BG_RAISED,
-            0.92,
-        ))),
-        border: Border {
-            width: 1.0,
-            color: theme::darcula::ACCENT.scale_alpha(0.26),
-            radius: theme::radius::LG.into(),
-        },
-        shadow: iced::Shadow {
-            color: Color {
-                a: 0.20,
-                ..theme::darcula::BG_MAIN
-            },
-            offset: Vector::new(0.0, 16.0),
-            blur_radius: 32.0,
-        },
-        ..Default::default()
-    }
-}
-
-fn commit_menu_group_style(tone: CommitMenuTone) -> impl Fn(&Theme) -> container::Style {
-    move |_theme| {
-        let (background, border_color) = match tone {
-            CommitMenuTone::Neutral => (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_RAISED, 0.72),
-                theme::darcula::BORDER.scale_alpha(0.72),
-            ),
-            CommitMenuTone::Accent => (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::ACCENT_WEAK, 0.70),
-                theme::darcula::ACCENT.scale_alpha(0.22),
-            ),
-            CommitMenuTone::Danger => (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::DANGER, 0.10),
-                theme::darcula::DANGER.scale_alpha(0.24),
-            ),
-        };
-
-        container::Style {
-            background: Some(Background::Color(background)),
-            border: Border {
-                width: 1.0,
-                color: border_color,
-                radius: theme::radius::LG.into(),
-            },
-            ..Default::default()
-        }
-    }
-}
-
-fn commit_menu_row_button_style(
-    tone: CommitMenuTone,
-    enabled: bool,
-) -> impl Fn(&Theme, iced::widget::button::Status) -> iced::widget::button::Style {
-    move |_theme, status| {
-        let interaction_color = match tone {
-            CommitMenuTone::Neutral => theme::darcula::BG_TAB_HOVER,
-            CommitMenuTone::Accent => theme::darcula::ACCENT,
-            CommitMenuTone::Danger => theme::darcula::DANGER,
-        };
-
-        let (background, border_color, border_width) = if enabled {
-            match status {
-                iced::widget::button::Status::Active => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.07),
-                    interaction_color.scale_alpha(0.14),
-                    1.0,
-                ),
-                iced::widget::button::Status::Hovered => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.18),
-                    interaction_color.scale_alpha(0.30),
-                    1.0,
-                ),
-                iced::widget::button::Status::Pressed => (
-                    blend_color(theme::darcula::BG_PANEL, interaction_color, 0.26),
-                    interaction_color.scale_alpha(0.40),
-                    1.0,
-                ),
-                iced::widget::button::Status::Disabled => (
-                    blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_MAIN, 0.22),
-                    theme::darcula::SEPARATOR.scale_alpha(0.26),
-                    1.0,
-                ),
-            }
-        } else {
-            (
-                blend_color(theme::darcula::BG_PANEL, theme::darcula::BG_MAIN, 0.18),
-                theme::darcula::SEPARATOR.scale_alpha(0.22),
-                1.0,
-            )
-        };
-
-        iced::widget::button::Style {
-            background: Some(Background::Color(background)),
-            border: Border {
-                width: border_width,
-                color: border_color,
-                radius: theme::radius::LG.into(),
-            },
-            text_color: if enabled {
-                theme::darcula::TEXT_PRIMARY
-            } else {
-                theme::darcula::TEXT_DISABLED
-            },
-            ..Default::default()
-        }
-    }
-}
-
-fn commit_menu_group_title_color(tone: CommitMenuTone) -> Color {
+fn map_commit_menu_tone(tone: CommitMenuTone) -> widgets::menu::MenuTone {
     match tone {
-        CommitMenuTone::Neutral => theme::darcula::TEXT_SECONDARY,
-        CommitMenuTone::Accent => theme::darcula::ACCENT,
-        CommitMenuTone::Danger => {
-            blend_color(theme::darcula::WARNING, theme::darcula::DANGER, 0.48)
-        }
-    }
-}
-
-fn commit_menu_badge_tone(tone: CommitMenuTone) -> BadgeTone {
-    match tone {
-        CommitMenuTone::Neutral => BadgeTone::Neutral,
-        CommitMenuTone::Accent => BadgeTone::Accent,
-        CommitMenuTone::Danger => BadgeTone::Danger,
+        CommitMenuTone::Neutral => widgets::menu::MenuTone::Neutral,
+        CommitMenuTone::Accent => widgets::menu::MenuTone::Accent,
+        CommitMenuTone::Danger => widgets::menu::MenuTone::Danger,
     }
 }
 
@@ -4018,6 +3765,7 @@ mod tests {
             sync_hint: None,
             recency_hint: None,
             last_commit_timestamp: None,
+            group_path: None,
         }
     }
 
@@ -4069,5 +3817,38 @@ mod tests {
 
         assert!(changed);
         assert_eq!(state.selected_branch.as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn branch_sync_state_parses_unicode_arrow_counts() {
+        let outgoing = BranchSyncState::from_tracking_status(&Some("↑2".to_string()));
+        assert_eq!(outgoing.incoming, None);
+        assert_eq!(outgoing.outgoing, Some(2));
+
+        let incoming = BranchSyncState::from_tracking_status(&Some("↓7".to_string()));
+        assert_eq!(incoming.incoming, Some(7));
+        assert_eq!(incoming.outgoing, None);
+    }
+
+    #[test]
+    fn branch_sync_state_maps_diverged_counts_to_outgoing_and_incoming() {
+        let state = BranchSyncState::from_tracking_status(&Some("↕3/5".to_string()));
+
+        assert_eq!(state.outgoing, Some(3));
+        assert_eq!(state.incoming, Some(5));
+    }
+
+    #[test]
+    fn branch_popup_view_renders_loaded_state_without_panicking() {
+        let mut state = BranchPopupState::new();
+        let mut current = branch("feature/very-long-branch-name-for-render-smoke-test");
+        current.is_head = true;
+        current.tracking_status = Some("↑2".to_string());
+        state.local_branches = vec![current.clone(), branch("feature/api/login")];
+        state.remote_branches = vec![branch_with_kind("origin/main", true)];
+        state.recent_branches = vec![branch("main")];
+        state.selected_branch = Some(current.name.clone());
+
+        let _ = view(&state);
     }
 }

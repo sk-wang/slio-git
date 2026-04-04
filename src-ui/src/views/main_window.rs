@@ -3,8 +3,8 @@
 use crate::components::rail_icons::{self, RailIcon};
 use crate::i18n::I18n;
 use crate::state::{
-    AppState, AuxiliaryView, FeedbackLevel, ProjectEntry, ShellSection, StatusSeverity,
-    ToolbarRemoteAction, ToolbarRemoteMenuState,
+    AppState, AuxiliaryView, FeedbackLevel, GitToolWindowTab, ProjectEntry, ShellSection,
+    StatusSeverity, ToolbarRemoteAction, ToolbarRemoteMenuState,
 };
 use crate::theme::{self, BadgeTone, ButtonTone, Surface};
 use crate::views;
@@ -42,6 +42,7 @@ pub struct MainWindow<'a, Message> {
     pub i18n: &'a I18n,
     pub state: &'a AppState,
     pub body: Element<'a, Message>,
+    pub bottom_tool_window: Option<Element<'a, Message>>,
     pub on_open_repo: Message,
     pub on_switch_project: Box<dyn Fn(PathBuf) -> Message + 'a>,
     pub on_init_repo: Message,
@@ -60,6 +61,8 @@ pub struct MainWindow<'a, Message> {
     pub on_show_tags: Message,
     pub on_show_stashes: Message,
     pub on_show_rebase: Message,
+    pub on_close_auxiliary: Message,
+    pub on_switch_git_tool_window_tab: Box<dyn Fn(GitToolWindowTab) -> Message + 'a>,
     pub on_dismiss_feedback: Message,
     pub on_dismiss_toast: Message,
 }
@@ -70,6 +73,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         i18n: &'a I18n,
         state: &'a AppState,
         body: Element<'a, Message>,
+        bottom_tool_window: Option<Element<'a, Message>>,
         on_open_repo: Message,
         on_switch_project: impl Fn(PathBuf) -> Message + 'a,
         on_init_repo: Message,
@@ -88,6 +92,8 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         on_show_tags: Message,
         on_show_stashes: Message,
         on_show_rebase: Message,
+        on_close_auxiliary: Message,
+        on_switch_git_tool_window_tab: impl Fn(GitToolWindowTab) -> Message + 'a,
         on_dismiss_feedback: Message,
         on_dismiss_toast: Message,
     ) -> Self {
@@ -95,6 +101,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             i18n,
             state,
             body,
+            bottom_tool_window,
             on_open_repo,
             on_switch_project: Box::new(on_switch_project),
             on_init_repo,
@@ -113,6 +120,8 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             on_show_tags,
             on_show_stashes,
             on_show_rebase,
+            on_close_auxiliary,
+            on_switch_git_tool_window_tab: Box::new(on_switch_git_tool_window_tab),
             on_dismiss_feedback,
             on_dismiss_toast,
         }
@@ -123,6 +132,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             i18n,
             state,
             body,
+            bottom_tool_window,
             on_open_repo,
             on_switch_project,
             on_init_repo,
@@ -141,6 +151,8 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             on_show_tags,
             on_show_stashes,
             on_show_rebase,
+            on_close_auxiliary,
+            on_switch_git_tool_window_tab,
             on_dismiss_feedback,
             on_dismiss_toast,
         } = self;
@@ -154,6 +166,41 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             });
 
         let content = if state.current_repository.is_some() {
+            let workspace_body = Column::new()
+                .spacing(0)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .push(Self::editor_tab_strip(
+                    state,
+                    on_switch_git_tool_window_tab.as_ref(),
+                ))
+                .push(rule::horizontal(1).style(theme::separator_rule_style()))
+                .push(
+                    Container::new(body)
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                );
+
+            let workspace_column = Column::new()
+                .spacing(0)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .push_maybe(banner)
+                .push(
+                    Container::new(workspace_body)
+                        .padding([0, 0])
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .push_maybe(bottom_tool_window.map(|panel| {
+                    Self::bottom_tool_window_panel(
+                        state,
+                        panel,
+                        &on_show_history,
+                        &on_close_auxiliary,
+                    )
+                }));
+
             let workspace = Row::new()
                 .height(Length::Fill)
                 .push(Self::navigation_rail(
@@ -168,19 +215,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                     &on_show_stashes,
                     &on_show_rebase,
                 ))
-                .push(
-                    Column::new()
-                        .spacing(0)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .push_maybe(banner)
-                        .push(
-                            Container::new(body)
-                                .padding(theme::density::PANE_PADDING)
-                                .width(Length::Fill)
-                                .height(Length::Fill),
-                        ),
-                );
+                .push(workspace_column);
 
             Column::new()
                 .spacing(0)
@@ -195,13 +230,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                     on_toolbar_remote_action.as_ref(),
                     &on_close_toolbar_remote_menu,
                     &on_show_branches,
-                    &on_show_changes,
-                    &on_show_conflicts,
-                    &on_show_history,
-                    &on_show_remotes,
-                    &on_show_tags,
-                    &on_show_stashes,
-                    &on_show_rebase,
                 ))
                 .push(rule::horizontal(1).style(theme::separator_rule_style()))
                 .push(workspace)
@@ -251,7 +279,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn workspace_top_chrome(
         i18n: &'a I18n,
         state: &'a AppState,
@@ -263,13 +290,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         on_toolbar_remote_action: &dyn Fn(ToolbarRemoteAction, String) -> Message,
         on_close_toolbar_remote_menu: &Message,
         on_show_branches: &Message,
-        on_show_changes: &Message,
-        on_show_conflicts: &Message,
-        on_show_history: &Message,
-        on_show_remotes: &Message,
-        on_show_tags: &Message,
-        on_show_stashes: &Message,
-        on_show_rebase: &Message,
     ) -> Element<'a, Message> {
         let context = &state.shell.context_switcher;
         let badges = Self::pick_branch_badges(
@@ -357,19 +377,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             .push(repo_switcher)
             .push(branch_switcher);
 
-        let tabs = Row::new()
-            .spacing(theme::spacing::XS)
-            .push(Self::nav_button(
-                i18n.changes,
-                state.shell.active_section == ShellSection::Changes,
-                Some(on_show_changes.clone()),
-            ))
-            .push(Self::nav_button(
-                i18n.conflicts,
-                state.shell.active_section == ShellSection::Conflicts,
-                state.has_conflicts().then_some(on_show_conflicts.clone()),
-            ));
-
         let quick_actions = Row::new()
             .spacing(theme::spacing::XS)
             .push(button::ghost(i18n.refresh, Some(on_refresh.clone())))
@@ -404,47 +411,19 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                     .then_some(on_commit.clone()),
             ));
 
-        let secondary_actions = Row::new()
-            .spacing(theme::spacing::XS)
-            .push(Self::utility_button(
-                "历史",
-                state.auxiliary_view == Some(AuxiliaryView::History),
-                Some(on_show_history.clone()),
-            ))
-            .push(Self::utility_button(
-                "远程",
-                state.auxiliary_view == Some(AuxiliaryView::Remotes),
-                Some(on_show_remotes.clone()),
-            ))
-            .push(Self::utility_button(
-                "标签",
-                state.auxiliary_view == Some(AuxiliaryView::Tags),
-                Some(on_show_tags.clone()),
-            ))
-            .push(Self::utility_button(
-                "储藏",
-                state.auxiliary_view == Some(AuxiliaryView::Stashes),
-                Some(on_show_stashes.clone()),
-            ))
-            .push(Self::utility_button(
-                "Rebase",
-                state.auxiliary_view == Some(AuxiliaryView::Rebase),
-                Some(on_show_rebase.clone()),
-            ));
-
-        let primary_bar =
-            Container::new(
-                Row::new()
-                    .spacing(theme::spacing::SM)
-                    .align_y(Alignment::Center)
-                    .push(context_switchers)
-                    .push_maybe(badges.sync_badge.as_ref().map(|(label, tone)| {
-                        widgets::compact_chip::<Message>(label.clone(), *tone)
-                    }))
-                    .push(quick_actions),
-            )
-            .padding([10, 16])
-            .style(theme::frame_style(Surface::Toolbar));
+        let primary_bar = Container::new(
+            Row::new()
+                .spacing(theme::spacing::SM)
+                .align_y(Alignment::Center)
+                .push(context_switchers)
+                .push_maybe(badges.sync_badge.as_ref().map(|(label, tone)| {
+                    widgets::compact_chip::<Message>(label.clone(), *tone)
+                }))
+                .push(Space::new().width(Length::Fill))
+                .push(quick_actions),
+        )
+        .padding([10, 16])
+        .style(theme::frame_style(Surface::Toolbar));
 
         let remote_menu: Option<Element<'a, Message>> =
             state.toolbar_remote_menu.as_ref().map(|menu| {
@@ -462,28 +441,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 .into()
             });
 
-        let secondary_bar = Container::new(
-            Row::new()
-                .spacing(theme::spacing::SM)
-                .align_y(Alignment::Center)
-                .push(tabs)
-                .push(Space::new().width(Length::Fill))
-                .push_maybe(
-                    state
-                        .shell
-                        .chrome
-                        .has_secondary_actions
-                        .then_some(secondary_actions),
-                ),
-        )
-        .padding([8, 16])
-        .style(theme::frame_style(Surface::Nav));
-
         Column::new()
             .spacing(0)
             .push(primary_bar)
             .push_maybe(remote_menu)
-            .push(secondary_bar)
             .into()
     }
 
@@ -630,9 +591,9 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         .width(Length::Fill),
                 ),
         )
-        .padding([16, 16])
+        .padding(theme::density::TOOLBAR_PADDING)
         .width(Length::Fixed(340.0))
-        .style(theme::panel_style(Surface::Raised))
+        .style(widgets::menu::panel_style)
         .into()
     }
 
@@ -644,48 +605,14 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
     ) -> Element<'a, Message> {
         let is_preferred = preferred_remote.is_some_and(|name| name == remote.name);
 
-        let content = Container::new(
-            Row::new()
-                .spacing(theme::spacing::SM)
-                .align_y(Alignment::Center)
-                .push(
-                    Column::new()
-                        .spacing(2)
-                        .width(Length::Fill)
-                        .push(
-                            Row::new()
-                                .spacing(theme::spacing::XS)
-                                .align_y(Alignment::Center)
-                                .push(Text::new(&remote.name).size(12))
-                                .push_maybe(is_preferred.then(|| {
-                                    widgets::info_chip::<Message>("默认", BadgeTone::Accent)
-                                })),
-                        )
-                        .push(
-                            Text::new(&remote.url)
-                                .size(10)
-                                .width(Length::Fill)
-                                .wrapping(text::Wrapping::WordOrGlyph)
-                                .color(theme::darcula::TEXT_SECONDARY),
-                        ),
-                )
-                .push(
-                    Text::new(Self::toolbar_remote_action_symbol(action))
-                        .size(12)
-                        .color(theme::darcula::TEXT_SECONDARY),
-                ),
+        widgets::menu::action_row(
+            Some(Self::toolbar_remote_action_symbol(action)),
+            &remote.name,
+            Some(remote.url.clone()),
+            is_preferred.then(|| ("默认".to_string(), BadgeTone::Accent)),
+            Some(on_toolbar_remote_action(action, remote.name.clone())),
+            widgets::menu::MenuTone::Accent,
         )
-        .padding([5, 8])
-        .style(theme::panel_style(if is_preferred {
-            Surface::Accent
-        } else {
-            Surface::Panel
-        }));
-
-        Button::new(content)
-            .style(theme::button_style(ButtonTone::Ghost))
-            .on_press(on_toolbar_remote_action(action, remote.name.clone()))
-            .into()
     }
 
     fn toolbar_remote_action_label(action: ToolbarRemoteAction) -> &'static str {
@@ -702,25 +629,20 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         }
     }
 
-    fn nav_button(label: &str, active: bool, on_press: Option<Message>) -> Element<'a, Message> {
-        button::tab(label.to_string(), active, on_press).into()
-    }
-
-    fn utility_button(
-        label: &str,
-        active: bool,
-        on_press: Option<Message>,
-    ) -> Element<'a, Message> {
-        button::tab(label.to_string(), active, on_press).into()
-    }
-
     fn sync_tone(sync_label: &str) -> BadgeTone {
+        // IDEA-style sync status colors:
+        // ↑ (ahead/outgoing) = green = need to push
+        // ↓ (behind/incoming) = blue/accent = need to pull
+        // ↕ (diverged) = accent + warning mixed = need to pull and push
+        // ? (unknown) = neutral
         if sync_label.starts_with('↑') {
             BadgeTone::Success
         } else if sync_label.starts_with('↓') {
+            BadgeTone::Accent
+        } else if sync_label.starts_with('↕') {
             BadgeTone::Warning
-        } else if sync_label.starts_with('↕') || sync_label.starts_with('?') {
-            BadgeTone::Danger
+        } else if sync_label.starts_with('?') {
+            BadgeTone::Neutral
         } else {
             BadgeTone::Neutral
         }
@@ -748,6 +670,91 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
 
     fn chrome_context_widths() -> ChromeContextWidths {
         ChromeContextWidths { repo: 3, branch: 2 }
+    }
+
+    fn editor_tab_strip(
+        state: &'a AppState,
+        on_switch_git_tool_window_tab: &dyn Fn(GitToolWindowTab) -> Message,
+    ) -> Element<'a, Message> {
+        let tabs: Element<'a, Message> = if state.shell.active_section == ShellSection::Conflicts {
+            Row::new()
+                .spacing(theme::spacing::XS)
+                .align_y(Alignment::Center)
+                .push(button::tab("冲突".to_string(), true, None::<Message>))
+                .into()
+        } else {
+            Row::new()
+                .spacing(theme::spacing::XS)
+                .align_y(Alignment::Center)
+                .push(button::tab(
+                    "变更".to_string(),
+                    state.shell.git_tool_window_tab == GitToolWindowTab::Changes,
+                    Some(on_switch_git_tool_window_tab(GitToolWindowTab::Changes)),
+                ))
+                .push(button::tab(
+                    "日志".to_string(),
+                    state.shell.git_tool_window_tab == GitToolWindowTab::Log,
+                    Some(on_switch_git_tool_window_tab(GitToolWindowTab::Log)),
+                ))
+                .into()
+        };
+
+        Container::new(
+            Row::new()
+                .spacing(theme::spacing::XS)
+                .align_y(Alignment::Center)
+                .push(tabs)
+                .push(Space::new().width(Length::Fill)),
+        )
+        .padding(theme::density::SECONDARY_BAR_PADDING)
+        .style(theme::frame_style(Surface::Toolbar))
+        .into()
+    }
+
+    fn bottom_tool_window_panel(
+        state: &'a AppState,
+        panel: Element<'a, Message>,
+        on_show_history: &Message,
+        on_close_auxiliary: &Message,
+    ) -> Element<'a, Message> {
+        let title = state
+            .shell
+            .chrome
+            .tool_window_title
+            .clone()
+            .unwrap_or_else(|| "日志".to_string());
+
+        Container::new(
+            Column::new()
+                .spacing(0)
+                .push(
+                    Container::new(
+                        Row::new()
+                            .spacing(theme::spacing::XS)
+                            .align_y(Alignment::Center)
+                            .push(button::tab("Git", false, Some(on_close_auxiliary.clone())))
+                            .push(button::tab(title, true, Some(on_show_history.clone())))
+                            .push(Space::new().width(Length::Fill))
+                            .push(button::compact_ghost(
+                                "收起",
+                                Some(on_close_auxiliary.clone()),
+                            )),
+                    )
+                    .padding(theme::density::SECONDARY_BAR_PADDING)
+                    .style(theme::frame_style(Surface::Nav)),
+                )
+                .push(rule::horizontal(1).style(theme::separator_rule_style()))
+                .push(
+                    Container::new(panel)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .padding(theme::density::TOOL_WINDOW_PADDING),
+                ),
+        )
+        .height(Length::Fixed(theme::layout::TOOL_WINDOW_HEIGHT))
+        .width(Length::Fill)
+        .style(theme::panel_style(Surface::Panel))
+        .into()
     }
 
     fn show_sync_chip(sync_label: &str) -> bool {
@@ -843,7 +850,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         on_switch_project: &dyn Fn(PathBuf) -> Message,
         on_show_changes: &Message,
         on_show_conflicts: &Message,
-        on_show_history: &Message,
+        _on_show_history: &Message,
         on_show_remotes: &Message,
         on_show_tags: &Message,
         on_show_stashes: &Message,
@@ -906,11 +913,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 },
             )
             .push(Space::new().height(Length::Fill))
-            .push(Self::rail_aux_button(
-                Self::auxiliary_rail_icon(AuxiliaryView::History),
-                state.auxiliary_view == Some(AuxiliaryView::History),
-                Some(on_show_history.clone()),
-            ))
             .push(Self::rail_aux_button(
                 Self::auxiliary_rail_icon(AuxiliaryView::Remotes),
                 state.auxiliary_view == Some(AuxiliaryView::Remotes),
@@ -987,6 +989,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             AuxiliaryView::Tags => RailIcon::Tags,
             AuxiliaryView::Stashes => RailIcon::Stashes,
             AuxiliaryView::Rebase => RailIcon::Rebase,
+            AuxiliaryView::Worktrees => RailIcon::Repository,
         }
     }
 
@@ -1117,6 +1120,8 @@ mod tests {
                 unstaged: true,
                 old_oid: None,
                 new_oid: None,
+                is_submodule: false,
+                submodule_summary: None,
             },
             Change {
                 path: "src-ui/src/views/main_window.rs".to_string(),
@@ -1125,6 +1130,8 @@ mod tests {
                 unstaged: true,
                 old_oid: None,
                 new_oid: None,
+                is_submodule: false,
+                submodule_summary: None,
             },
             Change {
                 path: "src-ui/src/widgets/statusbar.rs".to_string(),
@@ -1133,6 +1140,8 @@ mod tests {
                 unstaged: true,
                 old_oid: None,
                 new_oid: None,
+                is_submodule: false,
+                submodule_summary: None,
             },
         ];
         state.shell.status_surface = LightweightStatusSurface {

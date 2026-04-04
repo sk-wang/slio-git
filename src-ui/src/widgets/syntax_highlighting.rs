@@ -39,6 +39,12 @@ pub struct HighlightedSegment {
     color: Color,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct HighlightRenderConfig {
+    width: Length,
+    wrapping: text::Wrapping,
+}
+
 pub struct HunkSyntaxHighlighter {
     old: Option<HighlightLines<'static>>,
     new: Option<HighlightLines<'static>>,
@@ -119,17 +125,45 @@ impl CodeLineHighlighter {
 
 impl HighlightedSegment {
     pub fn render<Message: Clone + 'static>(segments: &[Self]) -> Element<'static, Message> {
-        let spans: Vec<text::Span<'static, Message, Font>> = segments
-            .iter()
-            .map(|segment| span(segment.text.clone()).color(segment.color))
-            .collect();
+        render_segments(segments, default_render_config())
+    }
 
-        rich_text(spans)
-            .size(11)
-            .font(Font::MONOSPACE)
-            .wrapping(text::Wrapping::None)
-            .width(Length::Shrink)
-            .into()
+    pub fn render_diff_code<Message: Clone + 'static>(
+        segments: &[Self],
+    ) -> Element<'static, Message> {
+        render_segments(segments, diff_code_render_config())
+    }
+}
+
+fn render_segments<Message: Clone + 'static>(
+    segments: &[HighlightedSegment],
+    config: HighlightRenderConfig,
+) -> Element<'static, Message> {
+    let spans: Vec<text::Span<'static, Message, Font>> = segments
+        .iter()
+        .map(|segment| span(segment.text.clone()).color(segment.color))
+        .collect();
+
+    rich_text(spans)
+        .size(11)
+        .line_height(text::LineHeight::Relative(1.30))
+        .font(Font::MONOSPACE)
+        .wrapping(config.wrapping)
+        .width(config.width)
+        .into()
+}
+
+fn default_render_config() -> HighlightRenderConfig {
+    HighlightRenderConfig {
+        width: Length::Fill,
+        wrapping: text::Wrapping::WordOrGlyph,
+    }
+}
+
+fn diff_code_render_config() -> HighlightRenderConfig {
+    HighlightRenderConfig {
+        width: Length::Shrink,
+        wrapping: text::Wrapping::None,
     }
 }
 
@@ -137,6 +171,26 @@ impl HighlightedSegment {
 struct OwnedSpan {
     content: String,
     color: Color,
+}
+
+impl HunkSyntaxHighlighter {
+    pub fn view<Message: Clone + 'static>(
+        &mut self,
+        origin: &DiffLineOrigin,
+        content: &str,
+    ) -> Element<'static, Message> {
+        let segments = self.highlight_segments(origin, content);
+        HighlightedSegment::render(&segments)
+    }
+
+    pub fn view_diff_code<Message: Clone + 'static>(
+        &mut self,
+        origin: &DiffLineOrigin,
+        content: &str,
+    ) -> Element<'static, Message> {
+        let segments = self.highlight_segments(origin, content);
+        HighlightedSegment::render_diff_code(&segments)
+    }
 }
 
 impl HunkSyntaxHighlighter {
@@ -181,17 +235,6 @@ impl HunkSyntaxHighlighter {
                     color: theme::darcula::TEXT_PRIMARY,
                 }]
             })
-    }
-}
-
-impl HunkSyntaxHighlighter {
-    pub fn view<Message: Clone + 'static>(
-        &mut self,
-        origin: &DiffLineOrigin,
-        content: &str,
-    ) -> Element<'static, Message> {
-        let segments = self.highlight_segments(origin, content);
-        HighlightedSegment::render(&segments)
     }
 }
 
@@ -303,8 +346,12 @@ fn mix_colors(base: Color, overlay: Color, amount: f32) -> Color {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_syntax_for_path, sanitize_content, FileSyntaxHighlighter};
+    use super::{
+        diff_code_render_config, resolve_syntax_for_path, sanitize_content, FileSyntaxHighlighter,
+        HighlightRenderConfig,
+    };
     use git_core::diff::FileDiff;
+    use iced::{widget::text, Length};
 
     #[test]
     fn resolve_syntax_for_common_extensions() {
@@ -333,6 +380,17 @@ mod tests {
         let _ = hunk.view::<()>(
             &git_core::diff::DiffLineOrigin::Context,
             "fn main() { println!(\"hi\"); }",
+        );
+    }
+
+    #[test]
+    fn diff_code_render_config_disables_wrapping_for_scrollable_editors() {
+        assert_eq!(
+            diff_code_render_config(),
+            HighlightRenderConfig {
+                width: Length::Shrink,
+                wrapping: text::Wrapping::None,
+            }
         );
     }
 }

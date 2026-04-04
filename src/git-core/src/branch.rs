@@ -18,10 +18,66 @@ pub struct Branch {
     pub sync_hint: Option<String>,
     pub recency_hint: Option<String>,
     pub last_commit_timestamp: Option<i64>,
+    /// Hierarchical group path for tree display (e.g., ["feature", "auth"] for "feature/auth")
+    pub group_path: Option<Vec<String>>,
+}
+
+impl Branch {
+    /// Compute the group_path from the branch name by splitting on '/'
+    pub fn compute_group_path(&mut self) {
+        let display_name = if self.is_remote {
+            // For remote branches like "origin/feature/auth", skip the remote name
+            self.name.split_once('/').map(|x| x.1)
+                .unwrap_or(&self.name)
+        } else {
+            &self.name
+        };
+
+        let parts: Vec<&str> = display_name.split('/').collect();
+        if parts.len() > 1 {
+            // All but the last part form the group path
+            self.group_path = Some(parts[..parts.len() - 1].iter().map(|s| s.to_string()).collect());
+        } else {
+            self.group_path = None;
+        }
+    }
+
+    /// Get the leaf name (last segment after '/')
+    pub fn leaf_name(&self) -> &str {
+        self.name.rsplit('/').next().unwrap_or(&self.name)
+    }
 }
 
 impl Repository {
     /// Create a new branch
+    /// Check if a local branch is fully merged into HEAD.
+    pub fn is_branch_merged(&self, name: &str) -> Result<bool, GitError> {
+        let repo_lock = self.inner.read().unwrap();
+        let branch = repo_lock
+            .find_branch(name, git2::BranchType::Local)
+            .map_err(|_| GitError::BranchNotFound {
+                name: name.to_string(),
+            })?;
+        let branch_oid = branch.get().target().ok_or_else(|| GitError::BranchNotFound {
+            name: name.to_string(),
+        })?;
+        let head_oid = repo_lock
+            .head()
+            .ok()
+            .and_then(|h| h.target())
+            .ok_or_else(|| GitError::OperationFailed {
+                operation: "is_branch_merged".to_string(),
+                details: "No HEAD reference found".to_string(),
+            })?;
+        let merge_base = repo_lock
+            .merge_base(branch_oid, head_oid)
+            .map_err(|e| GitError::OperationFailed {
+                operation: "is_branch_merged".to_string(),
+                details: e.to_string(),
+            })?;
+        Ok(merge_base == branch_oid)
+    }
+
     pub fn create_branch(&self, name: &str, oid: &str) -> Result<Branch, GitError> {
         self.create_branch_from_start_point(name, oid)
     }
@@ -66,6 +122,7 @@ impl Repository {
             sync_hint: None,
             recency_hint: None,
             last_commit_timestamp: None,
+            group_path: None,
         })
     }
 
@@ -134,6 +191,7 @@ impl Repository {
             sync_hint: None,
             recency_hint: None,
             last_commit_timestamp: None,
+            group_path: None,
         })
     }
 
@@ -361,7 +419,7 @@ impl Repository {
             let sync_hint =
                 compact_branch_sync_hint(upstream.as_deref(), tracking_status.as_deref());
 
-            branches.push(Branch {
+            let mut branch = Branch {
                 name: name.clone(),
                 oid,
                 is_remote: false,
@@ -371,7 +429,10 @@ impl Repository {
                 recency_hint: compact_relative_time(last_commit_timestamp),
                 tracking_status,
                 last_commit_timestamp,
-            });
+                group_path: None,
+            };
+            branch.compute_group_path();
+            branches.push(branch);
         }
 
         let remote_output = Command::new("git")
@@ -406,7 +467,7 @@ impl Repository {
                     .and_then(|value| value.trim().parse::<i64>().ok());
 
                 if !name.is_empty() && symref.is_empty() && !name.ends_with("/HEAD") {
-                    branches.push(Branch {
+                    let mut branch = Branch {
                         name,
                         oid,
                         is_remote: true,
@@ -416,7 +477,10 @@ impl Repository {
                         sync_hint: None,
                         recency_hint: compact_relative_time(last_commit_timestamp),
                         last_commit_timestamp,
-                    });
+                        group_path: None,
+                    };
+                    branch.compute_group_path();
+                    branches.push(branch);
                 }
             }
         }

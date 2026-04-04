@@ -187,3 +187,79 @@ pub fn get_commit(repo: &Repository, commit_id: &str) -> Result<CommitInfo, GitE
         parent_ids: commit.parents().map(|p| p.id().to_string()).collect(),
     })
 }
+
+// --- Commit message history persistence ---
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+const MAX_RECENT_MESSAGES: usize = 10;
+
+fn config_dir() -> Option<PathBuf> {
+    dirs_next::config_dir().map(|d| d.join("slio-git"))
+}
+
+fn history_file_path() -> Option<PathBuf> {
+    config_dir().map(|d| d.join("commit-messages.json"))
+}
+
+/// Load recent commit messages for a specific repository path.
+/// Returns up to 10 messages, newest first.
+pub fn load_recent_messages(repo_path: &Path) -> Vec<String> {
+    let Some(file_path) = history_file_path() else {
+        return Vec::new();
+    };
+
+    let Ok(content) = std::fs::read_to_string(&file_path) else {
+        return Vec::new();
+    };
+
+    let key = repo_path.to_string_lossy().to_string();
+    let map: HashMap<String, Vec<String>> =
+        serde_json::from_str(&content).unwrap_or_default();
+
+    map.get(&key).cloned().unwrap_or_default()
+}
+
+/// Save a commit message to the recent history for a repository.
+/// Keeps the last MAX_RECENT_MESSAGES messages, newest first.
+pub fn save_recent_message(repo_path: &Path, message: &str) {
+    if message.trim().is_empty() {
+        return;
+    }
+
+    let Some(file_path) = history_file_path() else {
+        return;
+    };
+
+    // Ensure config directory exists
+    if let Some(dir) = file_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+
+    let key = repo_path.to_string_lossy().to_string();
+
+    // Load existing
+    let mut map: HashMap<String, Vec<String>> = std::fs::read_to_string(&file_path)
+        .ok()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_default();
+
+    let messages = map.entry(key).or_default();
+
+    // Remove duplicate if exists
+    messages.retain(|m| m != message);
+
+    // Insert at front
+    messages.insert(0, message.to_string());
+
+    // Trim to max
+    messages.truncate(MAX_RECENT_MESSAGES);
+
+    // Save
+    if let Ok(json) = serde_json::to_string_pretty(&map) {
+        let _ = std::fs::write(&file_path, json);
+    }
+
+    info!("Saved commit message to history");
+}

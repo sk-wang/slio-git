@@ -1,7 +1,8 @@
 //! Status icon helpers for file changes and shell badges.
 
 use crate::theme::{darcula, BadgeTone};
-use iced::Color;
+use iced::widget::{container, Container, Text};
+use iced::{Background, Border, Color, Element};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileStatus {
@@ -27,15 +28,26 @@ impl FileStatus {
         }
     }
 
-    pub fn symbol(self) -> &'static str {
+    /// IDEA-style status badge with colored border and text
+    pub fn badge<'a, Message: 'a>(self) -> Element<'a, Message> {
+        let (symbol, _label) = self.symbol_and_label();
+        let _tone = self.badge_tone();
+
+        Container::new(Text::new(symbol).size(10).color(self.color()))
+            .padding([2, 6])
+            .style(badge_container_style(self))
+            .into()
+    }
+
+    fn symbol_and_label(self) -> (&'static str, &'static str) {
         match self {
-            FileStatus::Added => "A",
-            FileStatus::Modified => "M",
-            FileStatus::Deleted => "D",
-            FileStatus::Renamed => "R",
-            FileStatus::Unversioned => "?",
-            FileStatus::Conflict => "!",
-            FileStatus::Ignored => "I",
+            FileStatus::Added => ("A", "新增"),
+            FileStatus::Modified => ("M", "修改"),
+            FileStatus::Deleted => ("D", "删除"),
+            FileStatus::Renamed => ("R", "重命名"),
+            FileStatus::Unversioned => ("U", "未跟踪"),
+            FileStatus::Conflict => ("!", "冲突"),
+            FileStatus::Ignored => ("I", "忽略"),
         }
     }
 
@@ -54,10 +66,50 @@ impl FileStatus {
     pub fn badge_tone(self) -> BadgeTone {
         match self {
             FileStatus::Added => BadgeTone::Success,
-            FileStatus::Modified | FileStatus::Renamed => BadgeTone::Accent,
-            FileStatus::Deleted | FileStatus::Conflict => BadgeTone::Danger,
+            FileStatus::Modified => BadgeTone::Accent,
+            FileStatus::Renamed => BadgeTone::Accent,
+            FileStatus::Deleted => BadgeTone::Danger,
+            FileStatus::Conflict => BadgeTone::Danger,
             FileStatus::Unversioned | FileStatus::Ignored => BadgeTone::Neutral,
         }
+    }
+
+    /// IDEA-style short symbol (single letter)
+    pub fn symbol(self) -> &'static str {
+        match self {
+            FileStatus::Added => "A",
+            FileStatus::Modified => "M",
+            FileStatus::Deleted => "D",
+            FileStatus::Renamed => "R",
+            FileStatus::Unversioned => "U",
+            FileStatus::Conflict => "!",
+            FileStatus::Ignored => "I",
+        }
+    }
+}
+
+/// IDEA-style badge container with colored border matching status
+fn badge_container_style(status: FileStatus) -> impl Fn(&iced::Theme) -> container::Style {
+    move |_theme| container::Style {
+        background: Some(Background::Color(background_color(status))),
+        border: Border {
+            width: 1.0,
+            color: status.color().scale_alpha(0.7),
+            radius: 3.0.into(),
+        },
+        ..Default::default()
+    }
+}
+
+fn background_color(status: FileStatus) -> Color {
+    match status {
+        FileStatus::Added => darcula::DIFF_ADDED_BG,
+        FileStatus::Modified => darcula::DIFF_MODIFIED_BG,
+        FileStatus::Deleted => darcula::DIFF_DELETED_BG,
+        FileStatus::Renamed => darcula::BG_RAISED,
+        FileStatus::Unversioned => darcula::BG_RAISED,
+        FileStatus::Conflict => Color::from_rgb(0.18, 0.06, 0.08),
+        FileStatus::Ignored => darcula::BG_RAISED,
     }
 }
 
