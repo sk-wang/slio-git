@@ -300,6 +300,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         );
         let context_widths = Self::chrome_context_widths();
 
+        // IDEA-style: project name button opens project dropdown (not branches)
+        let project_monogram = Self::project_monogram(&context.repository_name);
+        let project_color = Self::project_color(&context.repository_name);
+
         let repo_switcher = Button::new(
             Container::new(
                 Row::new()
@@ -307,17 +311,27 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                     .align_y(Alignment::Center)
                     .width(Length::Fill)
                     .push(
-                        Container::new(Self::inline_icon(
-                            RailIcon::Repository,
-                            theme::darcula::ACCENT,
-                            13.0,
-                        ))
-                        .padding([4, 6])
-                        .style(theme::panel_style(Surface::Accent)),
+                        Container::new(
+                            Text::new(project_monogram)
+                                .size(9)
+                                .color(Color::from_rgba(1.0, 1.0, 1.0, 0.85)),
+                        )
+                        .width(Length::Fixed(20.0))
+                        .height(Length::Fixed(20.0))
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill)
+                        .style(move |_: &_| container::Style {
+                            background: Some(iced::Background::Color(project_color)),
+                            border: iced::Border {
+                                radius: 4.0.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }),
                     )
                     .push(
                         Column::new()
-                            .spacing(1)
+                            .spacing(0)
                             .width(Length::Fill)
                             .push(
                                 Text::new(&context.repository_name)
@@ -327,11 +341,16 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                             )
                             .push(
                                 Text::new(&context.repository_path)
-                                    .size(10)
-                                    .color(theme::darcula::TEXT_SECONDARY)
+                                    .size(9)
+                                    .color(theme::darcula::TEXT_DISABLED)
                                     .width(Length::Fill)
                                     .wrapping(text::Wrapping::WordOrGlyph),
                             ),
+                    )
+                    .push(
+                        Text::new("▾")
+                            .size(10)
+                            .color(theme::darcula::TEXT_DISABLED),
                     ),
             )
             .padding(theme::density::TOOLBAR_PADDING)
@@ -856,40 +875,14 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         on_show_stashes: &Message,
         on_show_rebase: &Message,
     ) -> Element<'a, Message> {
-        let project_switcher = state
-            .project_history
-            .iter()
-            .take(MAX_RAIL_PROJECTS)
-            .fold(
-                Column::new()
-                    .spacing(theme::spacing::XS)
-                    .align_x(Alignment::Center),
-                |column, project| {
-                    let is_active = state
-                        .active_project_path()
-                        .map(|path| path == project.path.as_path())
-                        .unwrap_or(false);
-                    let on_press = (!is_active).then(|| on_switch_project(project.path.clone()));
-                    column.push(Self::project_switch_button(project, is_active, on_press))
-                },
-            )
-            .push(Self::rail_aux_button(
-                RailIcon::OpenRepository,
-                false,
-                Some(on_open_repo.clone()),
-            ));
-
+        // Project switcher moved to top toolbar dropdown — rail only has navigation icons
         let navigation = state
             .navigation_items()
             .into_iter()
             .fold(
                 Column::new()
                     .spacing(theme::spacing::XS)
-                    .align_x(Alignment::Center)
-                    .push(project_switcher)
-                    .push(Space::new().height(Length::Fixed(8.0)))
-                    .push(Container::new(iced::widget::rule::horizontal(1)).width(Length::Fill))
-                    .push(Space::new().height(Length::Fixed(6.0))),
+                    .align_x(Alignment::Center),
                 |column, item| {
                     let icon = Self::rail_label(item.section);
                     let message = match item.section {

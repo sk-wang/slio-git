@@ -414,6 +414,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ToggleDiffPresentation => state.toggle_diff_presentation(),
+        Message::ToggleProjectDropdown => {
+            state.show_project_dropdown = !state.show_project_dropdown;
+        }
         Message::ToggleFileDisplayMode => {
             state.file_display_mode = match state.file_display_mode {
                 state::FileDisplayMode::Flat => state::FileDisplayMode::Tree,
@@ -5270,6 +5273,7 @@ pub enum Message {
     TagDialogMessage(TagDialogMessage),
     StashPanelMessage(StashPanelMessage),
     RebaseEditorMessage(RebaseEditorMessage),
+    ToggleProjectDropdown,
     ToggleFileDisplayMode,
     ToggleStagedCollapsed,
     ToggleUnstagedCollapsed,

@@ -491,6 +491,8 @@ pub struct AppState {
     pub stash_panel: StashPanelState,
     pub rebase_editor: RebaseEditorState,
     pub toolbar_remote_menu: Option<ToolbarRemoteMenuState>,
+    /// Whether the project dropdown is visible
+    pub show_project_dropdown: bool,
     auto_refresh: AutoRefreshState,
     /// File display mode for the change list (flat vs tree)
     pub file_display_mode: FileDisplayMode,
@@ -595,6 +597,7 @@ impl AppState {
             stash_panel: StashPanelState::default(),
             rebase_editor: RebaseEditorState::default(),
             toolbar_remote_menu: None,
+            show_project_dropdown: false,
             auto_refresh: AutoRefreshState::default(),
             file_display_mode: FileDisplayMode::default(),
             log_tabs: vec![LogTab::all()],
