@@ -841,14 +841,13 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ShowBranches => {
-            if let Err(error) = open_branch_popup(state) {
-                report_async_failure(
-                    state,
-                    "无法打开分支面板",
-                    error,
-                    "workspace.branches",
-                    "workspace.branches",
-                );
+            // Toggle IDEA-style floating branch dropdown
+            state.show_branch_dropdown = !state.show_branch_dropdown;
+            if state.show_branch_dropdown {
+                // Load branches when opening
+                if let Some(repo) = state.current_repository.clone() {
+                    state.branch_popup.load_branches(&repo);
+                }
             }
         }
         Message::ShowHistory => {
@@ -1897,7 +1896,10 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.close_auxiliary_view();
                     return update(state, Message::ShowRebase);
                 }
-                BranchPopupMessage::Close => state.close_auxiliary_view(),
+                BranchPopupMessage::Close => {
+                    state.show_branch_dropdown = false;
+                    state.close_auxiliary_view();
+                }
             }
         }
         Message::HistoryMessage(message) => match message {
@@ -4022,7 +4024,7 @@ fn view(state: &AppState) -> Element<'_, Message> {
     let body = build_body(state, i18n);
     let bottom_tool_window = build_docked_tool_window(state);
 
-    MainWindow::new(
+    let main_window = MainWindow::new(
         i18n,
         state,
         body,
@@ -4049,8 +4051,63 @@ fn view(state: &AppState) -> Element<'_, Message> {
         Message::SwitchGitToolWindowTab,
         Message::DismissFeedback,
         Message::DismissToast,
-    )
-    .view()
+    );
+    let main_view = main_window.view();
+
+    // Overlay: IDEA-style floating branch dropdown
+    if state.show_branch_dropdown {
+        let dropdown = Container::new(
+            branch_popup::view(&state.branch_popup).map(Message::BranchPopupMessage),
+        )
+        .width(Length::Fixed(480.0))
+        .height(Length::Fixed(500.0))
+        .style(|_| iced::widget::container::Style {
+            background: Some(iced::Background::Color(theme::darcula::BG_PANEL)),
+            border: iced::Border {
+                width: 1.0,
+                color: theme::darcula::BORDER,
+                radius: 8.0.into(),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+                offset: iced::Vector::new(0.0, 4.0),
+                blur_radius: 16.0,
+            },
+            ..Default::default()
+        });
+
+        // Position the dropdown below the toolbar, left-aligned with some margin
+        let overlay = Container::new(
+            Column::new()
+                .push(iced::widget::Space::new().height(Length::Fixed(46.0))) // toolbar height
+                .push(
+                    Row::new()
+                        .push(iced::widget::Space::new().width(Length::Fixed(60.0))) // left offset
+                        .push(dropdown),
+                ),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        // Clickable backdrop to close
+        let backdrop = iced::widget::mouse_area(
+            Container::new(iced::widget::Space::new())
+                .width(Length::Fill)
+                .height(Length::Fill),
+        )
+        .on_press(Message::ShowBranches); // toggle off
+
+        return iced::widget::stack([
+            main_view,
+            backdrop.into(),
+            overlay.into(),
+        ])
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+    }
+
+    main_view
 }
 
 fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
