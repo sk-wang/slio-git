@@ -1056,28 +1056,11 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
     }
 
     fn project_monogram(name: &str) -> String {
-        let mut parts = name
-            .split(['-', '_', ' '])
-            .filter(|part| !part.is_empty())
-            .filter_map(|part| part.chars().next())
-            .take(2)
-            .collect::<String>()
-            .to_uppercase();
-
-        if parts.is_empty() {
-            parts = name
-                .chars()
-                .filter(|ch| ch.is_alphanumeric())
-                .take(2)
-                .collect::<String>()
-                .to_uppercase();
-        }
-
-        if parts.is_empty() {
-            "G".to_string()
-        } else {
-            parts
-        }
+        // Single letter — cleaner in small icon
+        name.chars()
+            .find(|c| c.is_alphanumeric())
+            .map(|c| c.to_uppercase().to_string())
+            .unwrap_or_else(|| "G".to_string())
     }
     fn welcome_status_bar(
         i18n: &'a I18n,
