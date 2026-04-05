@@ -13,6 +13,10 @@
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/screenshot.png" alt="slio-git screenshot" width="960" />
+</p>
+
 ---
 
 ## Highlights
