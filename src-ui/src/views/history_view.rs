@@ -878,7 +878,7 @@ fn build_commit_context_menu_overlay<'a>(state: &'a HistoryState) -> Element<'a,
                     "推送到此提交",
                     push_to_here_detail,
                     (!state.is_loading && has_current_branch && has_upstream)
-                        .then_some(HistoryMessage::PushUpToCommit(entry.id.clone())),
+                        .then_some(HistoryMessage::PreparePushCurrentBranchToCommit(entry.id.clone())),
                     widgets::menu::MenuTone::Neutral,
                 ),
             ],

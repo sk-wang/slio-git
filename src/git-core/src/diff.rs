@@ -1927,3 +1927,130 @@ mod tests {
         assert_eq!(insert_block.new_range, 4..5);
     }
 }
+
+// ═══════════════════════════════════════
+// Merge editor model — 三栏编辑器数据层
+// ═══════════════════════════════════════
+
+use std::ops::Range;
+
+/// Chunk type in a three-way merge
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeChunkType {
+    /// Same in all three versions
+    Equal,
+    /// Only ours changed from base (auto-merge safe)
+    OursOnly,
+    /// Only theirs changed from base (auto-merge safe)
+    TheirsOnly,
+    /// Both sides changed — true conflict
+    Conflict,
+}
+
+/// A chunk in the merge editor model
+#[derive(Debug, Clone)]
+pub struct MergeChunk {
+    pub id: usize,
+    pub chunk_type: MergeChunkType,
+    /// Line range in ours full text
+    pub ours_range: Range<usize>,
+    /// Line range in theirs full text
+    pub theirs_range: Range<usize>,
+    /// Line range in base full text
+    pub base_range: Range<usize>,
+    pub lines_ours: Vec<String>,
+    pub lines_theirs: Vec<String>,
+    pub lines_base: Vec<String>,
+}
+
+/// The editor-oriented model for the Meld-style 3-column merge view
+#[derive(Debug, Clone)]
+pub struct MergeEditorModel {
+    pub path: String,
+    pub ours_text: String,
+    pub theirs_text: String,
+    pub base_text: String,
+    pub chunks: Vec<MergeChunk>,
+}
+
+impl ThreeWayDiff {
+    /// Convert to merge-editor-oriented model with chunk-level granularity.
+    pub fn to_merge_editor_model(&self) -> MergeEditorModel {
+        let ours_lines: Vec<&str> = self.ours_content.lines().collect();
+        let theirs_lines: Vec<&str> = self.theirs_content.lines().collect();
+        let base_lines: Vec<&str> = self.base_content.lines().collect();
+        let max_lines = ours_lines.len().max(theirs_lines.len()).max(base_lines.len());
+
+        let mut chunks: Vec<MergeChunk> = Vec::new();
+        let mut chunk_id = 0usize;
+
+        // Build per-line classification
+        let mut line_types = Vec::with_capacity(max_lines);
+        for i in 0..max_lines {
+            let o = ours_lines.get(i).copied().unwrap_or("");
+            let t = theirs_lines.get(i).copied().unwrap_or("");
+            let b = base_lines.get(i).copied().unwrap_or("");
+            line_types.push(classify_merge_line(o, t, b));
+        }
+
+        // Group consecutive lines with the same classification into chunks
+        let mut i = 0;
+        while i < max_lines {
+            let start = i;
+            let first_type = line_types[i];
+
+            // Extend to cover all consecutive lines of the same type
+            while i < max_lines && line_types[i] == first_type {
+                i += 1;
+            }
+
+            let ours_start = start.min(ours_lines.len());
+            let ours_end = i.min(ours_lines.len());
+            let theirs_start = start.min(theirs_lines.len());
+            let theirs_end = i.min(theirs_lines.len());
+            let base_start = start.min(base_lines.len());
+            let base_end = i.min(base_lines.len());
+
+            chunks.push(MergeChunk {
+                id: chunk_id,
+                chunk_type: first_type,
+                ours_range: ours_start..ours_end,
+                theirs_range: theirs_start..theirs_end,
+                base_range: base_start..base_end,
+                lines_ours: ours_lines[ours_start..ours_end]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                lines_theirs: theirs_lines[theirs_start..theirs_end]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                lines_base: base_lines[base_start..base_end]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+            });
+            chunk_id += 1;
+        }
+
+        MergeEditorModel {
+            path: self.path.clone(),
+            ours_text: self.ours_content.clone(),
+            theirs_text: self.theirs_content.clone(),
+            base_text: self.base_content.clone(),
+            chunks,
+        }
+    }
+}
+
+fn classify_merge_line(ours: &str, theirs: &str, base: &str) -> MergeChunkType {
+    if ours == theirs && theirs == base {
+        MergeChunkType::Equal
+    } else if ours != base && theirs == base {
+        MergeChunkType::OursOnly
+    } else if ours == base && theirs != base {
+        MergeChunkType::TheirsOnly
+    } else {
+        MergeChunkType::Conflict
+    }
+}

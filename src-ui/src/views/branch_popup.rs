@@ -52,6 +52,7 @@ pub enum BranchPopupMessage {
     PreparePushCurrentBranchToCommit(String),
     ConfirmPendingCommitAction,
     CancelPendingCommitAction,
+    SetResetMode(git_core::ResetMode),
     ContinueInProgressCommitAction,
     AbortInProgressCommitAction,
     OpenConflictList,
@@ -99,7 +100,10 @@ pub enum PendingCommitActionKind {
 pub enum PendingCommitAction {
     CherryPick { commit_id: String },
     Revert { commit_id: String },
-    ResetCurrentBranch { commit_id: String },
+    ResetCurrentBranch {
+        commit_id: String,
+        reset_mode: git_core::ResetMode,
+    },
     PushCurrentBranchToCommit { target: PushCurrentBranchTarget },
 }
 
@@ -960,16 +964,17 @@ impl BranchPopupState {
         self.pending_commit_action = Some(CommitActionConfirmation {
             action: PendingCommitAction::ResetCurrentBranch {
                 commit_id: commit_id.clone(),
+                reset_mode: git_core::ResetMode::Mixed,
             },
             title: "重置当前分支到这里".to_string(),
             summary: format!(
-                "会把当前分支 {current_branch} 直接移动到提交 {}，并同步更新工作区内容。",
+                "会把当前分支 {current_branch} 移动到提交 {}。",
                 short_commit_id(&commit_id)
             ),
             impact_items: vec![
-                "会丢弃当前分支在该提交之后的本地提交引用".to_string(),
-                "工作区与暂存区会一起回到所选提交对应的状态".to_string(),
-                "若当前仓库还有未提交改动，操作会被阻止".to_string(),
+                "Soft — 保留改动在暂存区（适合重新组织提交）".to_string(),
+                "Mixed — 保留改动在工作区，取消暂存（默认）".to_string(),
+                "Hard — 丢弃所有改动（需要干净工作区）".to_string(),
             ],
         });
     }
@@ -1040,9 +1045,12 @@ impl BranchPopupState {
             PendingCommitAction::Revert { commit_id } => {
                 (commit_id.clone(), git_core::revert_commit(repo, &commit_id))
             }
-            PendingCommitAction::ResetCurrentBranch { commit_id } => (
+            PendingCommitAction::ResetCurrentBranch {
+                commit_id,
+                reset_mode,
+            } => (
                 commit_id.clone(),
-                git_core::reset_current_branch_to_commit(repo, &commit_id),
+                git_core::reset_current_branch_to_commit(repo, &commit_id, reset_mode),
             ),
             PendingCommitAction::PushCurrentBranchToCommit { target } => (
                 target.selected_commit.clone(),
@@ -1502,6 +1510,30 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
         .style(theme::panel_style(Surface::Panel))
         .into();
 
+    // IDEA-style: Pending commit action confirmation dialog overlay
+    if let Some(dialog) = build_pending_commit_action_dialog(state) {
+        return stack![
+            base,
+            opaque(
+                mouse_area(
+                    Container::new(dialog)
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .center_x(Length::Fill)
+                        .center_y(Length::Fill)
+                        .style(|_: &Theme| container::Style {
+                            background: Some(Background::Color(Color::from_rgba(
+                                0.0, 0.0, 0.0, 0.5,
+                            ))),
+                            ..Default::default()
+                        }),
+                )
+                .on_press(BranchPopupMessage::CancelPendingCommitAction),
+            )
+        ]
+        .into();
+    }
+
     // IDEA-style: Smart checkout confirmation dialog overlay
     if let Some(target_branch) = &state.smart_checkout_branch {
         let dialog =
@@ -1564,8 +1596,7 @@ fn build_smart_checkout_dialog<'a>(
     // ── Description (matches IDEA's north panel label) ──
     let description = Container::new(
         Text::new(format!(
-            "签出 {} 时，以下文件的本地更改将被覆盖。\
-             可以暂存 (stash) 这些更改，签出目标分支，然后自动恢复。",
+            "签出 {} 时，以下文件的本地更改将被覆盖。",
             target_branch
         ))
         .size(theme::typography::BODY_SIZE)
@@ -2222,7 +2253,7 @@ fn build_selected_branch_panel<'a>(
         return widgets::panel_empty_state(
             "分支操作",
             "先从左侧选择一个分支",
-            "选择分支后查看详情、差异预览和快捷操作。",
+            "",
             None,
         );
     };
@@ -2234,7 +2265,6 @@ fn build_selected_branch_panel<'a>(
         .push(build_selected_commit_history_panel(state, selected_branch))
         .push_maybe(build_inline_action_panel(state))
         .push(build_selected_commit_detail_panel(state, selected_branch))
-        .push_maybe(build_pending_commit_action_panel(state))
         .push_maybe(build_comparison_panel(state));
 
     let panel = Container::new(scrollable::styled(content).height(Length::Fill))
@@ -2360,7 +2390,7 @@ fn build_selected_commit_history_panel<'a>(
                     )),
             )
             .push(
-                Text::new("查看此分支的最近提交记录，帮助判断操作基准点。")
+                Text::new("最近提交记录")
                     .size(theme::typography::CAPTION_SIZE)
                     .width(Length::Fill)
                     .wrapping(text::Wrapping::WordOrGlyph)
@@ -2385,7 +2415,7 @@ fn build_selected_commit_detail_panel<'a>(
         return widgets::panel_empty_state(
             "提交详情",
             "还没有选中提交",
-            "从时间线选择一条提交后查看详情和操作入口。",
+            "",
             None,
         );
     };
@@ -2505,7 +2535,7 @@ fn build_selected_commit_detail_panel<'a>(
             .push(widgets::section_header(
                 "提交详情",
                 "当前选中提交",
-                "可以直接基于这条提交新建分支、打标签，或继续比较差异。",
+                "",
             ))
             .push(
                 Row::new()
@@ -2568,7 +2598,7 @@ fn build_selected_commit_detail_panel<'a>(
     .into()
 }
 
-fn build_pending_commit_action_panel<'a>(
+fn build_pending_commit_action_dialog<'a>(
     state: &'a BranchPopupState,
 ) -> Option<Element<'a, BranchPopupMessage>> {
     let confirmation = state.pending_commit_action.as_ref()?;
@@ -2577,18 +2607,18 @@ fn build_pending_commit_action_panel<'a>(
         confirmation
             .impact_items
             .iter()
-            .fold(Column::new().spacing(4), |column, item| {
+            .fold(Column::new().spacing(6), |column, item| {
                 column.push(
                     Row::new()
                         .spacing(theme::spacing::XS)
                         .push(
                             Text::new("•")
-                                .size(theme::typography::CAPTION_SIZE)
+                                .size(theme::typography::BODY_SIZE)
                                 .color(theme::darcula::TEXT_SECONDARY),
                         )
                         .push(
                             Text::new(item)
-                                .size(theme::typography::CAPTION_SIZE)
+                                .size(theme::typography::BODY_SIZE)
                                 .width(Length::Fill)
                                 .wrapping(text::Wrapping::WordOrGlyph)
                                 .color(theme::darcula::TEXT_SECONDARY),
@@ -2596,41 +2626,108 @@ fn build_pending_commit_action_panel<'a>(
                 )
             });
 
-    Some(
-        Container::new(
-            Column::new()
-                .spacing(theme::spacing::SM)
-                .push(widgets::section_header(
-                    "确认",
-                    &confirmation.title,
-                    "危险动作先讲清影响范围，再决定是否继续。",
-                ))
-                .push(
-                    Text::new(&confirmation.summary)
-                        .size(theme::typography::BODY_SIZE)
-                        .width(Length::Fill)
-                        .wrapping(text::Wrapping::WordOrGlyph),
-                )
-                .push(impact_rows)
-                .push(
-                    Row::new()
-                        .spacing(theme::spacing::XS)
-                        .push(button::warning(
-                            "继续执行",
-                            (!state.is_loading)
-                                .then_some(BranchPopupMessage::ConfirmPendingCommitAction),
-                        ))
-                        .push(button::ghost(
-                            "取消",
-                            (!state.is_loading)
-                                .then_some(BranchPopupMessage::CancelPendingCommitAction),
-                        )),
-                ),
-        )
-        .padding([8, 10])
-        .style(theme::panel_style(Surface::Selection))
-        .into(),
+    // Reset mode selector (only for ResetCurrentBranch)
+    let reset_mode_row: Option<Element<'a, BranchPopupMessage>> =
+        if let PendingCommitAction::ResetCurrentBranch { reset_mode, .. } = &confirmation.action {
+            let current = *reset_mode;
+            Some(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .align_y(Alignment::Center)
+                    .push(
+                        Text::new("模式:")
+                            .size(theme::typography::BODY_SIZE)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    )
+                    .push(reset_mode_button("Soft", git_core::ResetMode::Soft, current))
+                    .push(reset_mode_button("Mixed", git_core::ResetMode::Mixed, current))
+                    .push(reset_mode_button("Hard", git_core::ResetMode::Hard, current))
+                    .into(),
+            )
+        } else {
+            None
+        };
+
+    let dialog = Container::new(
+        Column::new()
+            .spacing(theme::spacing::MD)
+            .push(
+                Text::new(&confirmation.title)
+                    .size(16)
+                    .color(theme::darcula::TEXT_PRIMARY),
+            )
+            .push(
+                Text::new(&confirmation.summary)
+                    .size(theme::typography::BODY_SIZE)
+                    .width(Length::Fill)
+                    .wrapping(text::Wrapping::WordOrGlyph)
+                    .color(theme::darcula::TEXT_PRIMARY),
+            )
+            .push(impact_rows)
+            .push_maybe(reset_mode_row)
+            .push(
+                Row::new()
+                    .spacing(theme::spacing::SM)
+                    .push(button::warning(
+                        "继续执行",
+                        (!state.is_loading)
+                            .then_some(BranchPopupMessage::ConfirmPendingCommitAction),
+                    ))
+                    .push(button::ghost(
+                        "取消",
+                        (!state.is_loading)
+                            .then_some(BranchPopupMessage::CancelPendingCommitAction),
+                    )),
+            ),
     )
+    .padding([20, 24])
+    .max_width(520)
+    .style(|_: &Theme| container::Style {
+        background: Some(Background::Color(theme::darcula::BG_PANEL)),
+        border: Border {
+            color: theme::darcula::BORDER,
+            width: 1.0,
+            radius: 8.0.into(),
+        },
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.4),
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 16.0,
+        },
+        ..Default::default()
+    });
+
+    Some(dialog.into())
+}
+
+fn reset_mode_button(
+    label: &str,
+    mode: git_core::ResetMode,
+    current: git_core::ResetMode,
+) -> Element<'_, BranchPopupMessage> {
+    let selected = mode == current;
+    let icon = if selected { "◉" } else { "○" };
+    let color = if selected {
+        theme::darcula::ACCENT
+    } else {
+        theme::darcula::TEXT_SECONDARY
+    };
+
+    iced::widget::Button::new(
+        Row::new()
+            .spacing(4)
+            .align_y(Alignment::Center)
+            .push(Text::new(icon).size(12).color(color))
+            .push(
+                Text::new(label)
+                    .size(12)
+                    .color(theme::darcula::TEXT_PRIMARY),
+            ),
+    )
+    .style(theme::button_style(theme::ButtonTone::Ghost))
+    .padding([4, 8])
+    .on_press(BranchPopupMessage::SetResetMode(mode))
+    .into()
 }
 
 fn build_in_progress_commit_action_panel<'a>(
@@ -2916,7 +3013,7 @@ fn build_commit_action_groups<'a>(
     vec![
         build_commit_action_group(
             "常用".to_uppercase(),
-            "复制版本号、导出补丁。",
+            "",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
@@ -2939,7 +3036,7 @@ fn build_commit_action_groups<'a>(
         ),
         build_commit_action_group(
             "比较与定位".to_uppercase(),
-            "比较当前上下文，沿着提交前后移动。",
+            "",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
@@ -2957,7 +3054,7 @@ fn build_commit_action_groups<'a>(
         ),
         build_commit_action_group(
             "派生".to_uppercase(),
-            "保留现有历史，基于它继续工作。",
+            "",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
@@ -2981,7 +3078,7 @@ fn build_commit_action_groups<'a>(
         ),
         build_commit_action_group(
             "应用到当前分支".to_uppercase(),
-            "会在当前分支生成新的提交。",
+            "",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
@@ -3012,7 +3109,7 @@ fn build_commit_action_groups<'a>(
         ),
         build_commit_action_group(
             "危险动作".to_uppercase(),
-            "会移动分支指针或直接发布到当前上游。",
+            "",
             CommitMenuTone::Danger,
             vec![
                 commit_menu_action_row(
@@ -3152,7 +3249,7 @@ fn build_branch_action_groups<'a>(
     vec![
         build_commit_action_group(
             "常用".to_uppercase(),
-            "切换到这条分支，或基于它继续开工。",
+            "",
             CommitMenuTone::Neutral,
             vec![
                 commit_menu_action_row(
@@ -3218,7 +3315,7 @@ fn build_branch_action_groups<'a>(
         ),
         build_commit_action_group(
             "比较".to_uppercase(),
-            "直接看它和当前上下文的差异。",
+            "",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
@@ -3251,7 +3348,7 @@ fn build_branch_action_groups<'a>(
         ),
         build_commit_action_group(
             "集成".to_uppercase(),
-            "把所选分支并入当前工作线，或让当前工作线基于它重排。",
+            "",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
@@ -3290,7 +3387,7 @@ fn build_branch_action_groups<'a>(
         ),
         build_commit_action_group(
             "远程".to_uppercase(),
-            "获取、推送或建立跟踪关系。",
+            "",
             CommitMenuTone::Accent,
             vec![
                 commit_menu_action_row(
@@ -3365,7 +3462,7 @@ fn build_branch_action_groups<'a>(
         ),
         build_commit_action_group(
             "维护",
-            "整理命名，但不直接改写提交历史。",
+            "",
             CommitMenuTone::Neutral,
             vec![commit_menu_action_row(
                 None,
@@ -3382,7 +3479,7 @@ fn build_branch_action_groups<'a>(
         ),
         build_commit_action_group(
             "危险动作",
-            "删除分支前，请确认它不是当前工作分支。",
+            "",
             CommitMenuTone::Danger,
             vec![commit_menu_action_row(
                 None,
@@ -3652,7 +3749,7 @@ fn build_inline_action_panel<'a>(
                 .spacing(theme::spacing::SM)
                 .push(Text::new(title).size(theme::typography::BODY_SIZE))
                 .push(
-                    Text::new("输入名称后立即执行，不需要再跳到别的面板。")
+                    Text::new("输入名称后回车执行")
                         .size(theme::typography::CAPTION_SIZE)
                         .color(theme::darcula::TEXT_SECONDARY),
                 )

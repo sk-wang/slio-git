@@ -760,12 +760,8 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
         .style(theme::panel_style(Surface::Panel))
         .into()
     } else {
-        widgets::panel_empty_state(
-            "进度",
-            "当前没有进行中的 rebase",
-            "输入目标分支后即可开始普通 rebase；若要整理具体提交，请先从历史视图打开交互式变基入口。",
-            None,
-        )
+        // Idle state: no separate progress panel — branch input area is enough
+        Column::new().into()
     }
 }
 
@@ -821,38 +817,33 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
             ),
             BadgeTone::Accent,
         ))
-    } else if state.onto_branch.trim().is_empty() {
-        Some(build_status_panel::<RebaseEditorMessage>(
-            "待开始",
-            "先输入目标分支，再决定是否启动普通 rebase。",
-            BadgeTone::Neutral,
-        ))
     } else {
-        Some(build_status_panel::<RebaseEditorMessage>(
-            "准备就绪",
-            format!(
-                "目标分支为 {}，可以开始本次 rebase。",
-                state.onto_branch.trim()
-            ),
-            BadgeTone::Accent,
-        ))
+        // Idle: no status panel needed — the branch input makes the state obvious
+        None
     };
 
     let branch_inputs: Element<'_, RebaseEditorMessage> =
         if !state.is_rebasing && !state.has_interactive_draft() {
+            // Compact: input + hint in one block, no separate "目标" section header
             Container::new(
                 Column::new()
                     .spacing(theme::spacing::SM)
-                    .push(widgets::section_header(
-                        "目标".to_uppercase(),
-                        "普通变基选项",
-                        "输入 onto 分支，确认要把当前工作流重新整理到哪里。",
-                    ))
+                    .push(
+                        Text::new("目标分支")
+                            .size(11)
+                            .color(theme::darcula::TEXT_SECONDARY),
+                    )
                     .push(text_input::styled(
-                        "目标分支（onto）",
+                        "输入 onto 分支名，如 main、origin/main",
                         &state.onto_branch,
                         RebaseEditorMessage::SetBaseBranch,
-                    )),
+                    ))
+                    .push(
+                        Text::new("若要整理具体提交，请从历史视图右键选择交互式变基。")
+                            .size(10)
+                            .color(theme::darcula::TEXT_SECONDARY)
+                            .wrapping(text::Wrapping::WordOrGlyph),
+                    ),
             )
             .padding([12, 12])
             .style(theme::panel_style(Surface::Panel))

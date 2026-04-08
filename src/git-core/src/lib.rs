@@ -66,7 +66,7 @@ pub use commit_actions::{
     drop_commit_from_history, edit_commit_message, export_commit_patch, fixup_commit_to_previous,
     get_in_progress_commit_action, push_current_branch_to_commit, reset_current_branch_to_commit,
     resolve_push_current_branch_target, revert_commit, squash_commit_to_previous,
-    uncommit_to_commit, InProgressCommitAction, InProgressCommitActionKind,
+    uncommit_to_commit, InProgressCommitAction, InProgressCommitActionKind, ResetMode,
     PushCurrentBranchTarget, RewriteExecution,
 };
 pub use diff::{
@@ -74,7 +74,7 @@ pub use diff::{
     diff_ref_to_workdir, diff_refs, file_is_binary, get_conflict_diff, resolve_conflict,
     resolve_conflict_hunk, AutoMergeResult, ConflictHunk, ConflictHunkType, ConflictLine,
     ConflictLineType, ConflictResolution, Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff,
-    FullFilePreview, InlineChangeSpan, ThreeWayDiff,
+    FullFilePreview, InlineChangeSpan, MergeChunk, MergeChunkType, MergeEditorModel, ThreeWayDiff,
 };
 pub use error::GitError;
 pub use history::{

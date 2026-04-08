@@ -514,6 +514,8 @@ pub struct AppState {
     pub blame_active: bool,
     /// Recent commit messages for the current repository (last 10)
     pub recent_commit_messages: Vec<String>,
+    /// Meld-style 3-column merge editor
+    pub merge_editor: Option<crate::widgets::merge_editor::MergeEditorState>,
     /// Working tree management state
     pub worktree_state: crate::views::worktree_view::WorktreeState,
     /// Full file preview diff (for new/untracked files without diff)
@@ -618,6 +620,7 @@ impl AppState {
             log_branches_dashboard_visible: true,
             blame_active: false,
             recent_commit_messages: Vec::new(),
+            merge_editor: None,
             worktree_state: Default::default(),
             full_file_preview: None,
             full_file_preview_truncated: false,
@@ -1853,11 +1856,15 @@ impl AppState {
     }
 
     fn sync_selected_conflict_resolver(&mut self) {
-        self.conflict_resolver = self
+        let diff = self
             .conflict_merge_index
             .and_then(|index| self.conflict_files.get(index))
-            .cloned()
-            .map(ConflictResolver::new);
+            .cloned();
+        self.conflict_resolver = diff.clone().map(ConflictResolver::new);
+        self.merge_editor = diff.map(|d| {
+            let model = d.to_merge_editor_model();
+            crate::widgets::merge_editor::MergeEditorState::new(model)
+        });
     }
 
     fn preferred_change_path(&self) -> Option<String> {

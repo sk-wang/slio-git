@@ -386,14 +386,9 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("更新")
+                Text::new("更新方式")
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
-            )
-            .push(
-                Text::new("更新方式:")
-                    .size(12)
-                    .color(theme::darcula::TEXT_SECONDARY),
             )
             .push(
                 Row::new()
@@ -422,19 +417,13 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("获取")
+                Text::new("获取标签")
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
             .push(
                 Row::new()
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-                    .push(
-                        Text::new("标签模式:")
-                            .size(12)
-                            .color(theme::darcula::TEXT_SECONDARY),
-                    )
+                    .spacing(12)
                     .push(radio_button(
                         "默认",
                         settings.fetch_tags_mode == FetchTagsMode::Default,
@@ -457,7 +446,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
     // ── AI 提交消息 ──
     let llm_section = Container::new(
         Column::new()
-            .spacing(6)
+            .spacing(4)
             .push(
                 Text::new("AI 提交消息")
                     .size(10)

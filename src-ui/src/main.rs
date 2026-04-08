@@ -19,7 +19,7 @@ use crate::state::{
 use crate::theme::BadgeTone;
 use crate::views::main_window::MainWindow;
 use crate::views::{
-    branch_popup::{self, BranchPopupMessage},
+    branch_popup::{self, BranchPopupMessage, PendingCommitAction},
     commit_dialog::CommitDialogMessage,
     history_view::{self, HistoryMessage},
     rebase_editor::{self, RebaseEditorMessage},
@@ -443,6 +443,61 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.set_success("设置已保存", None, "settings.save");
                 }
                 other => state.git_settings.apply_message(other),
+            }
+        }
+        Message::MergeEditorMessage(event) => {
+            use widgets::merge_editor::MergeEditorEvent;
+            match &event {
+                MergeEditorEvent::BackToList => {
+                    state.close_conflict_merge();
+                    state.merge_editor = None;
+                }
+                MergeEditorEvent::Apply => {
+                    if let Some(editor) = &state.merge_editor {
+                        if editor.all_resolved() {
+                            let resolved_text = editor.resolved_text();
+                            if let Some(repo) = &state.current_repository {
+                                if let Some(conflict_index) = state.conflict_merge_index {
+                                    if let Some(conflict) =
+                                        state.conflict_files.get(conflict_index)
+                                    {
+                                        let path = std::path::Path::new(&conflict.path);
+                                        match git_core::diff::resolve_conflict(
+                                            repo,
+                                            path,
+                                            git_core::diff::ConflictResolution::Custom(
+                                                resolved_text,
+                                            ),
+                                        ) {
+                                            Ok(()) => {
+                                                state.set_success(
+                                                    "冲突已解决",
+                                                    Some(conflict.path.clone()),
+                                                    "merge_editor.apply",
+                                                );
+                                                state.close_conflict_merge();
+                                                state.merge_editor = None;
+                                                let _ =
+                                                    state.refresh_current_repository(true);
+                                            }
+                                            Err(e) => {
+                                                state.set_error(format!(
+                                                    "写回冲突解决结果失败: {}",
+                                                    e
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(editor) = &mut state.merge_editor {
+                        let _task = editor.update(event);
+                    }
+                }
             }
         }
         Message::ToggleProjectDropdown => {
@@ -1913,7 +1968,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "无法准备“推送到这里”",
+                                "无法准备\u{201c}推送到这里\u{201d}",
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.push_to_here.prepare",
@@ -2068,6 +2123,16 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 BranchPopupMessage::CancelPendingCommitAction => {
                     state.branch_popup.cancel_pending_commit_action();
                     state.open_auxiliary_view(AuxiliaryView::Branches);
+                }
+                BranchPopupMessage::SetResetMode(mode) => {
+                    if let Some(ref mut confirmation) = state.branch_popup.pending_commit_action {
+                        if let PendingCommitAction::ResetCurrentBranch {
+                            ref mut reset_mode, ..
+                        } = confirmation.action
+                        {
+                            *reset_mode = mode;
+                        }
+                    }
                 }
                 BranchPopupMessage::ClearPreview => state.branch_popup.clear_preview(),
                 BranchPopupMessage::Refresh => {
@@ -2286,26 +2351,79 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 );
             }
             HistoryMessage::PrepareCherryPickCommit(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
-                    state.branch_popup.load_branches(&repo);
+                    // Check for merge commit
+                    match git_core::commit::get_commit(&repo, &commit_id) {
+                        Ok(info) if info.parent_ids.len() > 1 => {
+                            state.set_error(
+                                "merge 提交暂不支持直接 Cherry-pick".to_string(),
+                            );
+                            return iced::Task::none();
+                        }
+                        Err(e) => {
+                            state.set_error(format!("读取提交详情失败: {e}"));
+                            return iced::Task::none();
+                        }
+                        _ => {}
+                    }
+                    // Execute cherry-pick directly (IDEA-style, no confirmation)
+                    match git_core::cherry_pick_commit(&repo, &commit_id) {
+                        Ok(()) => {
+                            state.show_toast(
+                                crate::state::FeedbackLevel::Success,
+                                format!(
+                                    "已摘取提交 {}",
+                                    short_commit_id(&commit_id)
+                                ),
+                                None,
+                            );
+                            if let Err(e) =
+                                refresh_repository_after_action(state, &repo, true)
+                            {
+                                state.set_error(format!("刷新仓库状态失败: {e}"));
+                            }
+                        }
+                        Err(e) => {
+                            state.set_error(format!("Cherry-pick 失败: {e}"));
+                        }
+                    }
                 }
-                return update(
-                    state,
-                    Message::BranchPopupMessage(BranchPopupMessage::PrepareCherryPickCommit(
-                        commit_id,
-                    )),
-                );
             }
             HistoryMessage::PrepareRevertCommit(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
-                    state.branch_popup.load_branches(&repo);
+                    // Check for merge commit first
+                    match git_core::commit::get_commit(&repo, &commit_id) {
+                        Ok(info) if info.parent_ids.len() > 1 => {
+                            state.set_error("暂不支持直接还原 merge 提交".to_string());
+                            return iced::Task::none();
+                        }
+                        Err(e) => {
+                            state.set_error(format!("读取提交详情失败: {e}"));
+                            return iced::Task::none();
+                        }
+                        _ => {}
+                    }
+                    // Execute revert directly (IDEA-style, no confirmation)
+                    match git_core::revert_commit(&repo, &commit_id) {
+                        Ok(()) => {
+                            state.show_toast(
+                                crate::state::FeedbackLevel::Success,
+                                format!("已还原提交 {}", short_commit_id(&commit_id)),
+                                None,
+                            );
+                            if let Err(e) =
+                                refresh_repository_after_action(state, &repo, true)
+                            {
+                                state.set_error(format!("刷新仓库状态失败: {e}"));
+                            }
+                        }
+                        Err(e) => {
+                            state.set_error(format!("还原提交失败: {e}"));
+                        }
+                    }
                 }
-                return update(
-                    state,
-                    Message::BranchPopupMessage(BranchPopupMessage::PrepareRevertCommit(commit_id)),
-                );
             }
             HistoryMessage::PrepareResetCurrentBranchToCommit(commit_id) => {
                 if let Ok(repo) = require_repository(state) {
@@ -3910,6 +4028,7 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
             | BranchPopupMessage::CancelInlineAction
             | BranchPopupMessage::ConfirmPendingCommitAction
             | BranchPopupMessage::CancelPendingCommitAction
+            | BranchPopupMessage::SetResetMode(_)
             | BranchPopupMessage::ContinueInProgressCommitAction
             | BranchPopupMessage::AbortInProgressCommitAction
             | BranchPopupMessage::OpenConflictList
@@ -5020,6 +5139,14 @@ fn build_conflict_body<'a>(state: &'a AppState) -> Element<'a, Message> {
     }
 
     if state.conflict_merge_index.is_some() {
+        // Prefer Meld-style 3-column merge editor
+        if let Some(editor) = state.merge_editor.as_ref() {
+            return Container::new(editor.view().map(Message::MergeEditorMessage))
+                .height(Length::Fill)
+                .style(theme::panel_style(theme::Surface::Editor))
+                .into();
+        }
+        // Fallback to old conflict resolver
         return if let Some(resolver) = state.conflict_resolver.as_ref() {
             Container::new(resolver.view().map(Message::ConflictResolverMessage))
                 .height(Length::Fill)
@@ -5340,18 +5467,29 @@ fn build_conflict_action_panel<'a>(
     let summary = summarize_conflict(conflict);
     let (file_name, parent_path) = split_workspace_path(&conflict.path);
 
+    // IDEA-style: compact file info + toolbar action buttons
     Container::new(
         Column::new()
-            .spacing(theme::spacing::SM)
-            .push(widgets::section_header(
-                "当前文件",
-                "快速解决",
-                "先决定整文件取舍，需要精细处理时进入三栏合并。",
-            ))
+            .spacing(theme::spacing::MD)
+            // ── File info ──
             .push(
                 Column::new()
-                    .spacing(2)
-                    .push(Text::new(file_name).size(15))
+                    .spacing(4)
+                    .push(
+                        Row::new()
+                            .spacing(theme::spacing::XS)
+                            .align_y(Alignment::Center)
+                            .push(
+                                Text::new("U")
+                                    .size(10)
+                                    .color(theme::darcula::DANGER),
+                            )
+                            .push(
+                                Text::new(file_name)
+                                    .size(14)
+                                    .color(theme::darcula::DANGER),
+                            ),
+                    )
                     .push(
                         Text::new(parent_path)
                             .size(10)
@@ -5359,26 +5497,28 @@ fn build_conflict_action_panel<'a>(
                             .wrapping(text::Wrapping::WordOrGlyph),
                     ),
             )
+            // ── Conflict stats (inline chips) ──
             .push(
                 Row::new()
                     .spacing(theme::spacing::XS)
                     .push(widgets::info_chip::<Message>(
-                        format!("冲突块 {}", summary.hunk_count),
+                        format!("冲突 {}", summary.hunk_count),
                         BadgeTone::Warning,
                     ))
                     .push(widgets::info_chip::<Message>(
-                        format!("需手工合并 {}", summary.manual_conflicts),
+                        format!("手工 {}", summary.manual_conflicts),
                         if summary.manual_conflicts > 0 {
-                            BadgeTone::Warning
+                            BadgeTone::Danger
                         } else {
                             BadgeTone::Success
                         },
                     ))
                     .push(widgets::info_chip::<Message>(
-                        format!("自动可处理 {}", summary.auto_resolvable),
+                        format!("可自动 {}", summary.auto_resolvable),
                         BadgeTone::Neutral,
                     )),
             )
+            // ── Branch stat row (compact) ──
             .push(
                 Row::new()
                     .spacing(theme::spacing::SM)
@@ -5396,35 +5536,41 @@ fn build_conflict_action_panel<'a>(
                     )),
             )
             .push(iced::widget::rule::horizontal(1))
-            .push(build_conflict_action_button(
-                "<<",
-                "接受您的更改",
-                "直接采用当前分支版本并将该文件标记为已解决。",
-                theme::ButtonTone::Secondary,
-                Message::ResolveConflictWithOurs(index),
-            ))
+            // ── Action buttons: IDEA-style compact row ──
             .push(
-                build_conflict_action_button(
-                    ">>",
-                    "接受他们的更改",
-                    "直接采用传入分支版本，适合明确以对方内容为准的文件。",
-                    theme::ButtonTone::Danger,
-                    Message::ResolveConflictWithTheirs(index),
-                ),
+                Column::new()
+                    .spacing(theme::spacing::XS)
+                    .push(
+                        button::primary(
+                            "合并...",
+                            Some(Message::OpenConflictMerge(index)),
+                        )
+                        .width(Length::Fill),
+                    )
+                    .push(
+                        Row::new()
+                            .spacing(theme::spacing::XS)
+                            .push(
+                                button::secondary(
+                                    "接受您的",
+                                    Some(Message::ResolveConflictWithOurs(index)),
+                                )
+                                .width(Length::FillPortion(1)),
+                            )
+                            .push(
+                                button::secondary(
+                                    "接受对方",
+                                    Some(Message::ResolveConflictWithTheirs(index)),
+                                )
+                                .width(Length::FillPortion(1)),
+                            ),
+                    ),
             )
-            .push(build_conflict_action_button(
-                "<>",
-                "合并...",
-                "打开三栏合并编辑器，逐块确认最终结果。",
-                theme::ButtonTone::Primary,
-                Message::OpenConflictMerge(index),
-            ))
-            .push(iced::widget::rule::horizontal(1))
             .push(
                 Text::new(
-                    "建议：配置文件、锁文件等单方可信内容可直接接受；业务代码优先进入“三栏合并”逐块确认。",
+                    "配置文件可直接接受；业务代码建议进入合并逐块确认。",
                 )
-                .size(11)
+                .size(10)
                 .color(theme::darcula::TEXT_SECONDARY)
                 .wrapping(text::Wrapping::WordOrGlyph),
             ),
@@ -5491,52 +5637,6 @@ fn build_conflict_stat_card<'a>(
     .into()
 }
 
-fn build_conflict_action_button<'a>(
-    icon: &'a str,
-    title: &'a str,
-    detail: &'a str,
-    tone: theme::ButtonTone,
-    message: Message,
-) -> Element<'a, Message> {
-    Button::new(
-        Container::new(
-            Row::new()
-                .spacing(theme::spacing::SM)
-                .align_y(Alignment::Center)
-                .push(
-                    Container::new(Text::new(icon).size(11).color(theme::darcula::TEXT_PRIMARY))
-                        .width(Length::Fixed(28.0))
-                        .height(Length::Fixed(22.0))
-                        .center_x(Length::Fill)
-                        .center_y(Length::Fill)
-                        .style(conflict_action_icon_style(tone)),
-                )
-                .push(
-                    Column::new()
-                        .spacing(1)
-                        .width(Length::Fill)
-                        .push(Text::new(title).size(12))
-                        .push(
-                            Text::new(detail)
-                                .size(10)
-                                .color(theme::darcula::TEXT_SECONDARY)
-                                .wrapping(text::Wrapping::WordOrGlyph),
-                        ),
-                )
-                .push(
-                    Text::new(">")
-                        .size(11)
-                        .color(theme::darcula::TEXT_SECONDARY),
-                ),
-        )
-        .padding([7, 9])
-        .width(Length::Fill),
-    )
-    .width(Length::Fill)
-    .style(theme::button_style(tone))
-    .on_press(message)
-    .into()
-}
 
 fn summarize_conflict(conflict: &ThreeWayDiff) -> ConflictListSummary {
     let mut summary = ConflictListSummary {
@@ -5645,45 +5745,6 @@ fn conflict_row_strip_style(selected: bool) -> impl Fn(&Theme) -> container::Sty
     }
 }
 
-fn conflict_action_icon_style(tone: theme::ButtonTone) -> impl Fn(&Theme) -> container::Style {
-    move |_theme| {
-        let (background, border) = match tone {
-            theme::ButtonTone::Primary => (
-                blend(theme::darcula::BG_PANEL, theme::darcula::ACCENT, 0.32),
-                theme::darcula::ACCENT.scale_alpha(0.72),
-            ),
-            theme::ButtonTone::Danger => (
-                blend(theme::darcula::BG_PANEL, theme::darcula::DANGER, 0.28),
-                theme::darcula::DANGER.scale_alpha(0.68),
-            ),
-            _ => (
-                blend(theme::darcula::BG_PANEL, theme::darcula::BG_RAISED, 0.82),
-                theme::darcula::BORDER.scale_alpha(0.76),
-            ),
-        };
-
-        container::Style {
-            background: Some(Background::Color(background)),
-            border: Border {
-                width: 1.0,
-                color: border,
-                radius: 3.0.into(),
-            },
-            ..Default::default()
-        }
-    }
-}
-
-fn blend(base: Color, overlay: Color, amount: f32) -> Color {
-    let amount = amount.clamp(0.0, 1.0);
-    Color {
-        r: (base.r * (1.0 - amount)) + (overlay.r * amount),
-        g: (base.g * (1.0 - amount)) + (overlay.g * amount),
-        b: (base.b * (1.0 - amount)) + (overlay.b * amount),
-        a: (base.a * (1.0 - amount)) + (overlay.a * amount),
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum Message {
     OpenRepository,
@@ -5748,6 +5809,7 @@ pub enum Message {
     RebaseEditorMessage(RebaseEditorMessage),
     ShowSettings,
     SettingsMessage(views::settings_view::SettingsMessage),
+    MergeEditorMessage(widgets::merge_editor::MergeEditorEvent),
     ToggleProjectDropdown,
     ToggleFileDisplayMode,
     ToggleStagedCollapsed,

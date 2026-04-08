@@ -488,7 +488,7 @@ pub fn get_in_progress_commit_action(
 
 pub fn cherry_pick_commit(repo: &Repository, commit_id: &str) -> Result<(), GitError> {
     info!("Cherry-picking commit '{}'", commit_id);
-    ensure_clean_worktree(repo, "cherry-pick")?;
+    // Let git handle dirty worktree errors naturally with its own messages
 
     let args = vec![
         "cherry-pick".to_string(),
@@ -500,7 +500,7 @@ pub fn cherry_pick_commit(repo: &Repository, commit_id: &str) -> Result<(), GitE
 
 pub fn revert_commit(repo: &Repository, commit_id: &str) -> Result<(), GitError> {
     info!("Reverting commit '{}'", commit_id);
-    ensure_clean_worktree(repo, "revert")?;
+    // No clean worktree check — git revert works with dirty worktree (matches IDEA behavior)
 
     let args = vec![
         "revert".to_string(),
@@ -623,9 +623,46 @@ pub fn abort_in_progress_commit_action(
     run_git_command(repo, &format!("{operation}_abort"), &args)
 }
 
-pub fn reset_current_branch_to_commit(repo: &Repository, commit_id: &str) -> Result<(), GitError> {
-    info!("Resetting current branch to '{}'", commit_id);
-    ensure_clean_worktree(repo, "reset")?;
+/// Reset mode matching IDEA's GitNewResetDialog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResetMode {
+    /// Keep changes in working tree and index
+    Soft,
+    /// Keep changes in working tree, unstage from index (default)
+    Mixed,
+    /// Discard all changes
+    Hard,
+}
+
+impl ResetMode {
+    pub fn git_flag(&self) -> &'static str {
+        match self {
+            ResetMode::Soft => "--soft",
+            ResetMode::Mixed => "--mixed",
+            ResetMode::Hard => "--hard",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            ResetMode::Soft => "Soft",
+            ResetMode::Mixed => "Mixed",
+            ResetMode::Hard => "Hard",
+        }
+    }
+}
+
+pub fn reset_current_branch_to_commit(
+    repo: &Repository,
+    commit_id: &str,
+    mode: ResetMode,
+) -> Result<(), GitError> {
+    info!("Resetting current branch to '{}' (mode: {:?})", commit_id, mode);
+
+    // Only hard reset requires clean worktree
+    if mode == ResetMode::Hard {
+        ensure_clean_worktree(repo, "reset")?;
+    }
 
     let current_branch = repo
         .current_branch()
@@ -651,7 +688,7 @@ pub fn reset_current_branch_to_commit(repo: &Repository, commit_id: &str) -> Res
 
     let args = vec![
         "reset".to_string(),
-        "--hard".to_string(),
+        mode.git_flag().to_string(),
         commit_id.to_string(),
     ];
     run_git_command(repo, "reset", &args)

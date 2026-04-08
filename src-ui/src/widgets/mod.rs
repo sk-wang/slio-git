@@ -7,6 +7,7 @@ pub mod commit_panel;
 pub mod conflict_resolver;
 pub mod diff_core;
 pub mod diff_editor;
+pub mod merge_editor;
 pub mod diff_file_header;
 pub mod diff_viewer;
 pub mod file_picker;
