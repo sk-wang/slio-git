@@ -2,9 +2,13 @@
 
 use crate::theme;
 use crate::views::{
-    branch_popup::BranchPopupState, commit_dialog::CommitDialogState, history_view::HistoryState,
-    rebase_editor::RebaseEditorState, remote_dialog::RemoteDialogState,
-    stash_panel::StashPanelState, tag_dialog::TagDialogState,
+    branch_popup::{BranchPopupState, CommitActionConfirmation},
+    commit_dialog::CommitDialogState,
+    history_view::HistoryState,
+    rebase_editor::RebaseEditorState,
+    remote_dialog::RemoteDialogState,
+    stash_panel::StashPanelState,
+    tag_dialog::TagDialogState,
 };
 use crate::widgets::conflict_resolver::ConflictResolver;
 use crate::widgets::diff_editor::SplitDiffEditorState;
@@ -487,6 +491,8 @@ pub struct AppState {
     pub change_context_menu_anchor: Option<Point>,
     pub commit_dialog: CommitDialogState,
     pub branch_popup: BranchPopupState,
+    /// Top-level pending commit action confirmation (reset/push/cherry-pick/revert)
+    pub pending_commit_action: Option<CommitActionConfirmation>,
     pub history_view: HistoryState,
     pub remote_dialog: RemoteDialogState,
     pub tag_dialog: TagDialogState,
@@ -607,6 +613,7 @@ impl AppState {
             change_context_menu_anchor: None,
             commit_dialog: CommitDialogState::default(),
             branch_popup: BranchPopupState::default(),
+            pending_commit_action: None,
             history_view: HistoryState::default(),
             remote_dialog: RemoteDialogState::default(),
             tag_dialog: TagDialogState::default(),
@@ -1858,6 +1865,7 @@ impl AppState {
         self.toast_notification = None;
         self.commit_dialog = CommitDialogState::default();
         self.branch_popup = BranchPopupState::default();
+        self.pending_commit_action = None;
         self.history_view = HistoryState::default();
         self.remote_dialog = RemoteDialogState::default();
         self.tag_dialog = TagDialogState::default();

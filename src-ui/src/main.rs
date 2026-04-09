@@ -1359,7 +1359,6 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             .branch_popup
                             .select_branch_commit(&repo, commit_id.clone());
                         state.branch_popup.open_commit_context_menu(commit_id);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
@@ -1945,10 +1944,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::PrepareCherryPickCommit(commit_id) => {
                     if let Ok(repo) = require_repository(state) {
-                        state
+                        state.pending_commit_action = state
                             .branch_popup
                             .prepare_cherry_pick_commit(&repo, commit_id);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
@@ -1962,8 +1960,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::PrepareRevertCommit(commit_id) => {
                     if let Ok(repo) = require_repository(state) {
-                        state.branch_popup.prepare_revert_commit(&repo, commit_id);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.pending_commit_action =
+                            state.branch_popup.prepare_revert_commit(&repo, commit_id);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
@@ -1977,10 +1975,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::PrepareResetCurrentBranchToCommit(commit_id) => {
                     if let Ok(repo) = require_repository(state) {
-                        state
+                        state.pending_commit_action = state
                             .branch_popup
                             .prepare_reset_current_branch_to_commit(&repo, commit_id);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
@@ -1994,10 +1991,9 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::PreparePushCurrentBranchToCommit(commit_id) => {
                     if let Ok(repo) = require_repository(state) {
-                        state
+                        state.pending_commit_action = state
                             .branch_popup
                             .prepare_push_current_branch_to_commit(&repo, commit_id);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
@@ -2091,13 +2087,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
                 BranchPopupMessage::ConfirmPendingCommitAction => {
                     if let Ok(repo) = require_repository(state) {
-                        if let Some(action_kind) = state
-                            .branch_popup
-                            .pending_commit_action
-                            .as_ref()
-                            .map(|confirmation| confirmation.action.kind())
-                        {
-                            state.branch_popup.confirm_pending_commit_action(&repo);
+                        if let Some(confirmation) = state.pending_commit_action.take() {
+                            let action_kind = confirmation.action.kind();
+                            let keep_branch_popup_open =
+                                state.auxiliary_view == Some(AuxiliaryView::Branches);
+                            let keep_branch_dropdown_open = state.show_branch_dropdown;
+                            state
+                                .branch_popup
+                                .confirm_pending_commit_action(&repo, confirmation);
                             if let Some(error) = state.branch_popup.error.clone() {
                                 report_async_failure(
                                     state,
@@ -2135,17 +2132,23 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                         "当前仓库进入了需要继续处理的状态，请先处理冲突文件。".to_string()
                                     }
                                 };
-                                state.open_auxiliary_view(AuxiliaryView::Branches);
+                                if keep_branch_popup_open {
+                                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                                }
                                 state.set_warning(
                                     "提交操作产生冲突",
                                     Some(detail),
                                     "workspace.branches",
                                 );
                             } else {
-                                if let Some(current) = state.current_repository.clone() {
-                                    state.branch_popup.load_branches(&current);
+                                if keep_branch_popup_open || keep_branch_dropdown_open {
+                                    if let Some(current) = state.current_repository.clone() {
+                                        state.branch_popup.load_branches(&current);
+                                    }
                                 }
-                                state.open_auxiliary_view(AuxiliaryView::Branches);
+                                if keep_branch_popup_open {
+                                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                                }
                                 if let Some(message) = state.branch_popup.success_message.clone() {
                                     state.set_success(message, None, "workspace.branches");
                                 }
@@ -2154,11 +2157,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     }
                 }
                 BranchPopupMessage::CancelPendingCommitAction => {
+                    state.pending_commit_action = None;
                     state.branch_popup.cancel_pending_commit_action();
-                    state.open_auxiliary_view(AuxiliaryView::Branches);
                 }
                 BranchPopupMessage::SetResetMode(mode) => {
-                    if let Some(ref mut confirmation) = state.branch_popup.pending_commit_action {
+                    if let Some(ref mut confirmation) = state.pending_commit_action {
                         if let PendingCommitAction::ResetCurrentBranch {
                             ref mut reset_mode, ..
                         } = confirmation.action
@@ -2360,20 +2363,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 );
             }
             HistoryMessage::PrepareCreateBranch(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
                     state.branch_popup.load_branches(&repo);
+                    state
+                        .branch_popup
+                        .prepare_create_from_selected(commit_id);
+                    state.open_auxiliary_view(AuxiliaryView::Branches);
                 }
-                return update(
-                    state,
-                    Message::BranchPopupMessage(BranchPopupMessage::PrepareCreateFromSelected(
-                        commit_id,
-                    )),
-                );
             }
             HistoryMessage::PrepareTagFromCommit(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
                     state.branch_popup.load_branches(&repo);
                 }
                 return update(
@@ -2459,28 +2460,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
             HistoryMessage::PrepareResetCurrentBranchToCommit(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
-                    state.branch_popup.load_branches(&repo);
+                    state.pending_commit_action = state
+                        .branch_popup
+                        .prepare_reset_current_branch_to_commit(&repo, commit_id);
+                    if let Some(error) = state.branch_popup.error.clone() {
+                        state.set_error(error);
+                    }
                 }
-                return update(
-                    state,
-                    Message::BranchPopupMessage(
-                        BranchPopupMessage::PrepareResetCurrentBranchToCommit(commit_id),
-                    ),
-                );
             }
             HistoryMessage::PreparePushCurrentBranchToCommit(commit_id) => {
+                state.history_view.context_menu_commit = None;
                 if let Ok(repo) = require_repository(state) {
-                    state.history_view.context_menu_commit = None;
-                    state.branch_popup.load_branches(&repo);
+                    state.pending_commit_action = state
+                        .branch_popup
+                        .prepare_push_current_branch_to_commit(&repo, commit_id);
+                    if let Some(error) = state.branch_popup.error.clone() {
+                        state.set_error(error);
+                    }
                 }
-                return update(
-                    state,
-                    Message::BranchPopupMessage(
-                        BranchPopupMessage::PreparePushCurrentBranchToCommit(commit_id),
-                    ),
-                );
             }
             HistoryMessage::EditCommitMessage(commit_id) => {
                 if let Ok(repo) = require_repository(state) {
@@ -4651,10 +4650,12 @@ fn view(state: &AppState) -> Element<'_, Message> {
         )
         .on_press(Message::ShowBranches); // toggle off
 
-        return iced::widget::stack([main_view, backdrop.into(), overlay.into()])
+        let layered = iced::widget::stack([main_view, backdrop.into(), overlay.into()])
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
+
+        return wrap_with_pending_commit_action_dialog(state, layered);
     }
 
     // Update available banner overlay (bottom-right)
@@ -4704,10 +4705,48 @@ fn view(state: &AppState) -> Element<'_, Message> {
             .align_y(Alignment::End)
             .padding([32, 16]);
 
-        return iced::widget::stack([main_view, positioned.into()]).into();
+        let layered = iced::widget::stack([main_view, positioned.into()]).into();
+        return wrap_with_pending_commit_action_dialog(state, layered);
     }
 
-    main_view
+    wrap_with_pending_commit_action_dialog(state, main_view)
+}
+
+fn wrap_with_pending_commit_action_dialog<'a>(
+    state: &'a AppState,
+    base: Element<'a, Message>,
+) -> Element<'a, Message> {
+    use crate::views::branch_popup;
+
+    let Some(dialog) = branch_popup::build_pending_commit_action_dialog(
+        state.pending_commit_action.as_ref(),
+        state.branch_popup.is_loading,
+    ) else {
+        return base;
+    };
+
+    stack![
+        base,
+        opaque(
+            mouse_area(
+                Container::new(dialog.map(Message::BranchPopupMessage))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .center_x(Length::Fill)
+                    .center_y(Length::Fill)
+                    .style(|_: &Theme| iced::widget::container::Style {
+                        background: Some(Background::Color(Color::from_rgba(
+                            0.0, 0.0, 0.0, 0.5,
+                        ))),
+                        ..Default::default()
+                    }),
+            )
+            .on_press(Message::BranchPopupMessage(
+                branch_popup::BranchPopupMessage::CancelPendingCommitAction,
+            )),
+        )
+    ]
+    .into()
 }
 
 fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {

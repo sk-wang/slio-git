@@ -48,10 +48,7 @@ pub fn panel_style(_theme: &Theme) -> container::Style {
 
 pub fn scrim_style(_theme: &Theme) -> container::Style {
     container::Style {
-        background: Some(Background::Color(Color {
-            a: 0.08,
-            ..theme::darcula::BG_EDITOR
-        })),
+        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.5))),
         border: Border::default(),
         ..Default::default()
     }

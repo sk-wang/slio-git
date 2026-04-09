@@ -150,7 +150,6 @@ pub struct BranchPopupState {
     pub branch_history_entries: Vec<HistoryEntry>,
     pub selected_branch_commit: Option<String>,
     pub selected_branch_commit_info: Option<CommitInfo>,
-    pub pending_commit_action: Option<CommitActionConfirmation>,
     pub in_progress_commit_action: Option<InProgressCommitAction>,
     pub folder_expansion: BTreeMap<String, bool>,
     pub context_menu_branch: Option<String>,
@@ -190,7 +189,6 @@ impl BranchPopupState {
             branch_history_entries: Vec::new(),
             selected_branch_commit: None,
             selected_branch_commit_info: None,
-            pending_commit_action: None,
             in_progress_commit_action: None,
             folder_expansion: BTreeMap::new(),
             context_menu_branch: None,
@@ -269,7 +267,6 @@ impl BranchPopupState {
         self.comparison_title = None;
         self.comparison_summary = None;
         self.comparison_diff = None;
-        self.pending_commit_action = None;
         self.context_menu_branch = None;
         self.context_menu_commit = None;
     }
@@ -299,7 +296,6 @@ impl BranchPopupState {
 
     pub fn open_commit_context_menu(&mut self, commit_id: String) {
         self.context_menu_branch = None;
-        self.pending_commit_action = None;
         self.error = None;
         self.context_menu_commit = Some(commit_id);
     }
@@ -831,7 +827,6 @@ impl BranchPopupState {
 
     pub fn select_branch_commit(&mut self, repo: &Repository, commit_id: String) {
         self.selected_branch_commit = Some(commit_id.clone());
-        self.pending_commit_action = None;
         self.context_menu_commit = None;
 
         match git_core::commit::get_commit(repo, &commit_id) {
@@ -846,18 +841,18 @@ impl BranchPopupState {
         }
     }
 
-    pub fn prepare_cherry_pick_commit(&mut self, repo: &Repository, commit_id: String) {
+    pub fn prepare_cherry_pick_commit(&mut self, repo: &Repository, commit_id: String) -> Option<CommitActionConfirmation> {
         let current_branch = match repo.current_branch() {
             Ok(Some(branch)) => branch,
             Ok(None) => {
                 self.error = Some("当前为 detached HEAD，不能直接摘取到当前分支".to_string());
                 self.success_message = None;
-                return;
+                return None;
             }
             Err(error) => {
                 self.error = Some(format!("读取当前分支失败: {error}"));
                 self.success_message = None;
-                return;
+                return None;
             }
         };
 
@@ -866,19 +861,19 @@ impl BranchPopupState {
             Err(error) => {
                 self.error = Some(format!("读取提交详情失败: {error}"));
                 self.success_message = None;
-                return;
+                return None;
             }
         };
 
         if info.parent_ids.len() > 1 {
             self.error = Some("暂不支持直接摘取 merge 提交".to_string());
             self.success_message = None;
-            return;
+            return None;
         }
 
         self.error = None;
         self.success_message = None;
-        self.pending_commit_action = Some(CommitActionConfirmation {
+        Some(CommitActionConfirmation {
             action: PendingCommitAction::CherryPick {
                 commit_id: commit_id.clone(),
             },
@@ -892,21 +887,21 @@ impl BranchPopupState {
                 format!("提交标题：{}", commit_subject(&info.message)),
                 "若内容冲突，仓库会进入 Cherry-pick 处理中状态".to_string(),
             ],
-        });
+        })
     }
 
-    pub fn prepare_revert_commit(&mut self, repo: &Repository, commit_id: String) {
+    pub fn prepare_revert_commit(&mut self, repo: &Repository, commit_id: String) -> Option<CommitActionConfirmation> {
         let current_branch = match repo.current_branch() {
             Ok(Some(branch)) => branch,
             Ok(None) => {
                 self.error = Some("当前为 detached HEAD，不能直接回退提交".to_string());
                 self.success_message = None;
-                return;
+                return None;
             }
             Err(error) => {
                 self.error = Some(format!("读取当前分支失败: {error}"));
                 self.success_message = None;
-                return;
+                return None;
             }
         };
 
@@ -915,19 +910,19 @@ impl BranchPopupState {
             Err(error) => {
                 self.error = Some(format!("读取提交详情失败: {error}"));
                 self.success_message = None;
-                return;
+                return None;
             }
         };
 
         if info.parent_ids.len() > 1 {
             self.error = Some("暂不支持直接回退 merge 提交".to_string());
             self.success_message = None;
-            return;
+            return None;
         }
 
         self.error = None;
         self.success_message = None;
-        self.pending_commit_action = Some(CommitActionConfirmation {
+        Some(CommitActionConfirmation {
             action: PendingCommitAction::Revert {
                 commit_id: commit_id.clone(),
             },
@@ -941,27 +936,27 @@ impl BranchPopupState {
                 format!("提交标题：{}", commit_subject(&info.message)),
                 "若内容冲突，仓库会进入回退处理中状态".to_string(),
             ],
-        });
+        })
     }
 
-    pub fn prepare_reset_current_branch_to_commit(&mut self, repo: &Repository, commit_id: String) {
+    pub fn prepare_reset_current_branch_to_commit(&mut self, repo: &Repository, commit_id: String) -> Option<CommitActionConfirmation> {
         let current_branch = match repo.current_branch() {
             Ok(Some(branch)) => branch,
             Ok(None) => {
                 self.error = Some("当前为 detached HEAD，无法重置当前分支".to_string());
                 self.success_message = None;
-                return;
+                return None;
             }
             Err(error) => {
                 self.error = Some(format!("读取当前分支失败: {error}"));
                 self.success_message = None;
-                return;
+                return None;
             }
         };
 
         self.error = None;
         self.success_message = None;
-        self.pending_commit_action = Some(CommitActionConfirmation {
+        Some(CommitActionConfirmation {
             action: PendingCommitAction::ResetCurrentBranch {
                 commit_id: commit_id.clone(),
                 reset_mode: git_core::ResetMode::Mixed,
@@ -976,10 +971,10 @@ impl BranchPopupState {
                 "Mixed — 保留改动在工作区，取消暂存（默认）".to_string(),
                 "Hard — 丢弃所有改动（需要干净工作区）".to_string(),
             ],
-        });
+        })
     }
 
-    pub fn prepare_push_current_branch_to_commit(&mut self, repo: &Repository, commit_id: String) {
+    pub fn prepare_push_current_branch_to_commit(&mut self, repo: &Repository, commit_id: String) -> Option<CommitActionConfirmation> {
         match git_core::resolve_push_current_branch_target(repo, &commit_id) {
             Ok(target) => {
                 let mut impact_items = vec![
@@ -1004,7 +999,7 @@ impl BranchPopupState {
 
                 self.error = None;
                 self.success_message = None;
-                self.pending_commit_action = Some(CommitActionConfirmation {
+                Some(CommitActionConfirmation {
                     action: PendingCommitAction::PushCurrentBranchToCommit {
                         target: target.clone(),
                     },
@@ -1016,12 +1011,12 @@ impl BranchPopupState {
                         short_commit_id(&target.selected_commit)
                     ),
                     impact_items,
-                });
+                })
             }
             Err(error) => {
-                self.pending_commit_action = None;
-                self.error = Some(format!("无法准备“推送到这里”: {error}"));
+                self.error = Some(format!("无法准备推送到这里: {error}"));
                 self.success_message = None;
+                None
             }
         }
     }
@@ -1029,8 +1024,8 @@ impl BranchPopupState {
     pub fn confirm_pending_commit_action(
         &mut self,
         repo: &Repository,
+        confirmation: CommitActionConfirmation,
     ) -> Option<PendingCommitActionKind> {
-        let confirmation = self.pending_commit_action.clone()?;
         let kind = confirmation.action.kind();
 
         self.is_loading = true;
@@ -1060,7 +1055,6 @@ impl BranchPopupState {
 
         match result {
             Ok(()) => {
-                self.pending_commit_action = None;
                 self.is_loading = false;
                 self.success_message = Some(match kind {
                     PendingCommitActionKind::CherryPick => {
@@ -1089,7 +1083,6 @@ impl BranchPopupState {
                             | git_core::repository::RepositoryState::Revert
                     ));
 
-                self.pending_commit_action = None;
                 self.is_loading = false;
 
                 if requires_follow_up {
@@ -1116,7 +1109,6 @@ impl BranchPopupState {
     }
 
     pub fn cancel_pending_commit_action(&mut self) {
-        self.pending_commit_action = None;
         self.error = None;
     }
 
@@ -1471,7 +1463,6 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
                 recent_branches,
                 local_branches,
                 remote_branches,
-                current_branch,
             ))
             .width(Length::FillPortion(5))
             .height(Length::Fill),
@@ -1510,26 +1501,24 @@ pub fn view(state: &BranchPopupState) -> Element<'_, BranchPopupMessage> {
         .style(theme::panel_style(Surface::Panel))
         .into();
 
-    // IDEA-style: Pending commit action confirmation dialog overlay
-    if let Some(dialog) = build_pending_commit_action_dialog(state) {
+    // Commit context menu overlay (covers entire branch panel)
+    if state.context_menu_commit.is_some() {
+        let selected_branch_ref = state.selected_branch_ref();
+        if let Some(selected_branch) = selected_branch_ref {
+            let overlay = build_commit_context_menu_overlay(state, selected_branch);
+            return stack![
+                base,
+                overlay
+            ]
+            .into();
+        }
+    }
+
+    if state.context_menu_branch.is_some() {
+        let overlay = build_branch_context_menu_overlay(state, current_branch);
         return stack![
             base,
-            opaque(
-                mouse_area(
-                    Container::new(dialog)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .center_x(Length::Fill)
-                        .center_y(Length::Fill)
-                        .style(|_: &Theme| container::Style {
-                            background: Some(Background::Color(Color::from_rgba(
-                                0.0, 0.0, 0.0, 0.5,
-                            ))),
-                            ..Default::default()
-                        }),
-                )
-                .on_press(BranchPopupMessage::CancelPendingCommitAction),
-            )
+            overlay
         ]
         .into();
     }
@@ -1742,7 +1731,6 @@ fn build_branch_navigator<'a>(
     recent_branches: Vec<&'a Branch>,
     local_branches: Vec<&'a Branch>,
     remote_branches: Vec<&'a Branch>,
-    current_branch: Option<&'a Branch>,
 ) -> Element<'a, BranchPopupMessage> {
     let mut branch_lists = Column::new()
         .spacing(theme::spacing::SM)
@@ -1781,13 +1769,7 @@ fn build_branch_navigator<'a>(
         .height(Length::Fill)
         .style(theme::panel_style(Surface::Editor));
 
-    stack([
-        navigator.into(),
-        build_branch_context_menu_overlay(state, current_branch),
-    ])
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+    navigator.into()
 }
 
 fn build_flat_branch_section<'a>(
@@ -2267,19 +2249,12 @@ fn build_selected_branch_panel<'a>(
         .push(build_selected_commit_detail_panel(state, selected_branch))
         .push_maybe(build_comparison_panel(state));
 
-    let panel = Container::new(scrollable::styled(content).height(Length::Fill))
+    Container::new(scrollable::styled(content).height(Length::Fill))
         .padding([0, 0])
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(theme::panel_style(Surface::Editor));
-
-    stack([
-        panel.into(),
-        build_commit_context_menu_overlay(state, selected_branch),
-    ])
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .into()
+        .style(theme::panel_style(Surface::Editor))
+        .into()
 }
 
 fn build_selected_branch_summary<'a>(
@@ -2420,114 +2395,6 @@ fn build_selected_commit_detail_panel<'a>(
         );
     };
 
-    let current_branch = state.current_branch();
-    let can_compare_with_current = current_branch
-        .map(|branch| branch.name.clone())
-        .filter(|name| name != &selected_branch.name);
-    let parent_commit_id = selected_commit_parent_in_history(state);
-    let child_commit_ids = selected_commit_children_in_history(state);
-    let child_commit_id = (child_commit_ids.len() == 1).then(|| child_commit_ids[0].clone());
-    let can_prepare_cherry_pick =
-        !state.is_loading && current_branch.is_some() && info.parent_ids.len() <= 1;
-    let can_prepare_revert =
-        !state.is_loading && current_branch.is_some() && info.parent_ids.len() <= 1;
-    let can_reset_current_branch =
-        !state.is_loading && selected_branch.is_head && info.id != selected_branch.oid;
-    let can_push_current_branch_to_here =
-        can_reset_current_branch && current_branch.is_some_and(|branch| branch.upstream.is_some());
-
-    let utility_row = Row::new()
-        .spacing(theme::spacing::XS)
-        .push(button::secondary(
-            "提交动作",
-            (!state.is_loading)
-                .then_some(BranchPopupMessage::OpenCommitContextMenu(info.id.clone())),
-        ))
-        .push(button::ghost(
-            "复制哈希",
-            (!state.is_loading).then_some(BranchPopupMessage::CopyCommitHash(info.id.clone())),
-        ))
-        .push(button::ghost(
-            "导出 Patch",
-            (!state.is_loading).then_some(BranchPopupMessage::ExportCommitPatch(info.id.clone())),
-        ))
-        .push(button::ghost(
-            "父提交",
-            parent_commit_id
-                .clone()
-                .map(BranchPopupMessage::SelectBranchCommit),
-        ))
-        .push(button::ghost(
-            "子提交",
-            child_commit_id.map(BranchPopupMessage::SelectBranchCommit),
-        ));
-    let mut branch_row = Row::new()
-        .spacing(theme::spacing::XS)
-        .push(button::secondary(
-            "从该提交建分支",
-            Some(BranchPopupMessage::PrepareCreateFromSelected(
-                info.id.clone(),
-            )),
-        ))
-        .push(button::ghost(
-            "给该提交打标签",
-            Some(BranchPopupMessage::PrepareTagFromCommit(info.id.clone())),
-        ))
-        .push(button::ghost(
-            "查看与工作树差异",
-            Some(BranchPopupMessage::CompareWithWorktree(info.id.clone())),
-        ));
-
-    if let Some(current) = can_compare_with_current {
-        branch_row = branch_row.push(button::ghost(
-            "与当前分支比较",
-            Some(BranchPopupMessage::CompareWithCurrent {
-                selected: info.id.clone(),
-                current,
-            }),
-        ));
-    }
-
-    let mutation_row = Row::new()
-        .spacing(theme::spacing::XS)
-        .push(button::ghost(
-            "Cherry-pick",
-            can_prepare_cherry_pick
-                .then_some(BranchPopupMessage::PrepareCherryPickCommit(info.id.clone())),
-        ))
-        .push(button::ghost(
-            "Revert",
-            can_prepare_revert.then_some(BranchPopupMessage::PrepareRevertCommit(info.id.clone())),
-        ))
-        .push(button::warning(
-            "重置到这里",
-            can_reset_current_branch.then_some(
-                BranchPopupMessage::PrepareResetCurrentBranchToCommit(info.id.clone()),
-            ),
-        ))
-        .push(button::warning(
-            "推送到这里",
-            can_push_current_branch_to_here.then_some(
-                BranchPopupMessage::PreparePushCurrentBranchToCommit(info.id.clone()),
-            ),
-        ));
-
-    let mut action_notes = Vec::new();
-    if info.parent_ids.len() > 1 {
-        action_notes.push("当前是 merge 提交，暂不支持直接 Cherry-pick / Revert".to_string());
-    }
-    if parent_commit_id.is_none() && !info.parent_ids.is_empty() {
-        action_notes.push("父提交不在当前已加载范围里，可直接点击时间线继续查看".to_string());
-    }
-    if child_commit_ids.len() > 1 {
-        action_notes.push("检测到多个子提交，请直接在时间线里选择目标提交".to_string());
-    }
-    if selected_branch.is_head && current_branch.is_some_and(|branch| branch.upstream.is_none()) {
-        action_notes.push("当前分支还没有上游，暂时不能“推送到这里”".to_string());
-    }
-    if !selected_branch.is_head {
-        action_notes.push("“重置到这里 / 推送到这里”只围绕当前分支启用".to_string());
-    }
 
     Container::new(
         Column::new()
@@ -2582,26 +2449,24 @@ fn build_selected_commit_detail_panel<'a>(
                 )
                 .height(Length::Fixed(120.0)),
             )
-            .push(scrollable::styled_horizontal(utility_row).width(Length::Fill))
-            .push(scrollable::styled_horizontal(branch_row).width(Length::Fill))
-            .push(scrollable::styled_horizontal(mutation_row).width(Length::Fill))
-            .push_maybe((!action_notes.is_empty()).then(|| {
-                Text::new(action_notes.join(" · "))
-                    .size(theme::typography::CAPTION_SIZE)
-                    .width(Length::Fill)
-                    .wrapping(text::Wrapping::WordOrGlyph)
-                    .color(theme::darcula::TEXT_SECONDARY)
-            })),
+            .push(
+                button::secondary(
+                    "提交动作 ···",
+                    (!state.is_loading)
+                        .then_some(BranchPopupMessage::OpenCommitContextMenu(info.id.clone())),
+                ),
+            ),
     )
     .padding([8, 10])
     .style(theme::panel_style(Surface::Panel))
     .into()
 }
 
-fn build_pending_commit_action_dialog<'a>(
-    state: &'a BranchPopupState,
+pub fn build_pending_commit_action_dialog<'a>(
+    confirmation: Option<&'a CommitActionConfirmation>,
+    is_loading: bool,
 ) -> Option<Element<'a, BranchPopupMessage>> {
-    let confirmation = state.pending_commit_action.as_ref()?;
+    let confirmation = confirmation?;
 
     let impact_rows =
         confirmation
@@ -2670,12 +2535,12 @@ fn build_pending_commit_action_dialog<'a>(
                     .spacing(theme::spacing::SM)
                     .push(button::warning(
                         "继续执行",
-                        (!state.is_loading)
+                        (!is_loading)
                             .then_some(BranchPopupMessage::ConfirmPendingCommitAction),
                     ))
                     .push(button::ghost(
                         "取消",
-                        (!state.is_loading)
+                        (!is_loading)
                             .then_some(BranchPopupMessage::CancelPendingCommitAction),
                     )),
             ),
@@ -3299,7 +3164,7 @@ fn build_branch_action_groups<'a>(
                     Some(if let Some(target) = checkout_and_rebase_target.as_ref() {
                         format!("先切到 {}，再把它变基到 {target}", selected_branch.name)
                     } else if selected_branch.is_head {
-                        "当前分支不能对自己执行“签出并变基”".to_string()
+                        "当前分支不能对自己执行「签出并变基」".to_string()
                     } else if selected_branch.is_remote {
                         "远程分支请先签出为本地分支，再执行这类操作".to_string()
                     } else {
