@@ -5046,7 +5046,7 @@ fn wrap_with_history_commit_diff_popup<'a>(
             .height(Length::Fill)
             .push(title_bar)
             .push(iced::widget::rule::horizontal(1))
-            .push(build_read_only_diff_header(&surface))
+            .push(build_read_only_diff_header(&surface, i18n))
             .push(
                 Container::new(build_read_only_diff_content(
                     &surface,
@@ -5128,7 +5128,7 @@ fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Mess
             GitToolWindowTab::Changes => build_changes_body(state, i18n),
             GitToolWindowTab::Log => build_log_body(state),
         },
-        ShellSection::Conflicts => build_conflict_body(state),
+        ShellSection::Conflicts => build_conflict_body(state, i18n),
         ShellSection::Welcome => build_welcome_body(i18n),
     }
 }
@@ -5238,7 +5238,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
     let diff_panel = Container::new(
         Column::new()
             .spacing(0)
-            .push(build_diff_header(state))
+            .push(build_diff_header(state, i18n))
             .push(
                 Container::new(build_diff_content(state, i18n))
                     .padding([0, 0])
@@ -5252,6 +5252,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
         &state.commit_dialog,
         &state.recent_commit_messages,
         state.git_settings.llm_enabled,
+        i18n,
     )
     .map(Message::CommitDialogMessage);
 
@@ -5465,9 +5466,9 @@ struct ReadOnlyDiffSurface<'a> {
     supports_split_diff: bool,
 }
 
-fn build_diff_header<'a>(state: &'a AppState) -> Element<'a, Message> {
+fn build_diff_header<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     let (surface, _) = workspace_diff_surface(state);
-    build_read_only_diff_header(&surface)
+    build_read_only_diff_header(&surface, i18n)
 }
 
 fn build_diff_content<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
@@ -5532,11 +5533,11 @@ fn history_diff_popup_surface<'a>(
     }
 }
 
-fn build_read_only_diff_header<'a>(surface: &ReadOnlyDiffSurface<'a>) -> Element<'a, Message> {
+fn build_read_only_diff_header<'a>(surface: &ReadOnlyDiffSurface<'a>, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     let file_name = surface
         .selected_path
         .and_then(|path| std::path::Path::new(path).file_name()?.to_str())
-        .unwrap_or("差异");
+        .unwrap_or(i18n.diff);
 
     let path_hint = surface.selected_path.and_then(|path| {
         std::path::Path::new(path)
@@ -5583,13 +5584,13 @@ fn build_read_only_diff_header<'a>(surface: &ReadOnlyDiffSurface<'a>) -> Element
             }))
             .push(Space::new().width(Length::Fill))
             .push(button::tab(
-                "统一",
+                i18n.unified_view,
                 surface.diff_presentation == DiffPresentation::Unified,
                 (surface.diff.is_some() && surface.supports_split_diff)
                     .then_some(Message::ToggleDiffPresentation),
             ))
             .push(button::tab(
-                "分栏",
+                i18n.split_view,
                 surface.diff_presentation == DiffPresentation::Split,
                 (surface.diff.is_some() && surface.supports_split_diff)
                     .then_some(Message::ToggleDiffPresentation),
@@ -5671,7 +5672,7 @@ fn build_read_only_diff_content<'a>(
     }
 }
 
-fn build_conflict_body<'a>(state: &'a AppState) -> Element<'a, Message> {
+fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     if state.conflict_files.is_empty() {
         return views::render_empty_state(
             "冲突",
@@ -5684,7 +5685,7 @@ fn build_conflict_body<'a>(state: &'a AppState) -> Element<'a, Message> {
     if state.conflict_merge_index.is_some() {
         // Prefer Meld-style 3-column merge editor
         if let Some(editor) = state.merge_editor.as_ref() {
-            return Container::new(editor.view().map(Message::MergeEditorMessage))
+            return Container::new(editor.view(i18n).map(Message::MergeEditorMessage))
                 .height(Length::Fill)
                 .style(theme::panel_style(theme::Surface::Editor))
                 .into();

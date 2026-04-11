@@ -498,7 +498,7 @@ impl MergeEditorState {
         None
     }
 
-    pub fn view(&self) -> Element<'_, MergeEditorEvent> {
+    pub fn view<'b>(&'b self, i18n: &'b crate::i18n::I18n) -> Element<'b, MergeEditorEvent> {
         let unresolved = self.unresolved_count();
         let conflict_total = self.conflict_count();
         let resolved_conflicts = conflict_total - unresolved;
@@ -509,28 +509,28 @@ impl MergeEditorState {
                 .spacing(theme::spacing::XS)
                 .align_y(Alignment::Center)
                 .push(button::compact_ghost(
-                    "返回列表",
+                    i18n.back_to_list,
                     Some(MergeEditorEvent::BackToList),
                 ))
                 .push(button::compact_ghost(
-                    "上一处",
+                    i18n.prev_conflict,
                     Some(MergeEditorEvent::PrevChunk),
                 ))
                 .push(button::compact_ghost(
-                    "下一处",
+                    i18n.next_conflict,
                     Some(MergeEditorEvent::NextChunk),
                 ))
                 .push(Space::new().width(Length::Fill))
                 .push(button::compact_ghost(
-                    "自动合并",
+                    i18n.auto_merge,
                     Some(MergeEditorEvent::AutoMerge),
                 ))
                 .push(button::compact_ghost(
-                    "全部左侧",
+                    i18n.accept_all_ours,
                     Some(MergeEditorEvent::AcceptAllOurs),
                 ))
                 .push(button::compact_ghost(
-                    "全部右侧",
+                    i18n.accept_all_theirs,
                     Some(MergeEditorEvent::AcceptAllTheirs),
                 )),
         )
@@ -543,7 +543,7 @@ impl MergeEditorState {
             .spacing(0)
             .push(
                 Container::new(
-                    Text::new("您的版本 (ours)")
+                    Text::new(i18n.ours_version)
                         .size(10)
                         .color(merge_pane_color(MergeChunkType::OursOnly)),
                 )
@@ -553,7 +553,7 @@ impl MergeEditorState {
             .push(Space::new().width(Length::Fixed(LINK_MAP_WIDTH)))
             .push(
                 Container::new(
-                    Text::new("合并结果")
+                    Text::new(i18n.merge_result)
                         .size(10)
                         .color(iced::Color::from_rgb(0.42, 0.86, 0.50)),
                 )
@@ -563,7 +563,7 @@ impl MergeEditorState {
             .push(Space::new().width(Length::Fixed(LINK_MAP_WIDTH)))
             .push(
                 Container::new(
-                    Text::new("他们的版本 (theirs)")
+                    Text::new(i18n.theirs_version)
                         .size(10)
                         .color(merge_pane_color(MergeChunkType::TheirsOnly)),
                 )
@@ -614,9 +614,9 @@ impl MergeEditorState {
                     BadgeTone::Neutral,
                 ))
                 .push(Space::new().width(Length::Fixed(8.0)))
-                .push(button::ghost("取消", Some(MergeEditorEvent::BackToList)))
+                .push(button::ghost(i18n.cancel, Some(MergeEditorEvent::BackToList)))
                 .push(button::primary(
-                    "应用",
+                    i18n.apply,
                     self.all_resolved().then_some(MergeEditorEvent::Apply),
                 )),
         )

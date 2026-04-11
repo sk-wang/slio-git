@@ -3,6 +3,7 @@
 //! Provides a non-modal commit composition UI for use inside the Changes workspace.
 //! Includes amend toggle and recent commit message history dropdown.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::views::commit_dialog::{CommitDialogMessage, CommitDialogState};
 use crate::widgets::{self, button, OptionalPush};
@@ -14,34 +15,35 @@ pub fn view<'a>(
     state: &'a CommitDialogState,
     recent_messages: &'a [String],
     llm_enabled: bool,
+    i18n: &'a I18n,
 ) -> Element<'a, CommitDialogMessage> {
     let status_panel = if state.is_committing {
         Some(build_compact_status(
-            "处理中",
-            "正在写入提交，请稍候。",
+            i18n.loading,
+            i18n.committing_please_wait,
             BadgeTone::Neutral,
         ))
     } else if let Some(error) = state.error.as_ref() {
-        Some(build_compact_status("失败", error, BadgeTone::Danger))
+        Some(build_compact_status(i18n.error, error, BadgeTone::Danger))
     } else {
         state
             .success_message
             .as_ref()
-            .map(|message| build_compact_status("完成", message, BadgeTone::Success))
+            .map(|message| build_compact_status("OK", message, BadgeTone::Success))
     };
 
     let commit_label = if state.is_committing {
-        "提交中..."
+        i18n.committing
     } else if state.is_amend {
-        "修正提交"
+        i18n.amend
     } else {
-        "提交"
+        i18n.commit
     };
     let commit_enabled =
         state.is_message_valid() && state.has_files_to_commit() && !state.is_committing;
 
     let editor = text_editor(&state.message_editor)
-        .placeholder("输入提交消息...")
+        .placeholder(i18n.commit_message_placeholder)
         .padding([8, 10])
         .size(theme::typography::BODY_SIZE as f32)
         .height(Length::Fill)
@@ -60,18 +62,18 @@ pub fn view<'a>(
     } else {
         widgets::compact_checkbox(
             state.is_amend,
-            "修正提交",
+            i18n.amend,
             CommitDialogMessage::SetAmendMode,
         )
     };
 
     let ai_button: Element<'_, CommitDialogMessage> = if llm_enabled {
         if state.is_generating {
-            button::secondary("✦ 生成中...", None::<CommitDialogMessage>).into()
+            button::secondary(i18n.ai_generating, None::<CommitDialogMessage>).into()
         } else {
             let can_generate = state.has_files_to_commit() && !state.is_committing;
             button::secondary(
-                "✦ AI 生成",
+                i18n.ai_generate,
                 can_generate.then_some(CommitDialogMessage::GenerateCommitMessage),
             )
             .into()
@@ -88,7 +90,7 @@ pub fn view<'a>(
         .push(amend_checkbox)
         .push(Space::new().width(Length::Fill))
         .push(button::secondary(
-            "提交并推送",
+            i18n.commit_and_push,
             commit_enabled.then_some(CommitDialogMessage::CommitAndPushPressed),
         ))
         .push(button::primary(

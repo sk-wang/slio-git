@@ -170,6 +170,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .push(Self::editor_tab_strip(
+                    i18n,
                     state,
                     on_switch_git_tool_window_tab.as_ref(),
                 ))
@@ -193,6 +194,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                 )
                 .push_maybe(bottom_tool_window.map(|panel| {
                     Self::bottom_tool_window_panel(
+                        i18n,
                         state,
                         panel,
                         &on_show_history,
@@ -411,6 +413,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             state.toolbar_remote_menu.as_ref().map(|menu| {
                 Container::new(Row::new().push(Space::new().width(Length::Fill)).push(
                     Self::toolbar_remote_menu(
+                        i18n,
                         state,
                         menu,
                         on_toolbar_remote_action,
@@ -496,6 +499,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
     }
 
     fn toolbar_remote_menu(
+        i18n: &'a I18n,
         state: &'a AppState,
         menu: &'a ToolbarRemoteMenuState,
         on_toolbar_remote_action: &dyn Fn(ToolbarRemoteAction, String) -> Message,
@@ -546,7 +550,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         .push(
                             Text::new(format!(
                                 "{}当前分支 remote",
-                                Self::toolbar_remote_action_label(menu.action)
+                                Self::toolbar_remote_action_label(i18n, menu.action)
                             ))
                             .size(12),
                         )
@@ -557,7 +561,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         )
                         .push(Space::new().width(Length::Fill))
                         .push(button::compact_ghost(
-                            "收起",
+                            i18n.dismiss,
                             Some(on_close_toolbar_remote_menu.clone()),
                         )),
                 )
@@ -597,10 +601,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         )
     }
 
-    fn toolbar_remote_action_label(action: ToolbarRemoteAction) -> &'static str {
+    fn toolbar_remote_action_label(i18n: &I18n, action: ToolbarRemoteAction) -> &'static str {
         match action {
-            ToolbarRemoteAction::Pull => "拉取",
-            ToolbarRemoteAction::Push => "推送",
+            ToolbarRemoteAction::Pull => i18n.pull,
+            ToolbarRemoteAction::Push => i18n.push,
         }
     }
 
@@ -671,6 +675,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
     }
 
     fn editor_tab_strip(
+        i18n: &'a I18n,
         state: &'a AppState,
         on_switch_git_tool_window_tab: &dyn Fn(GitToolWindowTab) -> Message,
     ) -> Element<'a, Message> {
@@ -678,19 +683,19 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             Row::new()
                 .spacing(theme::spacing::XS)
                 .align_y(Alignment::Center)
-                .push(button::tab("冲突".to_string(), true, None::<Message>))
+                .push(button::tab(i18n.conflicts.to_string(), true, None::<Message>))
                 .into()
         } else {
             Row::new()
                 .spacing(theme::spacing::XS)
                 .align_y(Alignment::Center)
                 .push(button::tab(
-                    "变更".to_string(),
+                    i18n.changes.to_string(),
                     state.shell.git_tool_window_tab == GitToolWindowTab::Changes,
                     Some(on_switch_git_tool_window_tab(GitToolWindowTab::Changes)),
                 ))
                 .push(button::tab(
-                    "日志".to_string(),
+                    i18n.log.to_string(),
                     state.shell.git_tool_window_tab == GitToolWindowTab::Log,
                     Some(on_switch_git_tool_window_tab(GitToolWindowTab::Log)),
                 ))
@@ -710,6 +715,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
     }
 
     fn bottom_tool_window_panel(
+        i18n: &'a I18n,
         state: &'a AppState,
         panel: Element<'a, Message>,
         on_show_history: &Message,
@@ -720,7 +726,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             .chrome
             .tool_window_title
             .clone()
-            .unwrap_or_else(|| "日志".to_string());
+            .unwrap_or_else(|| i18n.log.to_string());
 
         Container::new(
             Column::new()
@@ -734,7 +740,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                             .push(button::tab(title, true, Some(on_show_history.clone())))
                             .push(Space::new().width(Length::Fill))
                             .push(button::compact_ghost(
-                                "收起",
+                                i18n.dismiss,
                                 Some(on_close_auxiliary.clone()),
                             )),
                     )
@@ -759,7 +765,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         !matches!(sync_label, "✓" | "○")
     }
 
-    fn build_status_bar_content(state: &'a AppState) -> StatusBarContent {
+    fn build_status_bar_content(i18n: &'a I18n, state: &'a AppState) -> StatusBarContent {
         let status = &state.shell.status_surface;
         let selected_path = state.selected_change_path.clone();
         let workspace_summary = format!(
@@ -782,10 +788,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             };
 
         let (activity_label, activity_tone, detail) = if is_common_workspace_status {
-            ("就绪".to_string(), BadgeTone::Neutral, None)
+            (i18n.ready.to_string(), BadgeTone::Neutral, None)
         } else {
             (
-                status.message.clone().unwrap_or_else(|| "就绪".to_string()),
+                status.message.clone().unwrap_or_else(|| i18n.ready.to_string()),
                 Self::status_bar_tone(state, status),
                 status.detail.clone(),
             )
@@ -827,7 +833,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             activity_label,
             activity_tone,
             detail,
-        } = Self::build_status_bar_content(state);
+        } = Self::build_status_bar_content(i18n, state);
 
         let base_bar: Element<'a, Message> = crate::widgets::statusbar::StatusBar {
             i18n,
@@ -1106,7 +1112,7 @@ mod tests {
             ..LightweightStatusSurface::default()
         };
 
-        let content = MainWindow::<()>::build_status_bar_content(&state);
+        let content = MainWindow::<()>::build_status_bar_content(&crate::i18n::ZH_CN, &state);
 
         assert_eq!(content.workspace_summary, "3 个改动 · 1 个冲突");
         assert_eq!(content.selected_path.as_deref(), Some("src-ui/src/main.rs"));
@@ -1126,7 +1132,7 @@ mod tests {
             ..LightweightStatusSurface::default()
         };
 
-        let content = MainWindow::<()>::build_status_bar_content(&state);
+        let content = MainWindow::<()>::build_status_bar_content(&crate::i18n::ZH_CN, &state);
 
         assert_eq!(content.activity_label, "远程状态");
         assert!(matches!(content.activity_tone, BadgeTone::Warning));

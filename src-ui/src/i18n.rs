@@ -173,6 +173,34 @@ pub struct I18n {
     pub binary_file_no_preview: &'static str,
     pub file_too_large_truncated: &'static str,
     pub delete_local_and_remote: &'static str,
+
+    // Commit panel
+    pub commit_message_placeholder: &'static str,
+    pub ai_generate: &'static str,
+    pub ai_generating: &'static str,
+    pub committing: &'static str,
+    pub committing_please_wait: &'static str,
+
+    // Merge editor
+    pub back_to_list: &'static str,
+    pub prev_conflict: &'static str,
+    pub next_conflict: &'static str,
+    pub auto_merge: &'static str,
+    pub accept_all_ours: &'static str,
+    pub accept_all_theirs: &'static str,
+    pub ours_version: &'static str,
+    pub merge_result: &'static str,
+    pub theirs_version: &'static str,
+    pub apply: &'static str,
+
+    // Status bar / toolbar
+    pub unified_view: &'static str,
+    pub split_view: &'static str,
+    pub n_changes_fmt: &'static str,
+    pub ready: &'static str,
+    pub copy_diff: &'static str,
+    pub accept_ours: &'static str,
+    pub accept_theirs: &'static str,
 }
 
 impl I18n {
@@ -319,6 +347,31 @@ impl I18n {
             binary_file_no_preview: "二进制文件，无法预览",
             file_too_large_truncated: "文件过大，仅显示前 5000 行",
             delete_local_and_remote: "删除本地和远程",
+
+            commit_message_placeholder: "输入提交消息...",
+            ai_generate: "✦ AI 生成",
+            ai_generating: "✦ 生成中...",
+            committing: "提交中...",
+            committing_please_wait: "正在写入提交，请稍候。",
+
+            back_to_list: "返回列表",
+            prev_conflict: "上一处",
+            next_conflict: "下一处",
+            auto_merge: "自动合并",
+            accept_all_ours: "全部左侧",
+            accept_all_theirs: "全部右侧",
+            ours_version: "您的版本 (ours)",
+            merge_result: "合并结果",
+            theirs_version: "他们的版本 (theirs)",
+            apply: "应用",
+
+            unified_view: "统一",
+            split_view: "分栏",
+            n_changes_fmt: "{n} 个改动",
+            ready: "就绪",
+            copy_diff: "复制 Diff",
+            accept_ours: "接受我方",
+            accept_theirs: "接受对方",
         }
     }
 }
@@ -460,6 +513,31 @@ pub static ZH_CN: I18n = I18n {
     binary_file_no_preview: "二进制文件，无法预览",
     file_too_large_truncated: "文件过大，仅显示前 5000 行",
     delete_local_and_remote: "删除本地和远程",
+
+    commit_message_placeholder: "输入提交消息...",
+    ai_generate: "✦ AI 生成",
+    ai_generating: "✦ 生成中...",
+    committing: "提交中...",
+    committing_please_wait: "正在写入提交，请稍候。",
+
+    back_to_list: "返回列表",
+    prev_conflict: "上一处",
+    next_conflict: "下一处",
+    auto_merge: "自动合并",
+    accept_all_ours: "全部左侧",
+    accept_all_theirs: "全部右侧",
+    ours_version: "您的版本 (ours)",
+    merge_result: "合并结果",
+    theirs_version: "他们的版本 (theirs)",
+    apply: "应用",
+
+    unified_view: "统一",
+    split_view: "分栏",
+    n_changes_fmt: "{n} 个改动",
+    ready: "就绪",
+    copy_diff: "复制 Diff",
+    accept_ours: "接受我方",
+    accept_theirs: "接受对方",
 };
 
 pub static EN: I18n = I18n {
@@ -599,4 +677,29 @@ pub static EN: I18n = I18n {
     binary_file_no_preview: "Binary file, no preview available",
     file_too_large_truncated: "File too large, showing first 5000 lines only",
     delete_local_and_remote: "Delete local and remote",
+
+    commit_message_placeholder: "Enter commit message...",
+    ai_generate: "✦ AI Generate",
+    ai_generating: "✦ Generating...",
+    committing: "Committing...",
+    committing_please_wait: "Writing commit, please wait.",
+
+    back_to_list: "Back to List",
+    prev_conflict: "Previous",
+    next_conflict: "Next",
+    auto_merge: "Auto Merge",
+    accept_all_ours: "Accept All Ours",
+    accept_all_theirs: "Accept All Theirs",
+    ours_version: "Yours (ours)",
+    merge_result: "Merge Result",
+    theirs_version: "Theirs",
+    apply: "Apply",
+
+    unified_view: "Unified",
+    split_view: "Side by Side",
+    n_changes_fmt: "{n} changes",
+    ready: "Ready",
+    copy_diff: "Copy Diff",
+    accept_ours: "Accept Ours",
+    accept_theirs: "Accept Theirs",
 };
