@@ -37,12 +37,6 @@ impl TestRepo {
         Ok(Self { path: temp_dir })
     }
 
-    /// Create a new temporary directory (not a git repo)
-    pub fn empty() -> Result<Self, GitError> {
-        let temp_dir = tempfile::tempdir().map_err(|e| GitError::Io(std::io::Error::other(e)))?;
-        Ok(Self { path: temp_dir })
-    }
-
     /// Get the path to the temporary directory
     pub fn path(&self) -> &Path {
         self.path.path()
@@ -55,19 +49,6 @@ impl TestRepo {
             fs::create_dir_all(parent)?;
         }
         fs::write(&path, content)
-    }
-
-    /// Get the name of the current (default) branch
-    pub fn default_branch(&self) -> String {
-        let output = std::process::Command::new("git")
-            .args(["rev-parse", "--abbrev-ref", "HEAD"])
-            .current_dir(self.path())
-            .output()
-            .expect("failed to get default branch");
-        String::from_utf8(output.stdout)
-            .unwrap()
-            .trim()
-            .to_string()
     }
 
     /// Add a file and create a commit

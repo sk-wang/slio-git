@@ -1065,7 +1065,7 @@ fn assemble_center_text(
             Some(ChunkResolution::Base) => &chunk.lines_base,
             None => {
                 // Unresolved: show conflict markers
-                lines.push(format!("<<<<<<< ours"));
+                lines.push("<<<<<<< ours".to_string());
                 lines.extend(chunk.lines_ours.iter().cloned());
                 lines.push("=======".to_string());
                 lines.extend(chunk.lines_theirs.iter().cloned());

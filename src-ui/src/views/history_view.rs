@@ -592,9 +592,7 @@ fn build_commit_row<'a>(
             ),
     )
     .padding([2, 6])
-    .style(theme::panel_style(if is_menu_open {
-        Surface::Selection
-    } else if is_selected {
+    .style(theme::panel_style(if is_menu_open || is_selected {
         Surface::Selection
     } else {
         Surface::Editor

@@ -33,7 +33,7 @@ pub fn progress_bar_view<'a, Message: Clone + 'a>(
     let bar_width = 120.0;
     let filled_width = bar_width * progress_pct;
 
-    let bar = Container::new(
+    let progress_track = Container::new(
         Container::new(Space::new())
             .width(Length::Fixed(filled_width))
             .height(Length::Fixed(3.0))
@@ -57,7 +57,7 @@ pub fn progress_bar_view<'a, Message: Clone + 'a>(
                 .size(11)
                 .color(theme::darcula::TEXT_SECONDARY),
         )
-        .push(bar)
+        .push(progress_track)
         .push(
             Text::new(progress_text)
                 .size(10)

@@ -1,14 +1,5 @@
 //! Internationalization support.
 
-/// Locale identifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum Locale {
-    #[serde(rename = "zh-CN")]
-    ZhCn,
-    #[serde(rename = "en")]
-    En,
-}
-
 /// Returns the appropriate locale instance for the given language preference.
 /// `None` means auto-detect from system locale.
 pub fn locale(lang: Option<&str>) -> &'static I18n {

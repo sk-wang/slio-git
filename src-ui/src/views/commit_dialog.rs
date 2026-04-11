@@ -406,8 +406,6 @@ pub fn view<'a>(state: &'a CommitDialogState, i18n: &'a I18n) -> Element<'a, Com
 
     let message_hint_text = if state.message.trim().is_empty() {
         i18n.cd_msg_hint_empty
-    } else if message_lines == 1 {
-        i18n.cd_msg_hint_ready
     } else {
         i18n.cd_msg_hint_ready
     };

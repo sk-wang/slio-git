@@ -26,6 +26,19 @@ impl LlmConfig {
     }
 }
 
+fn truncate_utf8(input: &str, max_bytes: usize) -> &str {
+    if input.len() <= max_bytes {
+        return input;
+    }
+
+    let mut end = max_bytes;
+    while !input.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    &input[..end]
+}
+
 #[derive(Serialize)]
 struct ChatRequest<'a> {
     model: &'a str,
@@ -85,7 +98,7 @@ fn build_prompt(branch_name: &str, diff_summary: &str, recent_logs: &[String]) -
     // Truncate large diffs to stay within token limits
     const MAX_DIFF_CHARS: usize = 8000;
     if diff_summary.len() > MAX_DIFF_CHARS {
-        prompt.push_str(&diff_summary[..MAX_DIFF_CHARS]);
+        prompt.push_str(truncate_utf8(diff_summary, MAX_DIFF_CHARS));
         prompt.push_str("\n... (truncated)\n");
     } else {
         prompt.push_str(diff_summary);
@@ -189,5 +202,13 @@ mod tests {
         let prompt = build_prompt("main", &diff, &[]);
         assert!(prompt.contains("(truncated)"));
         assert!(prompt.contains("main"));
+    }
+
+    #[test]
+    fn build_prompt_truncates_large_multibyte_diff_without_panicking() {
+        let diff = "你好，世界\n".repeat(2000);
+        let prompt = build_prompt("main", &diff, &[]);
+        assert!(prompt.contains("(truncated)"));
+        assert!(prompt.contains("你好"));
     }
 }

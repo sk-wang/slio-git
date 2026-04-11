@@ -6394,7 +6394,7 @@ fn summarize_conflict_hunk(hunk: &ConflictHunk) -> ConflictHunkType {
     }
 }
 
-fn split_workspace_path<'a>(path: &str, i18n: &'a i18n::I18n) -> (String, String) {
+fn split_workspace_path(path: &str, i18n: &i18n::I18n) -> (String, String) {
     let path = Path::new(path);
     let file_name = path
         .file_name()

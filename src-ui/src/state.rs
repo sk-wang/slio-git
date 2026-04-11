@@ -1930,8 +1930,8 @@ impl AppState {
             let repo_path = repo.path().display().to_string();
             let sync_status = repo.sync_status();
             let sync_label = sync_label(&sync_status);
+            let sync_hint = sync_status.hint_text();
             let state_hint = repo.state_hint();
-            let sync_hint = repo.sync_status_hint();
             let preserved_tab = self.shell.git_tool_window_tab;
 
             let branch_actions_label = i18n_ref.map_or_else(

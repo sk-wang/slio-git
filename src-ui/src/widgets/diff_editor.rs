@@ -838,9 +838,7 @@ impl canvas::Program<DiffEditorEvent> for OverviewMapCanvas {
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                let Some(y) = cursor_y else {
-                    return None;
-                };
+                let y = cursor_y?;
                 state.dragging = true;
                 Some(
                     canvas::Action::publish(DiffEditorEvent::JumpToOverviewFraction(
@@ -850,9 +848,7 @@ impl canvas::Program<DiffEditorEvent> for OverviewMapCanvas {
                 )
             }
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) if state.dragging => {
-                let Some(y) = cursor_y else {
-                    return None;
-                };
+                let y = cursor_y?;
                 Some(
                     canvas::Action::publish(DiffEditorEvent::JumpToOverviewFraction(
                         overview_fraction(y, bounds.height),
@@ -1070,14 +1066,15 @@ fn build_link_blocks(model: &EditorDiffModel) -> Vec<LinkMapBlock> {
         .hunks
         .iter()
         .flat_map(|hunk| {
-            hunk.blocks.iter().filter_map(move |block| {
-                (block.kind != EditorDiffBlockKind::Equal).then(|| LinkMapBlock {
+            hunk.blocks
+                .iter()
+                .filter(|block| block.kind != EditorDiffBlockKind::Equal)
+                .map(move |block| LinkMapBlock {
                     hunk_id: hunk.id,
                     kind: block.kind,
                     left_range: block.old_range.clone(),
                     right_range: block.new_range.clone(),
                 })
-            })
         })
         .collect()
 }
@@ -1647,7 +1644,7 @@ impl UnifiedDiffEditorState {
         }
         self.editor
             .update(&message)
-            .map(|m| UnifiedDiffEditorEvent::Editor(m))
+            .map(UnifiedDiffEditorEvent::Editor)
     }
 
     pub fn scroll_to_hunk(&mut self, hunk_index: usize) -> iced::Task<UnifiedDiffEditorEvent> {

@@ -55,6 +55,20 @@ impl SyncStatus {
             SyncStatus::Unknown => [0.5, 0.5, 0.5],         // Gray
         }
     }
+
+    /// Get a localized hint suitable for compact UI display.
+    pub fn hint_text(&self) -> Option<String> {
+        match self {
+            SyncStatus::Ahead(count) => Some(format!("领先上游 {count} 个提交")),
+            SyncStatus::Behind(count) => Some(format!("落后上游 {count} 个提交")),
+            SyncStatus::Diverged { ahead, behind } => {
+                Some(format!("与上游分叉：领先 {ahead} / 落后 {behind}"))
+            }
+            SyncStatus::Synced => Some("与上游同步".to_string()),
+            SyncStatus::NoUpstream => None,
+            SyncStatus::Unknown => Some("上游状态未知".to_string()),
+        }
+    }
 }
 
 /// A Git repository managed by git-core
@@ -194,16 +208,7 @@ impl Repository {
 
     /// Get a short sync hint suitable for compact UI display.
     pub fn sync_status_hint(&self) -> Option<String> {
-        match self.sync_status() {
-            SyncStatus::Ahead(count) => Some(format!("领先上游 {count} 个提交")),
-            SyncStatus::Behind(count) => Some(format!("落后上游 {count} 个提交")),
-            SyncStatus::Diverged { ahead, behind } => {
-                Some(format!("与上游分叉：领先 {ahead} / 落后 {behind}"))
-            }
-            SyncStatus::Synced => Some("与上游同步".to_string()),
-            SyncStatus::NoUpstream => None,
-            SyncStatus::Unknown => Some("上游状态未知".to_string()),
-        }
+        self.sync_status().hint_text()
     }
 
     /// Resolve the remote name of the current branch upstream, if configured.
@@ -410,6 +415,23 @@ mod tests {
         let _ = SyncStatus::Unknown.display_color();
     }
 
+    #[test]
+    fn sync_status_hint_text_formats_correctly() {
+        assert_eq!(
+            SyncStatus::Ahead(3).hint_text(),
+            Some("领先上游 3 个提交".to_string())
+        );
+        assert_eq!(
+            SyncStatus::Diverged {
+                ahead: 2,
+                behind: 4
+            }
+            .hint_text(),
+            Some("与上游分叉：领先 2 / 落后 4".to_string())
+        );
+        assert_eq!(SyncStatus::NoUpstream.hint_text(), None);
+    }
+
     // ── compact_branch_sync_hint tests ─────────────────────────────────────────
 
     #[test]
@@ -578,7 +600,7 @@ mod tests {
     #[test]
     fn repository_state_all_variants() {
         // Just verify all variants can be created and compared
-        let states = vec![
+        let states = [
             RepositoryState::Clean,
             RepositoryState::Dirty,
             RepositoryState::Merging,

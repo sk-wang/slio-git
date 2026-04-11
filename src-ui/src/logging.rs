@@ -5,8 +5,8 @@
 #![allow(dead_code)]
 
 use log::{error, info, warn, LevelFilter};
-use std::fs;
-use std::io::Write;
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -19,6 +19,29 @@ pub struct LogManager {
 }
 
 static LOG_MANAGER: Mutex<Option<LogManager>> = Mutex::new(None);
+
+struct TeeLogWriter {
+    manager: LogManager,
+}
+
+impl TeeLogWriter {
+    fn new(manager: LogManager) -> Self {
+        Self { manager }
+    }
+}
+
+impl Write for TeeLogWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.manager.append_log_bytes(buf)?;
+        let _ = io::stderr().write_all(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let _ = io::stderr().flush();
+        Ok(())
+    }
+}
 
 impl LogManager {
     /// Initialize logging system
@@ -43,6 +66,9 @@ impl LogManager {
         // Initialize env_logger
         env_logger::Builder::new()
             .filter_level(LevelFilter::Info)
+            .target(env_logger::Target::Pipe(Box::new(TeeLogWriter::new(
+                manager.clone(),
+            ))))
             .format(|buf, record| {
                 writeln!(
                     buf,
@@ -54,7 +80,8 @@ impl LogManager {
                     record.args()
                 )
             })
-            .init();
+            .try_init()
+            .map_err(|error| -> Box<dyn std::error::Error> { Box::new(error) })?;
 
         // Store manager instance
         {
@@ -140,6 +167,17 @@ impl LogManager {
         Ok(())
     }
 
+    fn append_log_bytes(&self, bytes: &[u8]) -> io::Result<()> {
+        self.maybe_rotate()?;
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.log_path)?;
+        file.write_all(bytes)?;
+        file.flush()
+    }
+
     /// Rotate log files
     fn rotate(&self) -> std::io::Result<()> {
         // Remove oldest log file if we have too many
@@ -156,8 +194,6 @@ impl LogManager {
         // Rename current log
         let archive = format!("{}.1", self.log_path.display());
         let _ = fs::rename(&self.log_path, &archive);
-
-        info!("Log file rotated");
         Ok(())
     }
 }
@@ -166,4 +202,52 @@ impl LogManager {
 pub fn get_log_manager() -> Option<LogManager> {
     let guard = LOG_MANAGER.lock().unwrap();
     guard.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::LogManager;
+    use std::fs;
+
+    #[test]
+    fn append_log_bytes_writes_to_configured_file() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let log_path = temp_dir.path().join("slio-git.log");
+        let manager = LogManager {
+            log_path: log_path.clone(),
+            max_file_size: 1024,
+            max_files: 2,
+        };
+
+        manager
+            .append_log_bytes(b"hello log\n")
+            .expect("append log");
+
+        assert_eq!(
+            fs::read_to_string(log_path).expect("read log"),
+            "hello log\n"
+        );
+    }
+
+    #[test]
+    fn maybe_rotate_archives_previous_log_file() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let log_path = temp_dir.path().join("slio-git.log");
+        let manager = LogManager {
+            log_path: log_path.clone(),
+            max_file_size: 4,
+            max_files: 2,
+        };
+
+        fs::write(&log_path, b"12345").expect("seed log");
+        manager
+            .append_log_bytes(b"ab")
+            .expect("append after rotate");
+
+        assert_eq!(
+            fs::read_to_string(log_path.with_extension("log.1")).expect("read archive"),
+            "12345"
+        );
+        assert_eq!(fs::read_to_string(log_path).expect("read current"), "ab");
+    }
 }

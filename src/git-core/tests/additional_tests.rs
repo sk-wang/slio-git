@@ -8,6 +8,19 @@ use git_core::Repository;
 use std::path::Path;
 use test_helpers::TestRepo;
 
+fn default_branch(repo: &TestRepo) -> String {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(repo.path())
+        .output()
+        .expect("failed to get default branch");
+
+    String::from_utf8(output.stdout)
+        .expect("default branch should be utf-8")
+        .trim()
+        .to_string()
+}
+
 // ── T200: Index Operations ────────────────────────────────────────────────────
 
 #[test]
@@ -243,7 +256,7 @@ fn diff_refs_shows_changes_between_branches() {
     repo.add_and_commit("file.txt", "main content", "main commit")
         .unwrap();
 
-    let default_branch = repo.default_branch();
+    let default_branch = default_branch(&repo);
 
     // Create and switch to feature branch
     std::process::Command::new("git")
@@ -348,7 +361,7 @@ fn validate_commit_ref_accepts_branch_name() {
         .unwrap();
 
     let r = Repository::discover(repo.path()).unwrap();
-    let branch = repo.default_branch();
+    let branch = default_branch(&repo);
 
     let (hash, summary) = git_core::validate_commit_ref(&r, &branch).unwrap();
     assert_eq!(summary, "branch commit");
@@ -404,7 +417,7 @@ fn compute_graph_handles_merge_commits() {
     repo.add_and_commit("file.txt", "main 2", "main commit 2")
         .unwrap();
 
-    let default_branch = repo.default_branch();
+    let default_branch = default_branch(&repo);
 
     // Create feature branch
     std::process::Command::new("git")
@@ -450,7 +463,7 @@ fn compute_graph_assigns_increasing_lanes_for_branches() {
     repo.add_and_commit("file.txt", "main 1", "main commit 1")
         .unwrap();
 
-    let default_branch = repo.default_branch();
+    let default_branch = default_branch(&repo);
 
     // Create feature branch
     std::process::Command::new("git")

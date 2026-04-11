@@ -14,6 +14,11 @@ use std::process::Command;
 use tempfile::tempdir;
 use test_helpers::TestRepo;
 
+fn empty_repo() -> Result<TestRepo, git_core::GitError> {
+    let temp_dir = tempfile::tempdir().map_err(|e| git_core::GitError::Io(std::io::Error::other(e)))?;
+    Ok(TestRepo { path: temp_dir })
+}
+
 fn git(repo_path: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .args(args)
@@ -144,7 +149,7 @@ fn repository_display_metadata_prefers_worktree_path_after_open_and_refresh() {
 
 #[test]
 fn repository_init_keeps_worktree_path_for_new_repo_display() {
-    let repo = TestRepo::empty().expect("failed to create empty temp dir");
+    let repo = empty_repo().expect("failed to create empty temp dir");
     let repository = Repository::init(repo.path()).expect("failed to init test repository");
     let expected_path = std::fs::canonicalize(repo.path()).expect("failed to canonicalize path");
 

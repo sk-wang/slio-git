@@ -282,6 +282,10 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Top chrome wiring passes UI actions and callbacks explicitly"
+    )]
     fn workspace_top_chrome(
         i18n: &'a I18n,
         state: &'a AppState,
@@ -627,8 +631,6 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             BadgeTone::Accent
         } else if sync_label.starts_with('↕') {
             BadgeTone::Warning
-        } else if sync_label.starts_with('?') {
-            BadgeTone::Neutral
         } else {
             BadgeTone::Neutral
         }

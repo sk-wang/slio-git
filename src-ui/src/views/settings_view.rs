@@ -761,14 +761,16 @@ mod tests {
 
     #[test]
     fn settings_roundtrip() {
-        let mut s = GitSettings::default();
-        s.sign_off_commit = true;
-        s.update_method = UpdateMethod::Rebase;
-        s.fetch_tags_mode = FetchTagsMode::AllTags;
-        s.llm_enabled = true;
-        s.llm_api_key = "sk-test-key".to_string();
-        s.protected_branches = "main, develop".to_string();
-        s.large_file_limit_mb = "100".to_string();
+        let s = GitSettings {
+            sign_off_commit: true,
+            update_method: UpdateMethod::Rebase,
+            fetch_tags_mode: FetchTagsMode::AllTags,
+            llm_enabled: true,
+            llm_api_key: "sk-test-key".to_string(),
+            protected_branches: "main, develop".to_string(),
+            large_file_limit_mb: "100".to_string(),
+            ..GitSettings::default()
+        };
 
         let serialized = s.serialize();
         let loaded = GitSettings::parse(&serialized);
@@ -787,10 +789,12 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let path = temp_dir.path().join("settings.txt");
 
-        let mut s = GitSettings::default();
-        s.warn_crlf = false;
-        s.staging_area_enabled = true;
-        s.llm_model = "gpt-4".to_string();
+        let s = GitSettings {
+            warn_crlf: false,
+            staging_area_enabled: true,
+            llm_model: "gpt-4".to_string(),
+            ..GitSettings::default()
+        };
 
         s.save_to_path(&path).expect("save");
         let loaded = GitSettings::load_from_path(&path);
