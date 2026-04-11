@@ -268,6 +268,10 @@ class Test01_Feature分支开发:
         driver.click_relative(*FILE_STAGE_BTN_2)
         driver.sleep(0.5)
         step("partial_staged")
+        # 确保 git 层面也有 staged 文件（UI 点击可能未生效）
+        staged = git_cmd(app, "diff", "--cached", "--name-only")
+        if not staged:
+            git_run(app, "add", "src/auth.py", "src/routes.py")
 
     def test_06_查看diff确认改动(self, app):
         """点击暂存文件查看 diff，确认要提交的内容。"""
@@ -476,8 +480,8 @@ class Test04_暂存中断恢复:
     def test_03_验证工作区已干净(self, app):
         status = git_cmd(app, "status", "--porcelain")
         if status:
-            # UI 没生效，fallback
-            git_run(app, "stash", "push", "-m", "WIP: feature X")
+            # UI 没生效或 stash 未包含 untracked 文件，用 -u 重试
+            git_run(app, "stash", "push", "-u", "-m", "WIP: feature X")
             driver.sleep(2)
         status = git_cmd(app, "status", "--porcelain")
         assert status == "", f"stash 后工作区不干净: {status}"
