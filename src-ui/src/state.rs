@@ -1,5 +1,6 @@
 //! Application state management
 
+use crate::i18n::I18n;
 use crate::theme;
 use crate::views::{
     branch_popup::{BranchPopupState, CommitActionConfirmation},
@@ -45,7 +46,7 @@ pub enum FileDisplayMode {
 pub struct LogTab {
     /// Unique tab identifier
     pub id: usize,
-    /// Display label (branch name or "全部")
+    /// Display label (branch name or the "All" tab label)
     pub label: String,
     /// Whether this tab can be closed (false for "All" tab)
     pub is_closable: bool,
@@ -67,10 +68,26 @@ pub struct LogTab {
 
 impl LogTab {
     /// Create the default "All" tab
+    pub fn all_with_i18n(i18n: &I18n) -> Self {
+        Self {
+            id: 0,
+            label: i18n.log_tab_all.to_string(),
+            is_closable: false,
+            branch_filter: None,
+            text_filter: String::new(),
+            author_filter: None,
+            date_range: None,
+            path_filter: None,
+            scroll_offset: 0.0,
+            selected_commit: None,
+        }
+    }
+
+    /// Create the default "All" tab (fallback without i18n)
     pub fn all() -> Self {
         Self {
             id: 0,
-            label: "全部".to_string(),
+            label: "All".to_string(),
             is_closable: false,
             branch_filter: None,
             text_filter: String::new(),
@@ -627,13 +644,26 @@ struct AutoRefreshState {
 }
 
 impl AppShellState {
+    fn new_with_i18n(i18n: &I18n) -> Self {
+        Self {
+            active_section: ShellSection::Welcome,
+            git_tool_window_tab: GitToolWindowTab::Changes,
+            title: i18n.app_name.to_string(),
+            subtitle: i18n.welcome_subtitle.to_string(),
+            primary_action_label: i18n.open_repository.to_string(),
+            context_switcher: WorkspaceContextSwitcher::default(),
+            chrome: PrimaryWorkspaceChrome::default(),
+            status_surface: LightweightStatusSurface::default(),
+        }
+    }
+
     fn new() -> Self {
         Self {
             active_section: ShellSection::Welcome,
             git_tool_window_tab: GitToolWindowTab::Changes,
-            title: "Git 工作区".to_string(),
-            subtitle: "打开一个仓库后直接进入改动处理主线。".to_string(),
-            primary_action_label: "打开仓库".to_string(),
+            title: String::new(),
+            subtitle: String::new(),
+            primary_action_label: String::new(),
             context_switcher: WorkspaceContextSwitcher::default(),
             chrome: PrimaryWorkspaceChrome::default(),
             status_surface: LightweightStatusSurface::default(),
@@ -643,6 +673,22 @@ impl AppShellState {
 
 impl AppState {
     pub fn new() -> Self {
+        Self::new_inner(None)
+    }
+
+    pub fn new_with_i18n(i18n: &I18n) -> Self {
+        Self::new_inner(Some(i18n))
+    }
+
+    fn new_inner(i18n: Option<&I18n>) -> Self {
+        let shell = match i18n {
+            Some(i18n) => AppShellState::new_with_i18n(i18n),
+            None => AppShellState::new(),
+        };
+        let log_tabs = match i18n {
+            Some(i18n) => vec![LogTab::all_with_i18n(i18n)],
+            None => vec![LogTab::all()],
+        };
         let mut state = Self {
             current_repository: None,
             is_loading: false,
@@ -650,7 +696,7 @@ impl AppState {
             view_mode: ViewMode::Welcome,
             auxiliary_view: None,
             project_history: Vec::new(),
-            shell: AppShellState::new(),
+            shell,
             feedback: None,
             toast_notification: None,
             defect_observations: Vec::new(),
@@ -687,7 +733,7 @@ impl AppState {
             git_settings: crate::views::settings_view::GitSettings::load(),
             auto_refresh: AutoRefreshState::default(),
             file_display_mode: FileDisplayMode::default(),
-            log_tabs: vec![LogTab::all()],
+            log_tabs,
             active_log_tab: 0,
             next_log_tab_id: 1,
             log_branches_dashboard_visible: true,
@@ -706,13 +752,13 @@ impl AppState {
             available_update: None,
         };
 
-        state.sync_context_feedback();
+        state.sync_context_feedback(i18n);
         state
     }
 
-    pub fn restore() -> Self {
+    pub fn restore(i18n: &I18n) -> Self {
         let persisted = PersistedWorkspaceMemory::load();
-        let mut state = Self::new();
+        let mut state = Self::new_with_i18n(i18n);
         state.project_history = persisted
             .recent_paths
             .iter()
@@ -724,10 +770,10 @@ impl AppState {
             match Repository::discover(&last_path) {
                 Ok(repo) => {
                     let repo_name = repo.name();
-                    state.set_repository(repo);
+                    state.set_repository(repo, i18n);
                     state.set_info(
-                        "已恢复上次仓库",
-                        Some(format!("{repo_name} 已自动打开。")),
+                        i18n.repo_restored,
+                        Some(i18n.repo_auto_opened_fmt.replace("{}", &repo_name)),
                         "repository.restore",
                     );
                 }
@@ -784,14 +830,14 @@ impl AppState {
             .find(|change| change.path == selected)
     }
 
-    pub fn navigate_to(&mut self, section: ShellSection) {
+    pub fn navigate_to(&mut self, section: ShellSection, i18n: &I18n) {
         self.close_toolbar_remote_menu();
 
         if self.current_repository.is_none() {
             self.shell.active_section = ShellSection::Welcome;
             self.view_mode = ViewMode::Welcome;
-            self.sync_shell_state();
-            self.sync_context_feedback();
+            self.sync_shell_state(Some(i18n));
+            self.sync_context_feedback(Some(i18n));
             return;
         }
 
@@ -810,15 +856,15 @@ impl AppState {
             }
         }
 
-        self.sync_shell_state();
-        self.sync_context_feedback();
+        self.sync_shell_state(Some(i18n));
+        self.sync_context_feedback(Some(i18n));
     }
 
     pub fn active_project_path(&self) -> Option<&Path> {
         self.current_repository.as_ref().map(|repo| repo.path())
     }
 
-    pub fn set_repository(&mut self, repo: Repository) {
+    pub fn set_repository(&mut self, repo: Repository, i18n: &I18n) {
         let project_entry = ProjectEntry::from_repository(&repo);
         let repository_changed = self
             .current_repository
@@ -860,29 +906,29 @@ impl AppState {
         self.conflict_resolver = None;
         self.diff_presentation = DiffPresentation::Unified;
         self.selected_change_path = None;
-        self.refresh_changes();
+        self.refresh_changes_with_i18n(i18n);
 
         if self.has_conflicts() {
-            if let Err(error) = self.load_conflicts() {
-                self.set_error(format!("加载冲突文件失败: {}", error));
+            if let Err(error) = self.load_conflicts(i18n) {
+                self.set_error_i18n(i18n.load_conflict_failed_fmt.replace("{}", &error), i18n);
             } else {
                 self.view_mode = ViewMode::ConflictResolver;
                 self.shell.active_section = ShellSection::Conflicts;
-                self.sync_context_feedback();
+                self.sync_context_feedback(Some(i18n));
             }
         } else {
             self.view_mode = ViewMode::Repository;
             self.shell.active_section = ShellSection::Changes;
             self.set_success(
-                "已打开仓库".to_string(),
+                i18n.repo_opened.to_string(),
                 self.current_repository
                     .as_ref()
-                    .map(|current| format!("{} 已进入精简工作区。", current.name())),
+                    .map(|current| i18n.entered_workspace_fmt.replace("{}", &current.name())),
                 "repository.open",
             );
         }
 
-        self.sync_shell_state();
+        self.sync_shell_state(Some(i18n));
         if let Some(active_path) = self
             .current_repository
             .as_ref()
@@ -894,7 +940,7 @@ impl AppState {
         self.mark_workspace_refreshed(Instant::now());
     }
 
-    pub fn switch_to_project(&mut self, path: &Path) -> Result<(), String> {
+    pub fn switch_to_project(&mut self, path: &Path, i18n: &I18n) -> Result<(), String> {
         if !path.exists() {
             self.project_history
                 .retain(|entry| entry.path.as_path() != path);
@@ -903,15 +949,15 @@ impl AppState {
                 .as_ref()
                 .map(|current| current.path().to_path_buf());
             self.persist_workspace_memory(active_path.as_deref());
-            return Err(format!("项目目录不存在: {}", path.display()));
+            return Err(i18n.project_dir_not_exist_fmt.replace("{}", &path.display().to_string()));
         }
 
-        let repo = Repository::discover(path).map_err(|error| format!("无法打开项目: {error}"))?;
-        self.set_repository(repo);
+        let repo = Repository::discover(path).map_err(|error| i18n.cannot_open_project_fmt.replace("{}", &error.to_string()))?;
+        self.set_repository(repo, i18n);
         Ok(())
     }
 
-    pub fn clear_repository(&mut self) {
+    pub fn clear_repository(&mut self, i18n: &I18n) {
         self.current_repository = None;
         self.staged_changes.clear();
         self.unstaged_changes.clear();
@@ -936,48 +982,49 @@ impl AppState {
         self.reset_auto_refresh_state();
         self.view_mode = ViewMode::Welcome;
         self.shell.active_section = ShellSection::Welcome;
-        self.sync_shell_state();
-        self.sync_context_feedback();
+        self.sync_shell_state(Some(i18n));
+        self.sync_context_feedback(Some(i18n));
         self.persist_workspace_memory(None);
     }
 
-    pub fn open_auxiliary_view(&mut self, view: AuxiliaryView) {
+    pub fn open_auxiliary_view(&mut self, view: AuxiliaryView, i18n: &I18n) {
         self.close_toolbar_remote_menu();
         self.close_history_commit_diff_popup();
         if view == AuxiliaryView::Branches {
             self.auxiliary_view = None;
             self.show_branch_dropdown = true;
             self.view_mode = ViewMode::Repository;
-            self.sync_shell_state();
+            self.sync_shell_state(Some(i18n));
             return;
         }
 
         self.show_branch_dropdown = false;
         self.auxiliary_view = Some(view);
         self.view_mode = ViewMode::Repository;
-        self.sync_shell_state();
+        self.sync_shell_state(Some(i18n));
     }
 
-    pub fn close_auxiliary_view(&mut self) {
+    pub fn close_auxiliary_view(&mut self, i18n: &I18n) {
         self.close_toolbar_remote_menu();
         self.close_history_commit_diff_popup();
         self.auxiliary_view = None;
         self.show_branch_dropdown = false;
-        self.sync_shell_state();
+        self.sync_shell_state(Some(i18n));
     }
 
-    pub fn switch_git_tool_window_tab(&mut self, tab: GitToolWindowTab) {
+    pub fn switch_git_tool_window_tab(&mut self, tab: GitToolWindowTab, i18n: &I18n) {
         self.close_toolbar_remote_menu();
         self.close_history_commit_diff_popup();
         self.auxiliary_view = None;
         self.show_branch_dropdown = false;
         self.shell.git_tool_window_tab = tab;
-        self.sync_shell_state();
+        self.sync_shell_state(Some(i18n));
     }
 
     pub fn toggle_toolbar_remote_menu(
         &mut self,
         action: ToolbarRemoteAction,
+        i18n: &I18n,
     ) -> Result<(), String> {
         if self
             .toolbar_remote_menu
@@ -991,10 +1038,10 @@ impl AppState {
         let repo = self
             .current_repository
             .as_ref()
-            .ok_or_else(|| "没有打开的仓库".to_string())?;
+            .ok_or_else(|| i18n.no_repo_opened.to_string())?;
         let preferred_remote = repo.current_upstream_remote();
         let remotes = git_core::remote::list_remotes(repo)
-            .map_err(|error| format!("加载远程失败: {error}"))?
+            .map_err(|error| i18n.load_remote_failed_fmt.replace("{}", &error.to_string()))?
             .into_iter()
             .filter(|remote| {
                 preferred_remote
@@ -1032,7 +1079,7 @@ impl AppState {
             compact: false,
             sticky: true,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn set_info(
@@ -1051,7 +1098,7 @@ impl AppState {
             compact: true,
             sticky: false,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn set_empty(
@@ -1071,7 +1118,7 @@ impl AppState {
             compact: true,
             sticky: false,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn set_success(
@@ -1090,7 +1137,7 @@ impl AppState {
             compact: true,
             sticky: false,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn set_warning(
@@ -1109,7 +1156,7 @@ impl AppState {
             compact: false,
             sticky: true,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn set_error(&mut self, error: String) {
@@ -1118,13 +1165,28 @@ impl AppState {
         self.toast_notification = None;
         self.feedback = Some(FeedbackState {
             level: FeedbackLevel::Error,
-            title: "操作失败".to_string(),
+            title: error.clone(),
             detail: Some(error),
             source: "app.error",
             compact: false,
             sticky: true,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
+    }
+
+    pub fn set_error_i18n(&mut self, error: String, i18n: &I18n) {
+        self.error_message = Some(error.clone());
+        self.is_loading = false;
+        self.toast_notification = None;
+        self.feedback = Some(FeedbackState {
+            level: FeedbackLevel::Error,
+            title: i18n.operation_failed.to_string(),
+            detail: Some(error),
+            source: "app.error",
+            compact: false,
+            sticky: true,
+        });
+        self.sync_status_surface(None);
     }
 
     pub fn set_error_with_source(
@@ -1145,12 +1207,12 @@ impl AppState {
             compact: false,
             sticky: true,
         });
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn clear_feedback(&mut self) {
         self.feedback = None;
-        self.sync_status_surface();
+        self.sync_status_surface(None);
     }
 
     pub fn show_toast(
@@ -1177,45 +1239,42 @@ impl AppState {
             .is_some_and(|toast| now >= toast.expires_at)
     }
 
-    pub fn recovery_hint_for_source(&self, source: &'static str) -> Option<String> {
+    pub fn recovery_hint_for_source(&self, source: &'static str, i18n: &I18n) -> Option<String> {
         match source {
             "repository.open" => {
-                Some("下一步：重新选择仓库目录，或先初始化一个新的 Git 仓库。".to_string())
+                Some(i18n.recovery_hint_open_repo.to_string())
             }
             "repository.init" => {
-                Some("下一步：重新选择一个可写目录，然后再次初始化仓库。".to_string())
+                Some(i18n.recovery_hint_init_repo.to_string())
             }
             "repository.refresh" => {
-                Some("下一步：可再次刷新状态，或留在主工作区继续查看当前分支与变更。".to_string())
+                Some(i18n.recovery_hint_refresh.to_string())
             }
             "workspace.select_change" => {
-                Some("下一步：重新选择文件，或先刷新工作区状态再试一次。".to_string())
+                Some(i18n.recovery_hint_select_change.to_string())
             }
             "workspace.conflicts" | "shell.conflicts" => {
-                Some("下一步：刷新冲突状态；如果问题仍在，先返回变更视图确认仓库状态。".to_string())
+                Some(i18n.recovery_hint_conflicts.to_string())
             }
             "shell.changes" => {
                 if self.workspace_change_count() == 0 {
-                    Some(
-                        "下一步：刷新仓库状态，或打开历史、分支等辅助视图继续判断当前上下文。"
-                            .to_string(),
-                    )
+                    Some(i18n.recovery_hint_changes_empty.to_string())
                 } else {
-                    Some("下一步：从左侧列表选择一个文件，右侧差异区会立即显示内容。".to_string())
+                    Some(i18n.recovery_hint_changes_select.to_string())
                 }
             }
             "app.error" => {
                 if self.current_repository.is_some() {
-                    Some("下一步：先刷新当前仓库状态，再重新执行刚才的操作。".to_string())
+                    Some(i18n.recovery_hint_error_with_repo.to_string())
                 } else {
-                    Some("下一步：重新打开仓库，或先初始化一个新的仓库。".to_string())
+                    Some(i18n.recovery_hint_error_no_repo.to_string())
                 }
             }
             _ => None,
         }
     }
 
-    pub fn feedback_next_step(&self) -> Option<FeedbackNextStep> {
+    pub fn feedback_next_step(&self, i18n: &I18n) -> Option<FeedbackNextStep> {
         let feedback = self.feedback.as_ref()?;
 
         if !matches!(
@@ -1246,15 +1305,15 @@ impl AppState {
         };
 
         Some(FeedbackNextStep {
-            title: "下一步".to_string(),
+            title: i18n.next_step_label.to_string(),
             detail: self
-                .recovery_hint_for_source(feedback.source)
-                .unwrap_or_else(|| "下一步：从当前页面的主操作入口继续。".to_string()),
+                .recovery_hint_for_source(feedback.source, i18n)
+                .unwrap_or_else(|| i18n.recovery_hint_default.to_string()),
             action,
         })
     }
 
-    pub fn sync_context_feedback(&mut self) {
+    fn sync_context_feedback(&mut self, i18n: Option<&I18n>) {
         if self.is_loading {
             return;
         }
@@ -1269,17 +1328,29 @@ impl AppState {
         }
 
         self.feedback = match self.shell.active_section {
-            ShellSection::Conflicts if !self.conflict_files.is_empty() => Some(FeedbackState {
-                level: FeedbackLevel::Warning,
-                title: format!("{} 个冲突待处理", self.conflict_files.len()),
-                detail: Some("先解决冲突，再继续其它 Git 操作。".to_string()),
-                source: "shell.conflicts",
-                compact: false,
-                sticky: true,
-            }),
+            ShellSection::Conflicts if !self.conflict_files.is_empty() => {
+                let title = if let Some(i18n) = i18n {
+                    i18n.conflicts_pending_fmt.replace("{}", &self.conflict_files.len().to_string())
+                } else {
+                    format!("{} conflicts pending", self.conflict_files.len())
+                };
+                let detail = if let Some(i18n) = i18n {
+                    i18n.resolve_conflicts_first.to_string()
+                } else {
+                    "Resolve conflicts before continuing other Git operations.".to_string()
+                };
+                Some(FeedbackState {
+                    level: FeedbackLevel::Warning,
+                    title,
+                    detail: Some(detail),
+                    source: "shell.conflicts",
+                    compact: false,
+                    sticky: true,
+                })
+            }
             _ => None,
         };
-        self.sync_status_surface();
+        self.sync_status_surface(i18n);
     }
 
     pub fn record_defect_observation(
@@ -1306,6 +1377,14 @@ impl AppState {
     }
 
     pub fn refresh_changes(&mut self) {
+        self.refresh_changes_inner(None);
+    }
+
+    pub fn refresh_changes_with_i18n(&mut self, i18n: &I18n) {
+        self.refresh_changes_inner(Some(i18n));
+    }
+
+    fn refresh_changes_inner(&mut self, i18n: Option<&I18n>) {
         if let Some(repo) = &self.current_repository {
             match git_core::index::get_status(repo) {
                 Ok(changes) => {
@@ -1341,7 +1420,7 @@ impl AppState {
                         if self.diff_source == DiffSource::Workspace {
                             let still_exists = changes.iter().any(|change| change.path == path);
                             if still_exists {
-                                if let Err(error) = self.load_diff_for_file(&path) {
+                                if let Err(error) = self.load_diff_for_file_with_i18n(&path, i18n) {
                                     self.set_error(error);
                                 }
                             } else {
@@ -1365,18 +1444,24 @@ impl AppState {
                     {
                         if let Some(path) = self.preferred_change_path() {
                             self.selected_change_path = Some(path.clone());
-                            if let Err(error) = self.load_diff_for_file(&path) {
+                            if let Err(error) = self.load_diff_for_file_with_i18n(&path, i18n) {
                                 self.set_error(error);
                             }
                         }
                     }
                 }
-                Err(error) => self.set_error(format!("获取变更失败: {}", error)),
+                Err(error) => {
+                    let msg = i18n.map_or_else(
+                        || format!("Failed to get changes: {}", error),
+                        |i| i.get_changes_failed_fmt.replace("{}", &error.to_string()),
+                    );
+                    self.set_error(msg);
+                }
             }
         }
 
         self.sync_commit_dialog_state();
-        self.sync_shell_state();
+        self.sync_shell_state(i18n);
     }
 
     fn sync_commit_dialog_state(&mut self) {
@@ -1395,25 +1480,25 @@ impl AppState {
         self.commit_dialog.ensure_preview_target();
     }
 
-    pub fn refresh_current_repository(&mut self, prefer_conflicts: bool) -> Result<(), String> {
+    pub fn refresh_current_repository(&mut self, prefer_conflicts: bool, i18n: &I18n) -> Result<(), String> {
         let previous_section = self.shell.active_section;
         let previous_auxiliary = self.auxiliary_view;
 
         let mut repo = self
             .current_repository
             .clone()
-            .ok_or_else(|| "没有打开的仓库".to_string())?;
+            .ok_or_else(|| i18n.no_repo_opened.to_string())?;
 
         repo.refresh()
-            .map_err(|error| format!("刷新仓库状态失败: {error}"))?;
+            .map_err(|error| i18n.refresh_repo_state_err_fmt.replace("{}", &error.to_string()))?;
         self.current_repository = Some(repo);
         self.is_loading = false;
         self.error_message = None;
 
-        self.refresh_changes();
+        self.refresh_changes_with_i18n(i18n);
 
         if self.has_conflicts() {
-            self.load_conflicts()?;
+            self.load_conflicts(i18n)?;
         } else {
             self.conflict_files.clear();
             self.selected_conflict_index = None;
@@ -1423,8 +1508,8 @@ impl AppState {
         }
 
         if prefer_conflicts && self.has_conflicts() {
-            self.close_auxiliary_view();
-            self.open_conflict_resolver()?;
+            self.close_auxiliary_view(i18n);
+            self.open_conflict_resolver(i18n)?;
             self.mark_workspace_refreshed(Instant::now());
             return Ok(());
         }
@@ -1436,12 +1521,12 @@ impl AppState {
             previous_section
         };
 
-        self.navigate_to(target_section);
+        self.navigate_to(target_section, i18n);
 
         if let Some(auxiliary) =
             previous_auxiliary.filter(|_| target_section != ShellSection::Conflicts)
         {
-            self.open_auxiliary_view(auxiliary);
+            self.open_auxiliary_view(auxiliary, i18n);
         }
 
         self.mark_workspace_refreshed(Instant::now());
@@ -1452,7 +1537,7 @@ impl AppState {
         self.conflicts_present
     }
 
-    pub fn load_conflicts(&mut self) -> Result<(), String> {
+    pub fn load_conflicts(&mut self, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             let previous_selected_path = self
                 .selected_conflict_index
@@ -1463,7 +1548,7 @@ impl AppState {
                 .and_then(|index| self.conflict_files.get(index))
                 .map(|conflict| conflict.path.clone());
             let conflict_paths = git_core::index::get_conflicted_files(repo)
-                .map_err(|error| format!("获取冲突文件列表失败: {}", error))?;
+                .map_err(|error| i18n.get_conflict_list_failed_fmt.replace("{}", &error.to_string()))?;
 
             self.conflict_files.clear();
 
@@ -1497,30 +1582,30 @@ impl AppState {
                 self.conflict_resolver = None;
             }
 
-            self.sync_shell_state();
+            self.sync_shell_state(Some(i18n));
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
-    pub fn open_conflict_resolver(&mut self) -> Result<(), String> {
+    pub fn open_conflict_resolver(&mut self, i18n: &I18n) -> Result<(), String> {
         if self.has_conflicts() {
-            self.load_conflicts()?;
+            self.load_conflicts(i18n)?;
             self.auxiliary_view = None;
             self.view_mode = ViewMode::ConflictResolver;
             self.shell.active_section = ShellSection::Conflicts;
             self.conflict_merge_index = None;
             self.conflict_resolver = None;
-            self.sync_shell_state();
-            self.sync_context_feedback();
+            self.sync_shell_state(Some(i18n));
+            self.sync_context_feedback(Some(i18n));
             Ok(())
         } else {
-            Err("没有冲突需要解决".to_string())
+            Err(i18n.no_conflicts_to_resolve.to_string())
         }
     }
 
-    pub fn close_conflict_resolver(&mut self) {
+    pub fn close_conflict_resolver(&mut self, i18n: &I18n) {
         self.view_mode = ViewMode::Repository;
         self.conflict_files.clear();
         self.selected_conflict_index = None;
@@ -1528,8 +1613,8 @@ impl AppState {
         self.auto_merge_result = None;
         self.conflict_resolver = None;
         self.shell.active_section = ShellSection::Changes;
-        self.sync_shell_state();
-        self.sync_context_feedback();
+        self.sync_shell_state(Some(i18n));
+        self.sync_context_feedback(Some(i18n));
     }
 
     pub fn select_conflict(&mut self, index: usize) {
@@ -1552,9 +1637,9 @@ impl AppState {
             .and_then(|index| self.conflict_files.get(index))
     }
 
-    pub fn open_conflict_merge(&mut self, index: usize) -> Result<(), String> {
+    pub fn open_conflict_merge(&mut self, index: usize, i18n: &I18n) -> Result<(), String> {
         if index >= self.conflict_files.len() {
-            return Err("未找到所选冲突文件".to_string());
+            return Err(i18n.conflict_file_not_found_state.to_string());
         }
 
         self.selected_conflict_index = Some(index);
@@ -1580,7 +1665,7 @@ impl AppState {
         }
     }
 
-    pub fn stage_file(&mut self, path: String) -> Result<(), String> {
+    pub fn stage_file(&mut self, path: String, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             let source_list = if self.unstaged_changes.iter().any(|c| c.path == path) {
                 &self.unstaged_changes
@@ -1592,65 +1677,65 @@ impl AppState {
             let next_path = self.compute_next_selection(&path, source_list);
 
             git_core::index::stage_file(repo, std::path::Path::new(&path))
-                .map_err(|error| format!("暂存文件失败: {}", error))?;
-            self.refresh_changes();
+                .map_err(|error| i18n.stage_file_err_fmt.replace("{}", &error.to_string()))?;
+            self.refresh_changes_with_i18n(i18n);
 
             if let Some(next) = next_path {
                 self.selected_change_path = Some(next.clone());
-                let _ = self.load_diff_for_file(&next);
+                let _ = self.load_diff_for_file_with_i18n(&next, Some(i18n));
             }
 
-            self.set_success("文件已暂存", Some(path), "workspace.stage_file");
+            self.set_success(i18n.file_staged, Some(path), "workspace.stage_file");
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
-    pub fn unstage_file(&mut self, path: String) -> Result<(), String> {
+    pub fn unstage_file(&mut self, path: String, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             let next_path = self.compute_next_selection(&path, &self.staged_changes);
 
             git_core::index::unstage_file(repo, std::path::Path::new(&path))
-                .map_err(|error| format!("取消暂存失败: {}", error))?;
-            self.refresh_changes();
+                .map_err(|error| i18n.unstage_err_fmt.replace("{}", &error.to_string()))?;
+            self.refresh_changes_with_i18n(i18n);
 
             if let Some(next) = next_path {
                 self.selected_change_path = Some(next.clone());
-                let _ = self.load_diff_for_file(&next);
+                let _ = self.load_diff_for_file_with_i18n(&next, Some(i18n));
             }
 
-            self.set_success("已取消暂存", Some(path), "workspace.unstage_file");
+            self.set_success(i18n.file_unstaged, Some(path), "workspace.unstage_file");
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
-    pub fn stage_all(&mut self) -> Result<(), String> {
+    pub fn stage_all(&mut self, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
-            git_core::index::stage_all(repo).map_err(|error| format!("暂存全部失败: {}", error))?;
-            self.refresh_changes();
-            self.set_success("已暂存全部变更", None, "workspace.stage_all");
+            git_core::index::stage_all(repo).map_err(|error| i18n.stage_all_err_fmt.replace("{}", &error.to_string()))?;
+            self.refresh_changes_with_i18n(i18n);
+            self.set_success(i18n.all_changes_staged, None, "workspace.stage_all");
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
-    pub fn unstage_all(&mut self) -> Result<(), String> {
+    pub fn unstage_all(&mut self, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             git_core::index::unstage_all(repo)
-                .map_err(|error| format!("取消暂存全部失败: {}", error))?;
-            self.refresh_changes();
-            self.set_success("已取消全部暂存", None, "workspace.unstage_all");
+                .map_err(|error| i18n.unstage_all_err_fmt.replace("{}", &error.to_string()))?;
+            self.refresh_changes_with_i18n(i18n);
+            self.set_success(i18n.all_changes_unstaged, None, "workspace.unstage_all");
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
-    pub fn load_diff(&mut self) -> Result<(), String> {
+    pub fn load_diff(&mut self, i18n: &I18n) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             match git_core::diff::diff_workdir_to_index(repo) {
                 Ok(diff) => {
@@ -1659,10 +1744,10 @@ impl AppState {
                     self.show_diff = true;
                     Ok(())
                 }
-                Err(error) => Err(format!("加载差异失败: {}", error)),
+                Err(error) => Err(i18n.load_diff_err_fmt.replace("{}", &error.to_string())),
             }
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.no_repo_opened.to_string())
         }
     }
 
@@ -1705,7 +1790,7 @@ impl AppState {
         self.editor_diff = None;
         self.split_diff_editor = None;
         self.unified_diff_editor = None;
-        self.sync_shell_state();
+        self.sync_shell_state(None::<&I18n>);
 
         let result = self.load_diff_for_file(&path);
 
@@ -1733,18 +1818,31 @@ impl AppState {
     }
 
     pub fn load_diff_for_file(&mut self, path: &str) -> Result<(), String> {
+        self.load_diff_for_file_with_i18n(path, None)
+    }
+
+    pub fn load_diff_for_file_with_i18n(&mut self, path: &str, i18n: Option<&I18n>) -> Result<(), String> {
         if let Some(repo) = &self.current_repository {
             let selected_change = self
                 .selected_change()
                 .cloned()
-                .ok_or_else(|| "未找到所选文件".to_string())?;
+                .ok_or_else(|| i18n.map_or_else(
+                    || "Selected file not found".to_string(),
+                    |i| i.file_not_found.to_string(),
+                ))?;
 
             let diff = if selected_change.staged && !selected_change.unstaged {
                 git_core::diff::diff_index_to_head(repo, std::path::Path::new(path))
-                    .map_err(|error| format!("加载已暂存差异失败: {}", error))?
+                    .map_err(|error| i18n.map_or_else(
+                        || format!("Failed to load staged diff: {}", error),
+                        |i| i.load_staged_diff_err_state_fmt.replace("{}", &error.to_string()),
+                    ))?
             } else {
                 git_core::diff::diff_file_to_index(repo, std::path::Path::new(path))
-                    .map_err(|error| format!("加载文件差异失败: {}", error))?
+                    .map_err(|error| i18n.map_or_else(
+                        || format!("Failed to load file diff: {}", error),
+                        |i| i.load_file_diff_err_state_fmt.replace("{}", &error.to_string()),
+                    ))?
             };
 
             self.current_diff = Some(diff);
@@ -1753,7 +1851,10 @@ impl AppState {
             self.show_diff = true;
             Ok(())
         } else {
-            Err("没有打开的仓库".to_string())
+            Err(i18n.map_or_else(
+                || "No repository opened".to_string(),
+                |i| i.no_repo_opened.to_string(),
+            ))
         }
     }
 
@@ -1822,7 +1923,7 @@ pub(crate) fn compute_hunk_offset(diff: &git_core::diff::Diff, hunk_index: usize
 }
 
 impl AppState {
-    fn sync_shell_state(&mut self) {
+    fn sync_shell_state(&mut self, i18n_ref: Option<&I18n>) {
         if let Some(repo) = &self.current_repository {
             let branch = repo.current_branch_display();
             let repo_name = repo.name();
@@ -1833,13 +1934,34 @@ impl AppState {
             let sync_hint = repo.sync_status_hint();
             let preserved_tab = self.shell.git_tool_window_tab;
 
+            let branch_actions_label = i18n_ref.map_or_else(
+                || "Branches & Actions".to_string(),
+                |i| i.branch_actions.to_string(),
+            );
+            let conflicts_label = i18n_ref.map_or_else(
+                || "Conflicts".to_string(),
+                |i| i.conflicts.to_string(),
+            );
+            let handle_conflicts_label = i18n_ref.map_or_else(
+                || "Handle Conflicts".to_string(),
+                |i| i.handle_conflicts.to_string(),
+            );
+            let close_label = i18n_ref.map_or_else(
+                || "Close".to_string(),
+                |i| i.close.to_string(),
+            );
+            let current_focus_label = i18n_ref.map_or_else(
+                || "Current Focus".to_string(),
+                |i| i.current_focus.to_string(),
+            );
+
             let mut shell = match self.shell.active_section {
                 ShellSection::Changes | ShellSection::Welcome => AppShellState {
                     active_section: ShellSection::Changes,
                     git_tool_window_tab: preserved_tab,
                     title: repo_name.clone(),
                     subtitle: branch.clone(),
-                    primary_action_label: "分支与操作".to_string(),
+                    primary_action_label: branch_actions_label.clone(),
                     context_switcher: WorkspaceContextSwitcher::default(),
                     chrome: PrimaryWorkspaceChrome::default(),
                     status_surface: LightweightStatusSurface::default(),
@@ -1848,8 +1970,8 @@ impl AppState {
                     active_section: ShellSection::Conflicts,
                     git_tool_window_tab: preserved_tab,
                     title: repo_name.clone(),
-                    subtitle: "冲突".to_string(),
-                    primary_action_label: "处理冲突".to_string(),
+                    subtitle: conflicts_label,
+                    primary_action_label: handle_conflicts_label,
                     context_switcher: WorkspaceContextSwitcher::default(),
                     chrome: PrimaryWorkspaceChrome::default(),
                     status_surface: LightweightStatusSurface::default(),
@@ -1867,9 +1989,9 @@ impl AppState {
                     | AuxiliaryView::Worktrees
                     | AuxiliaryView::Settings => {}
                     AuxiliaryView::Branches => {
-                        shell.title = "分支与操作".to_string();
+                        shell.title = branch_actions_label;
                         shell.subtitle = branch.clone();
-                        shell.primary_action_label = "关闭".to_string();
+                        shell.primary_action_label = close_label;
                     }
                 }
             }
@@ -1884,11 +2006,11 @@ impl AppState {
                 secondary_label: self
                     .auxiliary_view
                     .filter(|view| is_docked_auxiliary_view(*view))
-                    .map(auxiliary_label)
+                    .map(|v| auxiliary_label(v, i18n_ref))
                     .or_else(|| {
                         self.selected_change_path
                             .as_ref()
-                            .map(|_| "当前焦点".to_string())
+                            .map(|_| current_focus_label)
                     }),
                 overflow_behavior: if repo_name.len() > 28 || shell.subtitle.len() > 20 {
                     OverflowBehavior::HorizontalScroll
@@ -1939,13 +2061,16 @@ impl AppState {
                 tool_window_title: self
                     .auxiliary_view
                     .filter(|view| is_docked_auxiliary_view(*view))
-                    .map(auxiliary_label),
+                    .map(|v| auxiliary_label(v, i18n_ref)),
             };
 
             self.shell = shell;
-            self.sync_status_surface();
+            self.sync_status_surface(i18n_ref);
         } else {
-            self.shell = AppShellState::new();
+            self.shell = match i18n_ref {
+                Some(i18n) => AppShellState::new_with_i18n(i18n),
+                None => AppShellState::new(),
+            };
         }
     }
 
@@ -1985,7 +2110,7 @@ impl AppState {
             .map(|change| change.path.clone())
     }
 
-    fn sync_status_surface(&mut self) {
+    fn sync_status_surface(&mut self, i18n: Option<&I18n>) {
         self.shell.status_surface = if let Some(feedback) = self.feedback.as_ref() {
             LightweightStatusSurface {
                 message: Some(feedback.title.clone()),
@@ -2019,8 +2144,8 @@ impl AppState {
             }
         } else if self.current_repository.is_none() {
             LightweightStatusSurface {
-                message: Some("未打开仓库".to_string()),
-                detail: Some("选择仓库后会直接进入精简工作区。".to_string()),
+                message: Some(i18n.map_or_else(|| "No repository opened".to_string(), |i| i.no_repo_status.to_string())),
+                detail: Some(i18n.map_or_else(|| "Select a repository to enter the workspace.".to_string(), |i| i.no_repo_status_detail.to_string())),
                 severity: StatusSeverity::Info,
                 persistence: StatusPersistence::Ephemeral,
                 placement: StatusPlacement::StatusBar,
@@ -2028,8 +2153,8 @@ impl AppState {
             }
         } else if self.has_conflicts() && self.shell.active_section != ShellSection::Conflicts {
             LightweightStatusSurface {
-                message: Some("存在冲突".to_string()),
-                detail: Some("先处理冲突，再继续其它 Git 操作。".to_string()),
+                message: Some(i18n.map_or_else(|| "Conflicts present".to_string(), |i| i.has_conflicts_status.to_string())),
+                detail: Some(i18n.map_or_else(|| "Handle conflicts before other Git operations.".to_string(), |i| i.handle_conflicts_first.to_string())),
                 severity: StatusSeverity::Warning,
                 persistence: StatusPersistence::StickyUntilDismissed,
                 placement: StatusPlacement::StatusBar,
@@ -2037,7 +2162,7 @@ impl AppState {
             }
         } else if self.workspace_change_count() == 0 {
             LightweightStatusSurface {
-                message: Some("工作区干净".to_string()),
+                message: Some(i18n.map_or_else(|| "Workspace clean".to_string(), |i| i.workspace_clean.to_string())),
                 detail: None,
                 severity: StatusSeverity::Info,
                 persistence: StatusPersistence::Ephemeral,
@@ -2046,7 +2171,10 @@ impl AppState {
             }
         } else {
             LightweightStatusSurface {
-                message: Some(format!("{} 项变更", self.workspace_change_count())),
+                message: Some(i18n.map_or_else(
+                    || format!("{} changes", self.workspace_change_count()),
+                    |i| i.n_changes_count_fmt.replace("{}", &self.workspace_change_count().to_string()),
+                )),
                 detail: self.selected_change_path.clone(),
                 severity: StatusSeverity::Info,
                 persistence: StatusPersistence::Ephemeral,
@@ -2159,17 +2287,25 @@ fn sync_label(status: &SyncStatus) -> String {
     }
 }
 
-fn auxiliary_label(view: AuxiliaryView) -> String {
-    match view {
-        AuxiliaryView::Commit => "提交".to_string(),
-        AuxiliaryView::Branches => "分支".to_string(),
-        AuxiliaryView::History => "历史".to_string(),
-        AuxiliaryView::Remotes => "远程".to_string(),
-        AuxiliaryView::Tags => "标签".to_string(),
-        AuxiliaryView::Stashes => "储藏".to_string(),
-        AuxiliaryView::Rebase => "Rebase".to_string(),
-        AuxiliaryView::Worktrees => "工作树".to_string(),
-        AuxiliaryView::Settings => "设置".to_string(),
+fn auxiliary_label(view: AuxiliaryView, i18n: Option<&I18n>) -> String {
+    match (view, i18n) {
+        (AuxiliaryView::Commit, Some(i)) => i.aux_commit.to_string(),
+        (AuxiliaryView::Branches, Some(i)) => i.aux_branches.to_string(),
+        (AuxiliaryView::History, Some(i)) => i.aux_history.to_string(),
+        (AuxiliaryView::Remotes, Some(i)) => i.aux_remotes.to_string(),
+        (AuxiliaryView::Tags, Some(i)) => i.aux_tags.to_string(),
+        (AuxiliaryView::Stashes, Some(i)) => i.aux_stashes.to_string(),
+        (AuxiliaryView::Rebase, _) => "Rebase".to_string(),
+        (AuxiliaryView::Worktrees, Some(i)) => i.aux_worktrees.to_string(),
+        (AuxiliaryView::Settings, Some(i)) => i.aux_settings.to_string(),
+        (AuxiliaryView::Commit, None) => "Commit".to_string(),
+        (AuxiliaryView::Branches, None) => "Branches".to_string(),
+        (AuxiliaryView::History, None) => "History".to_string(),
+        (AuxiliaryView::Remotes, None) => "Remotes".to_string(),
+        (AuxiliaryView::Tags, None) => "Tags".to_string(),
+        (AuxiliaryView::Stashes, None) => "Stashes".to_string(),
+        (AuxiliaryView::Worktrees, None) => "Worktrees".to_string(),
+        (AuxiliaryView::Settings, None) => "Settings".to_string(),
     }
 }
 
@@ -2180,6 +2316,7 @@ pub fn is_docked_auxiliary_view(_view: AuxiliaryView) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{AppState, PersistedWorkspaceMemory, ProjectEntry, RecoveryAction, ShellSection};
+    use crate::i18n::EN;
     use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
     use std::path::PathBuf;
     use std::time::{Duration, Instant};
@@ -2317,7 +2454,7 @@ mod tests {
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
 
-        state.set_repository(repo);
+        state.set_repository(repo, &EN);
 
         let items = state.navigation_items();
         assert_eq!(items.len(), 2);
@@ -2334,8 +2471,8 @@ mod tests {
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
 
-        state.set_repository(repo);
-        state.navigate_to(ShellSection::Welcome);
+        state.set_repository(repo, &EN);
+        state.navigate_to(ShellSection::Welcome, &EN);
 
         assert_eq!(state.shell.active_section, ShellSection::Changes);
         assert_eq!(state.view_mode, super::ViewMode::Repository);
@@ -2350,8 +2487,8 @@ mod tests {
         let expected_subtitle = repo.current_branch_display();
         let mut state = AppState::new();
 
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log, &EN);
 
         assert_eq!(state.shell.title, expected_title);
         assert_eq!(state.shell.subtitle, expected_subtitle);
@@ -2365,10 +2502,10 @@ mod tests {
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
 
-        state.set_repository(repo);
-        state.set_empty("工作区干净", None, "shell.changes");
+        state.set_repository(repo, &EN);
+        state.set_empty("Workspace clean", None, "shell.changes");
 
-        let next_step = state.feedback_next_step().expect("expected next step");
+        let next_step = state.feedback_next_step(&EN).expect("expected next step");
         assert_eq!(next_step.action, RecoveryAction::Refresh);
     }
 
@@ -2378,9 +2515,9 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
+        state.set_repository(repo, &EN);
         state.auxiliary_view = Some(super::AuxiliaryView::Branches);
-        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log, &EN);
         assert!(state.auxiliary_view.is_none());
         assert_eq!(
             state.shell.git_tool_window_tab,
@@ -2394,9 +2531,9 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
+        state.set_repository(repo, &EN);
 
-        state.open_auxiliary_view(super::AuxiliaryView::Branches);
+        state.open_auxiliary_view(super::AuxiliaryView::Branches, &EN);
 
         assert!(state.auxiliary_view.is_none());
         assert!(state.show_branch_dropdown);
@@ -2409,10 +2546,10 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
+        state.set_repository(repo, &EN);
         state.view_mode = super::ViewMode::ConflictResolver;
         state.shell.active_section = super::ShellSection::Conflicts;
-        state.close_conflict_resolver();
+        state.close_conflict_resolver(&EN);
         assert_eq!(state.view_mode, super::ViewMode::Repository);
         assert_eq!(state.shell.active_section, super::ShellSection::Changes);
         assert!(state.conflict_files.is_empty());
@@ -2424,11 +2561,11 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Log, &EN);
         // Simulate what the toolbar Commit button handler does.
-        state.navigate_to(super::ShellSection::Changes);
-        state.switch_git_tool_window_tab(super::GitToolWindowTab::Changes);
+        state.navigate_to(super::ShellSection::Changes, &EN);
+        state.switch_git_tool_window_tab(super::GitToolWindowTab::Changes, &EN);
         assert_eq!(
             state.shell.git_tool_window_tab,
             super::GitToolWindowTab::Changes
@@ -2440,7 +2577,7 @@ mod tests {
     fn log_tab_all_is_not_closable() {
         let tab = super::LogTab::all();
         assert!(!tab.is_closable);
-        assert_eq!(tab.label, "全部");
+        assert_eq!(tab.label, "All");
         assert!(tab.branch_filter.is_none());
     }
 
@@ -2520,7 +2657,7 @@ mod tests {
             None,
         );
 
-        state.open_auxiliary_view(super::AuxiliaryView::Settings);
+        state.open_auxiliary_view(super::AuxiliaryView::Settings, &EN);
 
         assert!(state.history_commit_diff_popup.is_none());
     }

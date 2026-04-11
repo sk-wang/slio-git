@@ -13,6 +13,7 @@ pub mod widgets;
 
 use crate::components::status_icons::FileStatus;
 use crate::file_watcher::RepositoryWatchEvent;
+use crate::i18n::I18n;
 use crate::keyboard::{get_shortcuts, ShortcutAction};
 use crate::state::{
     is_docked_auxiliary_view, AppState, AuxiliaryView, DiffPresentation, GitToolWindowTab,
@@ -89,7 +90,8 @@ pub fn main() -> iced::Result {
                 git_core::updater::check_for_update(env!("CARGO_PKG_VERSION").to_string()),
                 |result| Message::UpdateCheckResult(result.ok().flatten()),
             );
-            (AppState::restore(), startup_task)
+            let init_i18n = i18n::locale(None);
+            (AppState::restore(init_i18n), startup_task)
         },
         update,
         view,
@@ -143,12 +145,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         state.close_toolbar_remote_menu();
     }
 
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
+
     match message {
         Message::OpenRepository => {
             state.show_project_dropdown = false;
             state.set_loading(
-                "正在打开仓库",
-                Some("选择本地 Git 目录后会直接进入变更工作台。".to_string()),
+                i18n.opening_repo,
+                Some(i18n.opening_repo_detail.to_string()),
                 "repository.open",
             );
 
@@ -160,7 +164,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             &path.display().to_string(),
                             true,
                         );
-                        state.set_repository(repo);
+                        state.set_repository(repo, i18n);
                     }
                     Err(error) => {
                         logging::LogManager::log_repo_operation(
@@ -170,25 +174,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                         report_async_failure(
                             state,
-                            "无法打开仓库",
-                            format!("无法打开仓库: {}", error),
+                            i18n.cannot_open_repo,
+                            i18n.cannot_open_repo_fmt.replace("{}", &error.to_string()),
                             "repository.open",
                             "repository.open",
+                        i18n,
                         );
                     }
                 }
             } else {
                 state.set_empty(
-                    "未选择仓库目录",
-                    Some("你可以重新打开选择器，或先初始化一个新的 Git 仓库。".to_string()),
+                    i18n.no_repo_selected,
+                    Some(i18n.no_repo_selected_detail.to_string()),
                     "repository.open",
                 );
             }
         }
         Message::InitRepository => {
             state.set_loading(
-                "正在初始化仓库",
-                Some("选择一个目录后会立即创建 Git 仓库。".to_string()),
+                i18n.initializing_repo,
+                Some(i18n.initializing_repo_detail.to_string()),
                 "repository.init",
             );
 
@@ -200,7 +205,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             &path.display().to_string(),
                             true,
                         );
-                        state.set_repository(repo);
+                        state.set_repository(repo, i18n);
                     }
                     Err(error) => {
                         logging::LogManager::log_repo_operation(
@@ -210,17 +215,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                         report_async_failure(
                             state,
-                            "无法初始化仓库",
-                            format!("无法初始化仓库: {}", error),
+                            i18n.cannot_init_repo,
+                            i18n.cannot_init_repo_fmt.replace("{}", &error.to_string()),
                             "repository.init",
                             "repository.init",
+                        i18n,
                         );
                     }
                 }
             } else {
                 state.set_empty(
-                    "未选择初始化目录",
-                    Some("请选择一个目录来创建新的 Git 仓库。".to_string()),
+                    i18n.no_init_dir_selected,
+                    Some(i18n.no_init_dir_selected_detail.to_string()),
                     "repository.init",
                 );
             }
@@ -228,32 +234,33 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::Refresh => {
             let previous_section = state.shell.active_section;
             state.set_loading(
-                "正在刷新工作区",
-                Some("重新读取仓库状态和变更列表。".to_string()),
+                i18n.refreshing_workspace,
+                Some(i18n.refreshing_workspace_detail.to_string()),
                 "repository.refresh",
             );
 
             if state.current_repository.is_some() {
-                match state.refresh_current_repository(false) {
+                match state.refresh_current_repository(false, i18n) {
                     Ok(()) => {
                         if previous_section != ShellSection::Conflicts || !state.has_conflicts() {
-                            state.navigate_to(previous_section);
+                            state.navigate_to(previous_section, i18n);
                         }
                         refresh_workspace_views(state);
-                        state.set_success("仓库状态已刷新", None, "repository.refresh");
+                        state.set_success(i18n.repo_refreshed, None, "repository.refresh");
                     }
                     Err(error) => report_async_failure(
                         state,
-                        "刷新失败",
-                        format!("刷新失败: {}", error),
+                        i18n.refresh_failed,
+                        i18n.refresh_failed_fmt.replace("{}", &error.to_string()),
                         "repository.refresh",
                         "repository.refresh",
+                        i18n,
                     ),
                 }
             } else {
                 state.set_warning(
-                    "还没有打开仓库",
-                    Some("先从欢迎页打开一个仓库，再刷新状态。".to_string()),
+                    i18n.no_repo_open,
+                    Some(i18n.no_repo_open_detail.to_string()),
                     "repository.refresh",
                 );
             }
@@ -261,7 +268,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::AutoRefreshTick(now) => {
             let should_refresh_workspace = state.should_auto_refresh_workspace(now);
             if should_refresh_workspace {
-                if let Err(error) = state.refresh_current_repository(false) {
+                if let Err(error) = state.refresh_current_repository(false, i18n) {
                     warn!("Auto refresh workspace failed: {}", error);
                 } else {
                     refresh_workspace_views(state);
@@ -292,7 +299,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         .active_project_path()
                         .is_some_and(|path| path == result.repo_path.as_path())
                     {
-                        if let Err(error) = state.refresh_current_repository(false) {
+                        if let Err(error) = state.refresh_current_repository(false, i18n) {
                             warn!(
                                 "Auto refresh after remote fetch failed for {}: {}",
                                 result.repo_path.display(),
@@ -328,7 +335,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 state.mark_workspace_refresh_pending();
 
                 if !state.auto_refresh_suspended() {
-                    if let Err(error) = state.refresh_current_repository(false) {
+                    if let Err(error) = state.refresh_current_repository(false, i18n) {
                         warn!(
                             "Repository watcher refresh failed for {}: {}",
                             event.repo_path.display(),
@@ -347,17 +354,17 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::DismissToast => state.dismiss_toast(),
         Message::CloseRepository => {
-            state.clear_repository();
+            state.clear_repository(i18n);
             state.set_empty(
-                "仓库已关闭",
-                Some("可以重新打开其他仓库，或初始化一个新的 Git 仓库。".to_string()),
+                i18n.repo_closed,
+                Some(i18n.repo_closed_detail.to_string()),
                 "repository.close",
             );
         }
         Message::ShowChanges => {
             let previous_section = state.shell.active_section;
-            state.close_auxiliary_view();
-            state.navigate_to(ShellSection::Changes);
+            state.close_auxiliary_view(i18n);
+            state.navigate_to(ShellSection::Changes, i18n);
             log_shell_navigation(
                 previous_section,
                 state.shell.active_section,
@@ -366,14 +373,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::ShowConflicts => {
             let previous_section = state.shell.active_section;
-            state.close_auxiliary_view();
-            if let Err(error) = state.open_conflict_resolver() {
+            state.close_auxiliary_view(i18n);
+            if let Err(error) = state.open_conflict_resolver(i18n) {
                 report_async_failure(
                     state,
-                    "无法打开冲突视图",
+                    i18n.cannot_open_conflict_view,
                     error,
                     "workspace.conflicts",
                     "workspace.conflicts",
+                i18n,
                 );
             } else {
                 log_shell_navigation(
@@ -388,13 +396,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if state.selected_change_path.as_deref() != Some(&path) {
                 let _ = state.select_change(path.clone());
             }
-            if let Err(error) = state.stage_file(path) {
+            if let Err(error) = state.stage_file(path, i18n) {
                 report_async_failure(
                     state,
-                    "暂存文件失败",
+                    i18n.stage_file_failed,
                     error,
                     "workspace.stage_file",
                     "workspace.stage_file",
+                i18n,
                 );
             }
         }
@@ -402,35 +411,38 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if state.selected_change_path.as_deref() != Some(&path) {
                 let _ = state.select_change(path.clone());
             }
-            if let Err(error) = state.unstage_file(path) {
+            if let Err(error) = state.unstage_file(path, i18n) {
                 report_async_failure(
                     state,
-                    "取消暂存失败",
+                    i18n.unstage_file_failed,
                     error,
                     "workspace.unstage_file",
                     "workspace.unstage_file",
+                i18n,
                 );
             }
         }
         Message::StageAll => {
-            if let Err(error) = state.stage_all() {
+            if let Err(error) = state.stage_all(i18n) {
                 report_async_failure(
                     state,
-                    "暂存全部失败",
+                    i18n.stage_all_failed,
                     error,
                     "workspace.stage_all",
                     "workspace.stage_all",
+                i18n,
                 );
             }
         }
         Message::UnstageAll => {
-            if let Err(error) = state.unstage_all() {
+            if let Err(error) = state.unstage_all(i18n) {
                 report_async_failure(
                     state,
-                    "取消暂存全部失败",
+                    i18n.unstage_all_failed,
                     error,
                     "workspace.unstage_all",
                     "workspace.unstage_all",
+                i18n,
                 );
             }
         }
@@ -438,10 +450,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = state.select_change(path) {
                 report_async_failure(
                     state,
-                    "加载文件差异失败",
+                    i18n.load_file_diff_failed,
                     error,
                     "workspace.select_change",
                     "workspace.select_change",
+                i18n,
                 );
             }
             update_editor_diff_model(state);
@@ -504,19 +517,19 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ShowSettings => {
-            state.open_auxiliary_view(state::AuxiliaryView::Settings);
+            state.open_auxiliary_view(state::AuxiliaryView::Settings, i18n);
         }
         Message::SettingsMessage(msg) => {
             use views::settings_view::SettingsMessage;
             match &msg {
-                SettingsMessage::Close => state.close_auxiliary_view(),
+                SettingsMessage::Close => state.close_auxiliary_view(i18n),
                 SettingsMessage::SaveAndClose => {
                     state.git_settings.apply_message(&msg);
                     if let Err(e) = state.git_settings.save() {
                         log::warn!("Failed to persist git settings: {}", e);
                     }
-                    state.close_auxiliary_view();
-                    state.set_success("设置已保存", None, "settings.save");
+                    state.close_auxiliary_view(i18n);
+                    state.set_success(i18n.settings_saved, None, "settings.save");
                 }
                 other => state.git_settings.apply_message(other),
             }
@@ -546,19 +559,16 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                         ) {
                                             Ok(()) => {
                                                 state.set_success(
-                                                    "冲突已解决",
+                                                    i18n.conflict_resolved,
                                                     Some(conflict.path.clone()),
                                                     "merge_editor.apply",
                                                 );
                                                 state.close_conflict_merge();
                                                 state.merge_editor = None;
-                                                let _ = state.refresh_current_repository(true);
+                                                let _ = state.refresh_current_repository(true, i18n);
                                             }
                                             Err(e) => {
-                                                state.set_error(format!(
-                                                    "写回冲突解决结果失败: {}",
-                                                    e
-                                                ));
+                                                state.set_error(i18n.write_conflict_result_failed_fmt.replace("{}", &e.to_string()));
                                             }
                                         }
                                     }
@@ -596,10 +606,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(e) = git_core::stage_hunk(repo, file_path, hunk_index) {
                     report_async_failure(
                         state,
-                        "暂存区块失败",
+                        i18n.stage_hunk_failed,
                         e.to_string(),
                         "workspace.stage_hunk",
                         "workspace.stage_hunk",
+                    i18n,
                     );
                 } else {
                     return update(state, Message::Refresh);
@@ -612,10 +623,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(e) = git_core::unstage_hunk(repo, file_path, hunk_index) {
                     report_async_failure(
                         state,
-                        "取消暂存区块失败",
+                        i18n.unstage_hunk_failed,
                         e.to_string(),
                         "workspace.unstage_hunk",
                         "workspace.unstage_hunk",
+                    i18n,
                     );
                 } else {
                     return update(state, Message::Refresh);
@@ -653,7 +665,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         .current_upstream_remote()
                         .unwrap_or_else(|| "origin".to_string());
                     state.network_operation = Some(state::NetworkOperation {
-                        label: format!("强制推送 {} → {}", branch, remote),
+                        label: i18n.force_push_label_fmt.replace("{}", &branch).replacen("{}", &remote, 1),
                         progress: None,
                         status: Some("--force-with-lease".to_string()),
                     });
@@ -661,7 +673,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         Ok(()) => {
                             state.network_operation = None;
                             state.set_success(
-                                "强制推送成功",
+                                i18n.force_push_success,
                                 Some(format!("{branch} → {remote}")),
                                 "workspace.push.force",
                             );
@@ -670,10 +682,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             state.network_operation = None;
                             report_async_failure(
                                 state,
-                                "强制推送失败",
+                                i18n.force_push_failed,
                                 e.to_string(),
                                 "workspace.push.force",
                                 "workspace.push.force",
+                            i18n,
                             );
                         }
                     }
@@ -686,10 +699,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(e) = repo.set_branch_upstream(&branch, &upstream) {
                     report_async_failure(
                         state,
-                        "设置上游失败",
+                        i18n.set_upstream_failed,
                         e.to_string(),
                         "workspace.push.upstream",
                         "workspace.push.upstream",
+                    i18n,
                     );
                 } else {
                     return update(state, Message::Push);
@@ -714,7 +728,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::ShowWorktrees => {
             if let Ok(repo) = require_repository(state) {
                 state.worktree_state.load_worktrees(&repo);
-                state.open_auxiliary_view(state::AuxiliaryView::Worktrees);
+                state.open_auxiliary_view(state::AuxiliaryView::Worktrees, i18n);
             }
         }
         Message::WorktreeMessage(msg) => {
@@ -730,7 +744,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         state.worktree_state.remove_worktree(&repo, path);
                     }
                 }
-                WorktreeMessage::Close => state.close_auxiliary_view(),
+                WorktreeMessage::Close => state.close_auxiliary_view(i18n),
             }
         }
         Message::OpenInEditor(path) => {
@@ -744,13 +758,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::SwitchProject(path) => {
             state.show_project_dropdown = false;
-            if let Err(error) = state.switch_to_project(&path) {
+            if let Err(error) = state.switch_to_project(&path, i18n) {
                 report_async_failure(
                     state,
-                    "切换项目失败",
+                    i18n.switch_project_failed,
                     error,
                     "workspace.project-switch",
                     "workspace.project-switch",
+                i18n,
                 );
             }
         }
@@ -783,15 +798,16 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 {
                     report_async_failure(
                         state,
-                        "回滚文件失败",
+                        i18n.revert_file_failed,
                         error.to_string(),
                         "workspace.revert",
                         "workspace.revert",
+                    i18n,
                     );
                 } else {
                     state.refresh_changes();
                     state.close_change_context_menu();
-                    state.set_success("文件已回滚", Some(path), "workspace.revert");
+                    state.set_success(i18n.file_reverted, Some(path), "workspace.revert");
                 }
             }
         }
@@ -799,13 +815,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = copy_text_to_clipboard(&path) {
                 report_async_failure(
                     state,
-                    "复制路径失败",
+                    i18n.copy_path_failed,
                     error,
                     "workspace.copy_path",
                     "workspace.copy_path",
+                i18n,
                 );
             } else {
-                state.set_success("路径已复制到剪贴板", Some(path), "workspace.copy_path");
+                state.set_success(i18n.path_copied, Some(path), "workspace.copy_path");
                 state.close_change_context_menu();
             }
         }
@@ -815,61 +832,65 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     let can_stage = state.unstaged_changes.iter().any(|c| c.path == path)
                         || state.untracked_files.iter().any(|c| c.path == path);
                     if can_stage {
-                        if let Err(error) = state.stage_file(path) {
+                        if let Err(error) = state.stage_file(path, i18n) {
                             report_async_failure(
                                 state,
-                                "暂存文件失败",
+                                i18n.stage_file_failed,
                                 error,
                                 "keyboard.stage",
                                 "keyboard.stage",
+                            i18n,
                             );
                         }
                     } else {
-                        state.set_info("文件已暂存或无法暂存", None, "keyboard.stage");
+                        state.set_info(i18n.file_already_staged, None, "keyboard.stage");
                     }
                 } else {
-                    state.set_info("请先选择一个文件", None, "keyboard.stage");
+                    state.set_info(i18n.select_file_first, None, "keyboard.stage");
                 }
             }
             ShortcutAction::UnstageFile => {
                 if let Some(path) = state.selected_change_path.clone() {
                     let can_unstage = state.staged_changes.iter().any(|c| c.path == path);
                     if can_unstage {
-                        if let Err(error) = state.unstage_file(path) {
+                        if let Err(error) = state.unstage_file(path, i18n) {
                             report_async_failure(
                                 state,
-                                "取消暂存失败",
+                                i18n.unstage_file_failed,
                                 error,
                                 "keyboard.unstage",
                                 "keyboard.unstage",
+                            i18n,
                             );
                         }
                     } else {
-                        state.set_info("文件未暂存", None, "keyboard.unstage");
+                        state.set_info(i18n.file_not_staged, None, "keyboard.unstage");
                     }
                 } else {
-                    state.set_info("请先选择一个文件", None, "keyboard.unstage");
+                    state.set_info(i18n.select_file_first, None, "keyboard.unstage");
                 }
             }
             ShortcutAction::StageAll => {
-                if let Err(error) = state.stage_all() {
+                if let Err(error) = state.stage_all(i18n) {
                     report_async_failure(
                         state,
-                        "暂存全部失败",
+                        i18n.stage_all_failed,
                         error,
                         "workspace.stage_all",
                         "workspace.stage_all",
+                    i18n,
                     );
                 }
             }
             ShortcutAction::UnstageAll => {
-                if let Err(error) = state.unstage_all() {
+                if let Err(error) = state.unstage_all(i18n) {
                     report_async_failure(
                         state,
-                        "取消暂存全部失败",
+                        i18n.unstage_all_failed,
                         error,
                         "workspace.unstage_all",
                         "workspace.unstage_all",
+                    i18n,
                     );
                 }
             }
@@ -878,10 +899,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = open_commit_dialog(state) {
                     report_async_failure(
                         state,
-                        "无法打开提交面板",
+                        i18n.cannot_open_commit_panel,
                         error,
                         "workspace.commit",
                         "workspace.commit",
+                    i18n,
                     );
                 }
             }
@@ -889,10 +911,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = toggle_commit_dialog_amend_mode(state) {
                     report_async_failure(
                         state,
-                        "无法切换 amend 模式",
+                        i18n.cannot_toggle_amend,
                         error,
                         "workspace.commit",
                         "workspace.commit.amend",
+                    i18n,
                     );
                 }
             }
@@ -900,13 +923,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = open_remote_dialog(state) {
                     report_async_failure(
                         state,
-                        "无法打开远程面板",
+                        i18n.cannot_open_remote_panel,
                         error,
                         "workspace.push",
                         "workspace.push",
+                    i18n,
                     );
                 } else {
-                    state.set_info("已打开远程面板", None, "keyboard.shortcut");
+                    state.set_info(i18n.remote_panel_opened, None, "keyboard.shortcut");
                 }
             }
             ShortcutAction::ShowFileDiff => {
@@ -914,14 +938,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Err(error) = state.load_diff_for_file(&path) {
                         report_async_failure(
                             state,
-                            "加载差异失败",
+                            i18n.load_diff_failed,
                             error,
                             "keyboard.diff",
                             "keyboard.diff",
+                        i18n,
                         );
                     }
                 } else {
-                    state.set_info("请先选择一个文件以查看差异", None, "keyboard.diff");
+                    state.set_info(i18n.select_file_for_diff, None, "keyboard.diff");
                 }
             }
             ShortcutAction::NavigatePrevFile => select_relative_file(state, -1),
@@ -932,10 +957,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = submit_commit_dialog(state) {
                     report_async_failure(
                         state,
-                        "提交失败",
+                        i18n.commit_failed,
                         error,
                         "workspace.commit",
                         "workspace.commit",
+                    i18n,
                     );
                 }
             }
@@ -954,10 +980,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_commit_dialog(state) {
                 report_async_failure(
                     state,
-                    "无法打开提交面板",
+                    i18n.cannot_open_commit_panel,
                     error,
                     "workspace.commit",
                     "workspace.commit",
+                i18n,
                 );
             }
         }
@@ -965,20 +992,21 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_remote_dialog(state) {
                 report_async_failure(
                     state,
-                    "无法打开远程面板",
+                    i18n.cannot_open_remote_panel,
                     error,
                     "workspace.pull",
                     "workspace.pull",
+                i18n,
                 );
             } else {
                 // Switch to IDEA-style Pull dialog
                 state.remote_dialog.mode = views::remote_dialog::RemoteDialogMode::Pull;
                 state.set_info(
-                    "已打开拉取面板",
+                    i18n.pull_panel_opened,
                     state
                         .current_repository
                         .as_ref()
-                        .map(|repo| remote_panel_hint(repo, "拉取")),
+                        .map(|repo| remote_panel_hint(repo, i18n.pull, i18n)),
                     "workspace.pull",
                 );
             }
@@ -987,55 +1015,58 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_remote_dialog(state) {
                 report_async_failure(
                     state,
-                    "无法打开远程面板",
+                    i18n.cannot_open_remote_panel,
                     error,
                     "workspace.push",
                     "workspace.push",
+                i18n,
                 );
             } else {
                 // Switch to IDEA-style Push dialog
                 state.remote_dialog.mode = views::remote_dialog::RemoteDialogMode::Push;
                 state.set_info(
-                    "已打开远程面板",
+                    i18n.push_panel_opened,
                     state
                         .current_repository
                         .as_ref()
-                        .map(|repo| remote_panel_hint(repo, "推送")),
+                        .map(|repo| remote_panel_hint(repo, i18n.push, i18n)),
                     "workspace.push",
                 );
             }
         }
         Message::ToggleToolbarRemoteMenu(action) => {
-            if let Err(error) = state.toggle_toolbar_remote_menu(action) {
+            if let Err(error) = state.toggle_toolbar_remote_menu(action, i18n) {
                 report_async_failure(
                     state,
-                    "无法加载远程列表",
+                    i18n.cannot_load_remote_list,
                     error,
                     "workspace.remote.toolbar-menu",
                     "workspace.remote.toolbar-menu",
+                i18n,
                 );
             }
         }
         Message::CloseToolbarRemoteMenu => state.close_toolbar_remote_menu(),
         Message::CloseHistoryCommitDiffPopup => state.close_history_commit_diff_popup(),
-        Message::CloseAuxiliary => state.close_auxiliary_view(),
+        Message::CloseAuxiliary => state.close_auxiliary_view(i18n),
         Message::ToolbarRemoteActionSelected { action, remote } => {
             if let Err(error) = run_toolbar_remote_action(state, action, remote) {
                 let (title, source) = match action {
-                    ToolbarRemoteAction::Pull => ("拉取远程失败", "workspace.remote.toolbar.pull"),
-                    ToolbarRemoteAction::Push => ("推送远程失败", "workspace.remote.toolbar.push"),
+                    ToolbarRemoteAction::Pull => (i18n.pull_remote_failed, "workspace.remote.toolbar.pull"),
+                    ToolbarRemoteAction::Push => (i18n.push_remote_failed, "workspace.remote.toolbar.push"),
                 };
-                report_async_failure(state, title, error, source, source);
+                report_async_failure(state, title, error, source, source, i18n);
             }
         }
         Message::Stash => {
             if let Err(error) = open_stash_panel(state) {
                 report_async_failure(
                     state,
-                    "无法打开储藏面板",
+                    i18n.cannot_open_stash_panel,
                     error,
                     "workspace.stash",
                     "workspace.stash",
+                i18n,
                 );
             }
         }
@@ -1052,7 +1083,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::ShowHistory => {
-            state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+            state.switch_git_tool_window_tab(GitToolWindowTab::Log, i18n);
             if let Some(repo) = state.current_repository.clone() {
                 let i18n = i18n::locale(state.git_settings.language.as_deref());
                 state.history_view.load_history(&repo, i18n);
@@ -1063,7 +1094,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
         }
         Message::SwitchGitToolWindowTab(tab) => {
-            state.switch_git_tool_window_tab(tab);
+            state.switch_git_tool_window_tab(tab, i18n);
             if tab == GitToolWindowTab::Log {
                 if let Some(repo) = state.current_repository.clone() {
                     let i18n = i18n::locale(state.git_settings.language.as_deref());
@@ -1078,10 +1109,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_remote_dialog(state) {
                 report_async_failure(
                     state,
-                    "无法打开远程面板",
+                    i18n.cannot_open_remote_panel,
                     error,
                     "workspace.remote",
                     "workspace.remote",
+                i18n,
                 );
             }
         }
@@ -1089,10 +1121,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_tag_dialog(state) {
                 report_async_failure(
                     state,
-                    "无法打开标签面板",
+                    i18n.cannot_open_tag_panel,
                     error,
                     "workspace.tags",
                     "workspace.tags",
+                i18n,
                 );
             }
         }
@@ -1100,29 +1133,31 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Err(error) = open_rebase_editor(state) {
                 report_async_failure(
                     state,
-                    "无法打开 Rebase 面板",
+                    i18n.cannot_open_rebase_panel,
                     error,
                     "workspace.rebase",
                     "workspace.rebase",
+                i18n,
                 );
             }
         }
         Message::OpenConflictResolver => {
-            state.close_auxiliary_view();
-            if let Err(error) = state.open_conflict_resolver() {
+            state.close_auxiliary_view(i18n);
+            if let Err(error) = state.open_conflict_resolver(i18n) {
                 report_async_failure(
                     state,
-                    "无法打开冲突视图",
+                    i18n.cannot_open_conflict_view,
                     error,
                     "workspace.conflicts",
                     "workspace.conflicts",
+                i18n,
                 );
             }
         }
         Message::CloseConflictResolver => {
             let previous_section = state.shell.active_section;
-            state.close_conflict_resolver();
-            state.navigate_to(ShellSection::Changes);
+            state.close_conflict_resolver(i18n);
+            state.navigate_to(ShellSection::Changes, i18n);
             log_shell_navigation(
                 previous_section,
                 state.shell.active_section,
@@ -1131,13 +1166,14 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::SelectConflict(index) => state.select_conflict(index),
         Message::OpenConflictMerge(index) => {
-            if let Err(error) = state.open_conflict_merge(index) {
+            if let Err(error) = state.open_conflict_merge(index, i18n) {
                 report_async_failure(
                     state,
-                    "无法打开三栏合并视图",
+                    i18n.cannot_open_merge_view,
                     error,
                     "workspace.conflicts",
                     "workspace.conflicts.merge",
+                i18n,
                 );
             }
         }
@@ -1146,15 +1182,16 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 state,
                 index,
                 ConflictResolution::Ours,
-                "已接受您的更改",
+                i18n.accepted_ours,
                 "workspace.conflicts.accept_ours",
             ) {
                 report_async_failure(
                     state,
-                    "接受您的更改失败",
+                    i18n.accept_ours_failed,
                     error,
                     "workspace.conflicts",
                     "workspace.conflicts.accept_ours",
+                i18n,
                 );
             }
         }
@@ -1163,28 +1200,30 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 state,
                 index,
                 ConflictResolution::Theirs,
-                "已接受他们的更改",
+                i18n.accepted_theirs,
                 "workspace.conflicts.accept_theirs",
             ) {
                 report_async_failure(
                     state,
-                    "接受他们的更改失败",
+                    i18n.accept_theirs_failed,
                     error,
                     "workspace.conflicts",
                     "workspace.conflicts.accept_theirs",
+                i18n,
                 );
             }
         }
         Message::ConflictResolverMessage(message) => match message {
             ConflictResolverMessage::BackToList => state.close_conflict_merge(),
             ConflictResolverMessage::Refresh => {
-                if let Err(error) = state.load_conflicts() {
+                if let Err(error) = state.load_conflicts(i18n) {
                     report_async_failure(
                         state,
-                        "刷新冲突失败",
-                        format!("刷新冲突失败: {}", error),
+                        i18n.refresh_conflicts_failed,
+                        i18n.refresh_conflicts_failed_fmt.replace("{}", &error.to_string()),
                         "workspace.conflicts",
                         "workspace.conflicts.refresh",
+                    i18n,
                     );
                 }
             }
@@ -1202,10 +1241,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = resolve_selected_conflict(state) {
                     report_async_failure(
                         state,
-                        "应用冲突解决方案失败",
+                        i18n.apply_conflict_resolution_failed,
                         error,
                         "workspace.conflicts",
                         "workspace.conflicts.resolve",
+                    i18n,
                     );
                 }
             }
@@ -1268,10 +1308,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.commit_dialog.set_error(error.clone());
                     report_async_failure(
                         state,
-                        "提交失败",
+                        i18n.commit_failed,
                         error,
                         "workspace.commit",
                         "workspace.commit.submit",
+                    i18n,
                     );
                 }
             }
@@ -1286,24 +1327,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.commit_dialog.set_error(error.clone());
                     report_async_failure(
                         state,
-                        "无法切换提交模式",
+                        i18n.cannot_switch_commit_mode,
                         error,
                         "workspace.commit",
                         "workspace.commit.amend",
+                    i18n,
                     );
                 }
             }
-            CommitDialogMessage::CancelPressed => state.close_auxiliary_view(),
+            CommitDialogMessage::CancelPressed => state.close_auxiliary_view(i18n),
             CommitDialogMessage::CommitAndPushPressed => {
                 // Commit first, then push
                 if let Err(error) = submit_commit_dialog(state) {
                     state.commit_dialog.set_error(error.clone());
                     report_async_failure(
                         state,
-                        "提交失败",
+                        i18n.commit_failed,
                         error,
                         "workspace.commit_and_push",
                         "workspace.commit_and_push",
+                    i18n,
                     );
                 } else {
                     // Commit succeeded, now push
@@ -1328,7 +1371,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if !state.git_settings.llm_enabled {
                     state
                         .commit_dialog
-                        .set_error("请先在设置中启用并配置 AI 提交消息。".to_string());
+                        .set_error(i18n.enable_ai_first.to_string());
                     return Task::none();
                 }
                 state.commit_dialog.is_generating = true;
@@ -1444,10 +1487,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "打开提交动作失败",
+                                i18n.open_commit_action_failed_main,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.commit_menu",
+                            i18n,
                             );
                         }
                     }
@@ -1486,14 +1530,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 BranchPopupMessage::SelectBranchCommit(commit_id) => {
                     if let Ok(repo) = require_repository(state) {
                         state.branch_popup.select_branch_commit(&repo, commit_id, i18n);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "加载提交详情失败",
+                                i18n.load_commit_detail_failed_main,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.select_commit",
+                            i18n,
                             );
                         }
                     }
@@ -1508,17 +1553,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "执行分支操作失败",
+                                i18n.execute_branch_action_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.inline",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1533,17 +1579,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "创建分支失败",
+                                i18n.create_branch_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.create",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1556,17 +1603,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "删除分支失败",
+                                i18n.delete_branch_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.delete",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1608,25 +1656,27 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             } else {
                                 report_async_failure(
                                     state,
-                                    "切换分支失败",
+                                    i18n.checkout_failed,
                                     error,
                                     "workspace.branches",
                                     "workspace.branches.checkout",
+                                i18n,
                                 );
                             }
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, false)
+                            refresh_repository_after_action(state, &repo, false, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.checkout",
+                            i18n,
                             );
                         } else if let Some(current) = state.current_repository.clone() {
                             state.branch_popup.load_branches(&current, i18n);
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1651,25 +1701,27 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             } else {
                                 report_async_failure(
                                     state,
-                                    "签出远程分支失败",
+                                    i18n.checkout_remote_failed,
                                     error,
                                     "workspace.branches",
                                     "workspace.branches.checkout_remote",
+                                i18n,
                                 );
                             }
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, false)
+                            refresh_repository_after_action(state, &repo, false, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.checkout_remote",
+                            i18n,
                             );
                         } else if let Some(current) = state.current_repository.clone() {
                             state.branch_popup.load_branches(&current, i18n);
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1686,27 +1738,28 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                 state.branch_popup.is_loading = false;
                                 state.branch_popup.selected_branch = Some(name.clone());
                                 state.branch_popup.success_message =
-                                    Some(format!("智能签出: 已切到 {name}（变更已恢复）"));
-                                let _ = refresh_repository_after_action(state, &repo, true);
+                                    Some(i18n.smart_checkout_msg_fmt.replace("{}", &name));
+                                let _ = refresh_repository_after_action(state, &repo, true, i18n);
                                 if let Some(current) = state.current_repository.clone() {
                                     state.branch_popup.load_branches(&current, i18n);
                                 }
                                 state.set_success(
-                                    format!("智能签出 {name} 完成"),
+                                    i18n.smart_checkout_done_fmt.replace("{}", &name),
                                     None,
                                     "workspace.branches",
                                 );
                             }
                             Err(error) => {
                                 state.branch_popup.is_loading = false;
-                                let msg = format!("智能签出失败: {error}");
+                                let msg = i18n.smart_checkout_failed_fmt.replace("{}", &error.to_string());
                                 state.branch_popup.error = Some(msg.clone());
                                 report_async_failure(
                                     state,
-                                    "智能签出失败",
+                                    i18n.smart_checkout_failed,
                                     msg,
                                     "workspace.branches",
                                     "workspace.branches.smart_checkout",
+                                i18n,
                                 );
                             }
                         }
@@ -1722,27 +1775,28 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                 state.branch_popup.is_loading = false;
                                 state.branch_popup.selected_branch = Some(name.clone());
                                 state.branch_popup.success_message =
-                                    Some(format!("强制签出: 已切到 {name}（本地修改已丢弃）"));
-                                let _ = refresh_repository_after_action(state, &repo, false);
+                                    Some(i18n.force_checkout_msg_fmt.replace("{}", &name));
+                                let _ = refresh_repository_after_action(state, &repo, false, i18n);
                                 if let Some(current) = state.current_repository.clone() {
                                     state.branch_popup.load_branches(&current, i18n);
                                 }
                                 state.set_success(
-                                    format!("强制签出 {name} 完成"),
+                                    i18n.force_checkout_done_fmt.replace("{}", &name),
                                     None,
                                     "workspace.branches",
                                 );
                             }
                             Err(error) => {
                                 state.branch_popup.is_loading = false;
-                                let msg = format!("强制签出失败: {error}");
+                                let msg = i18n.force_checkout_failed_fmt.replace("{}", &error.to_string());
                                 state.branch_popup.error = Some(msg.clone());
                                 report_async_failure(
                                     state,
-                                    "强制签出失败",
+                                    i18n.force_checkout_failed,
                                     msg,
                                     "workspace.branches",
                                     "workspace.branches.force_checkout",
+                                i18n,
                                 );
                             }
                         }
@@ -1759,34 +1813,34 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "合并分支失败",
+                                i18n.merge_branch_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.merge",
+                            i18n,
                             );
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, true)
+                            refresh_repository_after_action(state, &repo, true, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.merge",
+                            i18n,
                             );
                         } else if state.has_conflicts() {
                             state.set_warning(
-                                "合并产生冲突",
-                                Some(format!(
-                                    "与分支 {branch_name} 的合并已进入冲突状态，请先处理冲突文件。"
-                                )),
+                                i18n.merge_conflict_warning,
+                                Some(i18n.merge_conflict_detail_fmt.replace("{}", &branch_name)),
                                 "workspace.branches.merge",
                             );
                         } else if !state.has_conflicts() {
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1801,26 +1855,28 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "签出并变基失败",
+                                i18n.checkout_rebase_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.checkout_rebase",
+                            i18n,
                             );
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, true)
+                            refresh_repository_after_action(state, &repo, true, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.checkout_rebase",
+                            i18n,
                             );
                         } else if !state.has_conflicts() {
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1834,32 +1890,34 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         state
                             .branch_popup
                             .compare_refs_preview(&repo, &selected, &current, i18n);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "加载分支比较失败",
+                                i18n.compare_branch_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.compare",
+                            i18n,
                             );
                         }
                     }
                 }
                 BranchPopupMessage::CompareWithWorktree(reference) => {
                     if let Ok(repo) = require_repository(state) {
-                        state.branch_popup.comparison_title = Some(format!("{reference} ↔ 工作树"));
+                        state.branch_popup.comparison_title = Some(i18n.worktree_label_fmt.replace("{}", &reference));
                         state
                             .branch_popup
                             .compare_ref_to_workdir_preview(&repo, &reference, i18n);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "加载工作树差异失败",
+                                i18n.worktree_diff_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.worktree_diff",
+                            i18n,
                             );
                         }
                     }
@@ -1870,26 +1928,28 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "开始变基失败",
+                                i18n.start_rebase_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.rebase",
+                            i18n,
                             );
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, true)
+                            refresh_repository_after_action(state, &repo, true, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.rebase",
+                            i18n,
                             );
                         } else if !state.has_conflicts() {
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1902,17 +1962,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "更新远程失败",
+                                i18n.update_remote_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.fetch",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1927,17 +1988,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "推送分支失败",
+                                i18n.push_branch_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.push",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1950,17 +2012,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "设置跟踪分支失败",
+                                i18n.set_tracking_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.upstream",
+                            i18n,
                             );
                         } else {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -1975,10 +2038,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Err(error) = open_tag_dialog(state) {
                         report_async_failure(
                             state,
-                            "打开标签面板失败",
+                            i18n.open_tag_panel_failed,
                             error,
                             "workspace.tags",
                             "workspace.tags.open",
+                        i18n,
                         );
                     }
                 }
@@ -1986,16 +2050,17 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Err(error) = copy_text_to_clipboard(&commit_id) {
                         report_async_failure(
                             state,
-                            "复制提交哈希失败",
+                            i18n.copy_commit_hash_failed,
                             error,
                             "workspace.branches",
                             "workspace.branches.copy_commit",
+                        i18n,
                         );
                     } else {
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                         state.show_toast(
                             crate::state::FeedbackLevel::Success,
-                            "已复制提交哈希",
+                            i18n.commit_hash_copied,
                             Some(short_commit_id(&commit_id).to_string()),
                         );
                     }
@@ -2006,19 +2071,20 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(path) = file_picker::save_file(&default_name) {
                             match git_core::export_commit_patch(&repo, &commit_id, &path) {
                                 Ok(()) => {
-                                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                                    state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                                     state.set_success(
-                                        "已导出补丁",
+                                        i18n.patch_exported,
                                         Some(path.display().to_string()),
                                         "workspace.branches.patch",
                                     );
                                 }
                                 Err(error) => report_async_failure(
                                     state,
-                                    "导出补丁失败",
-                                    format!("导出补丁失败: {error}"),
+                                    i18n.export_patch_failed,
+                                    i18n.export_patch_failed_fmt.replace("{}", &error.to_string()),
                                     "workspace.branches",
                                     "workspace.branches.patch",
+                                i18n,
                                 ),
                             }
                         }
@@ -2032,10 +2098,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "无法准备 Cherry-pick",
+                                i18n.cannot_prepare_cherry_pick,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.cherry_pick.prepare",
+                            i18n,
                             );
                         }
                     }
@@ -2047,10 +2114,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "无法准备回退提交",
+                                i18n.cannot_prepare_revert,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.revert.prepare",
+                            i18n,
                             );
                         }
                     }
@@ -2063,10 +2131,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "无法准备重置当前分支",
+                                i18n.cannot_prepare_reset_branch,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.reset.prepare",
+                            i18n,
                             );
                         }
                     }
@@ -2079,10 +2148,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "无法准备\u{201c}推送到这里\u{201d}",
+                                i18n.cannot_prepare_push_here,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.push_to_here.prepare",
+                            i18n,
                             );
                         }
                     }
@@ -2093,33 +2163,35 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "继续提交流程失败",
+                                i18n.continue_commit_flow_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.follow_up.continue",
+                            i18n,
                             );
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, true)
+                            refresh_repository_after_action(state, &repo, true, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.follow_up.continue",
+                            i18n,
                             );
                         } else if state.has_conflicts() {
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             state.set_warning(
-                                "提交流程仍有冲突",
-                                Some("还有冲突文件未解决，请继续处理后再点继续。".to_string()),
+                                i18n.commit_flow_has_conflicts,
+                                Some(i18n.commit_flow_conflicts_detail.to_string()),
                                 "workspace.branches",
                             );
                         } else {
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -2132,26 +2204,28 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "中止提交流程失败",
+                                i18n.abort_commit_flow_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.follow_up.abort",
+                            i18n,
                             );
                         } else if let Err(error) =
-                            refresh_repository_after_action(state, &repo, false)
+                            refresh_repository_after_action(state, &repo, false, i18n)
                         {
                             report_async_failure(
                                 state,
-                                "刷新仓库状态失败",
+                                i18n.refresh_repo_state_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.follow_up.abort",
+                            i18n,
                             );
                         } else {
                             if let Some(current) = state.current_repository.clone() {
                                 state.branch_popup.load_branches(&current, i18n);
                             }
-                            state.open_auxiliary_view(AuxiliaryView::Branches);
+                            state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                             if let Some(message) = state.branch_popup.success_message.clone() {
                                 state.set_success(message, None, "workspace.branches");
                             }
@@ -2159,11 +2233,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     }
                 }
                 BranchPopupMessage::OpenConflictList => {
-                    state.close_auxiliary_view();
-                    state.navigate_to(ShellSection::Conflicts);
+                    state.close_auxiliary_view(i18n);
+                    state.navigate_to(ShellSection::Conflicts, i18n);
                     state.set_info(
-                        "已切到冲突列表",
-                        Some("先处理完冲突文件，再回到分支视图继续当前流程。".to_string()),
+                        i18n.switched_to_conflicts,
+                        Some(i18n.switched_to_conflicts_detail.to_string()),
                         "workspace.conflicts",
                     );
                 }
@@ -2180,10 +2254,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             if let Some(error) = state.branch_popup.error.clone() {
                                 report_async_failure(
                                     state,
-                                    "执行提交操作失败",
+                                    i18n.execute_commit_action_failed,
                                     error,
                                     "workspace.branches",
                                     "workspace.branches.commit_action",
+                                i18n,
                                 );
                             } else if let Err(error) = refresh_repository_after_action(
                                 state,
@@ -2193,32 +2268,34 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     branch_popup::PendingCommitActionKind::CherryPick
                                         | branch_popup::PendingCommitActionKind::Revert
                                 ),
+                                i18n,
                             ) {
                                 report_async_failure(
                                     state,
-                                    "刷新仓库状态失败",
+                                    i18n.refresh_repo_state_failed,
                                     error,
                                     "workspace.branches",
                                     "workspace.branches.commit_action",
+                                i18n,
                                 );
                             } else if state.has_conflicts() {
                                 let detail = match action_kind {
                                     branch_popup::PendingCommitActionKind::CherryPick => {
-                                        "Cherry-pick 已进入冲突状态，请先处理冲突文件。".to_string()
+                                        i18n.cherry_pick_conflict_detail.to_string()
                                     }
                                     branch_popup::PendingCommitActionKind::Revert => {
-                                        "回退提交已进入冲突状态，请先处理冲突文件。".to_string()
+                                        i18n.revert_conflict_detail.to_string()
                                     }
                                     branch_popup::PendingCommitActionKind::ResetCurrentBranch
                                     | branch_popup::PendingCommitActionKind::PushCurrentBranchToCommit => {
-                                        "当前仓库进入了需要继续处理的状态，请先处理冲突文件。".to_string()
+                                        i18n.generic_conflict_detail.to_string()
                                     }
                                 };
                                 if keep_branch_popup_open {
-                                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                                    state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                                 }
                                 state.set_warning(
-                                    "提交操作产生冲突",
+                                    i18n.commit_action_conflict,
                                     Some(detail),
                                     "workspace.branches",
                                 );
@@ -2229,7 +2306,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                     }
                                 }
                                 if keep_branch_popup_open {
-                                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                                    state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                                 }
                                 if let Some(message) = state.branch_popup.success_message.clone() {
                                     state.set_success(message, None, "workspace.branches");
@@ -2257,53 +2334,54 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Ok(repo) = require_repository(state) {
                         logging::LogManager::log_context_switcher("refresh", &repo.name());
                         state.branch_popup.load_branches(&repo, i18n);
-                        state.open_auxiliary_view(AuxiliaryView::Branches);
+                        state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                         if let Some(error) = state.branch_popup.error.clone() {
                             report_async_failure(
                                 state,
-                                "刷新分支列表失败",
+                                i18n.refresh_branch_list_failed,
                                 error,
                                 "workspace.branches",
                                 "workspace.branches.refresh",
+                            i18n,
                             );
                         }
                     }
                 }
                 BranchPopupMessage::OpenCommit => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::Commit);
                 }
                 BranchPopupMessage::OpenPull => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::Pull);
                 }
                 BranchPopupMessage::OpenPush => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::Push);
                 }
                 BranchPopupMessage::OpenHistory => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::ShowHistory);
                 }
                 BranchPopupMessage::OpenRemotes => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::ShowRemotes);
                 }
                 BranchPopupMessage::OpenTags => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::ShowTags);
                 }
                 BranchPopupMessage::OpenStashes => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::Stash);
                 }
                 BranchPopupMessage::OpenRebase => {
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                     return update(state, Message::ShowRebase);
                 }
                 BranchPopupMessage::Close => {
                     state.show_branch_dropdown = false;
-                    state.close_auxiliary_view();
+                    state.close_auxiliary_view(i18n);
                 }
             }
         }
@@ -2320,6 +2398,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             error,
                             "workspace.history",
                             "workspace.history.refresh",
+                        i18n,
                         );
                     }
                 }
@@ -2336,6 +2415,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             error,
                             "workspace.history",
                             "workspace.history.select",
+                        i18n,
                         );
                     }
                 }
@@ -2370,6 +2450,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                 error,
                                 "workspace.history",
                                 "workspace.history.file_diff",
+                            i18n,
                             );
                         }
                     }
@@ -2416,6 +2497,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             error,
                             "workspace.history",
                             "workspace.history.context_menu",
+                        i18n,
                         );
                     }
                 }
@@ -2428,16 +2510,17 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = copy_text_to_clipboard(&commit_id) {
                     report_async_failure(
                         state,
-                        "复制提交哈希失败",
+                        i18n.copy_commit_hash_failed,
                         error,
                         "workspace.history",
                         "workspace.history.copy_commit",
+                    i18n,
                     );
                 } else {
                     state.history_view.context_menu_commit = None;
                     state.show_toast(
                         crate::state::FeedbackLevel::Success,
-                        "已复制提交哈希",
+                        i18n.commit_hash_copied,
                         Some(short_commit_id(&commit_id).to_string()),
                     );
                 }
@@ -2450,17 +2533,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             Ok(()) => {
                                 state.history_view.context_menu_commit = None;
                                 state.set_success(
-                                    "已导出补丁",
+                                    i18n.patch_exported,
                                     Some(path.display().to_string()),
                                     "workspace.history.patch",
                                 );
                             }
                             Err(error) => report_async_failure(
                                 state,
-                                "导出补丁失败",
-                                format!("导出补丁失败: {error}"),
+                                i18n.export_patch_failed,
+                                i18n.export_patch_failed_fmt.replace("{}", &error.to_string()),
                                 "workspace.history",
                                 "workspace.history.patch",
+                            i18n,
                             ),
                         }
                     }
@@ -2470,10 +2554,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 let Some(current_branch) = state.history_view.current_branch_name.clone() else {
                     report_async_failure(
                         state,
-                        "无法比较当前分支",
-                        "当前为 detached HEAD，不能直接与当前分支比较".to_string(),
+                        i18n.cannot_compare_branch,
+                        i18n.detached_no_branch_compare.to_string(),
                         "workspace.history",
                         "workspace.history.compare_current",
+                    i18n,
                     );
                     return iced::Task::none();
                 };
@@ -2504,7 +2589,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     state.branch_popup.load_branches(&repo, i18n);
                     state.branch_popup.prepare_create_from_selected(commit_id);
-                    state.open_auxiliary_view(AuxiliaryView::Branches);
+                    state.open_auxiliary_view(AuxiliaryView::Branches, i18n);
                 }
             }
             HistoryMessage::PrepareTagFromCommit(commit_id) => {
@@ -2525,11 +2610,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     // Check for merge commit
                     match git_core::commit::get_commit(&repo, &commit_id) {
                         Ok(info) if info.parent_ids.len() > 1 => {
-                            state.set_error("merge 提交暂不支持直接 Cherry-pick".to_string());
+                            state.set_error(i18n.merge_no_cherry_pick.to_string());
                             return iced::Task::none();
                         }
                         Err(e) => {
-                            state.set_error(format!("读取提交详情失败: {e}"));
+                            state.set_error(i18n.read_commit_detail_failed_fmt.replace("{}", &e.to_string()));
                             return iced::Task::none();
                         }
                         _ => {}
@@ -2539,15 +2624,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         Ok(()) => {
                             state.show_toast(
                                 crate::state::FeedbackLevel::Success,
-                                format!("已摘取提交 {}", short_commit_id(&commit_id)),
+                                i18n.cherry_picked_fmt.replace("{}", short_commit_id(&commit_id)),
                                 None,
                             );
-                            if let Err(e) = refresh_repository_after_action(state, &repo, true) {
-                                state.set_error(format!("刷新仓库状态失败: {e}"));
+                            if let Err(e) = refresh_repository_after_action(state, &repo, true, i18n) {
+                                state.set_error(i18n.refresh_repo_state_failed_fmt.replace("{}", &e.to_string()));
                             }
                         }
                         Err(e) => {
-                            state.set_error(format!("Cherry-pick 失败: {e}"));
+                            state.set_error(i18n.cherry_pick_failed_fmt.replace("{}", &e.to_string()));
                         }
                     }
                 }
@@ -2558,11 +2643,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     // Check for merge commit first
                     match git_core::commit::get_commit(&repo, &commit_id) {
                         Ok(info) if info.parent_ids.len() > 1 => {
-                            state.set_error("暂不支持直接还原 merge 提交".to_string());
+                            state.set_error(i18n.no_merge_revert.to_string());
                             return iced::Task::none();
                         }
                         Err(e) => {
-                            state.set_error(format!("读取提交详情失败: {e}"));
+                            state.set_error(i18n.read_commit_detail_failed_fmt.replace("{}", &e.to_string()));
                             return iced::Task::none();
                         }
                         _ => {}
@@ -2572,15 +2657,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         Ok(()) => {
                             state.show_toast(
                                 crate::state::FeedbackLevel::Success,
-                                format!("已还原提交 {}", short_commit_id(&commit_id)),
+                                i18n.reverted_commit_fmt.replace("{}", short_commit_id(&commit_id)),
                                 None,
                             );
-                            if let Err(e) = refresh_repository_after_action(state, &repo, true) {
-                                state.set_error(format!("刷新仓库状态失败: {e}"));
+                            if let Err(e) = refresh_repository_after_action(state, &repo, true, i18n) {
+                                state.set_error(i18n.refresh_repo_state_failed_fmt.replace("{}", &e.to_string()));
                             }
                         }
                         Err(e) => {
-                            state.set_error(format!("还原提交失败: {e}"));
+                            state.set_error(i18n.revert_commit_failed_fmt.replace("{}", &e.to_string()));
                         }
                     }
                 }
@@ -2612,40 +2697,42 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::edit_commit_message(&repo, &commit_id) {
                         Ok(execution) => {
                             state.history_view.context_menu_commit = None;
-                            if let Err(error) = refresh_repository_after_action(state, &repo, true)
+                            if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n)
                             {
                                 report_async_failure(
                                     state,
-                                    "刷新仓库状态失败",
+                                    i18n.refresh_repo_state_failed,
                                     error,
                                     "workspace.history",
                                     "workspace.history.reword",
+                                i18n,
                                 );
                             } else if state.has_conflicts() {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_warning(
-                                    "改说明流程产生冲突",
+                                    i18n.reword_conflict,
                                     Some(
-                                        "请先解决冲突，再回到 Rebase 面板继续整理历史。"
+                                        i18n.reword_conflict_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.reword",
                                 );
                             } else if matches!(execution, git_core::RewriteExecution::InProgress) {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 if let Err(error) = switch_commit_dialog_to_amend(state) {
                                     report_async_failure(
                                         state,
-                                        "无法打开提交说明编辑面板",
+                                        i18n.cannot_open_commit_edit_panel,
                                         error,
                                         "workspace.history",
                                         "workspace.history.reword",
+                                    i18n,
                                     );
                                 } else {
                                     state.set_info(
-                                        "已停在这条提交",
+                                        i18n.stopped_at_commit,
                                         Some(
-                                            "修改提交说明后提交，再到 Rebase 面板继续后续整理。"
+                                            i18n.reword_hint_detail
                                                 .to_string(),
                                         ),
                                         "workspace.history.reword",
@@ -2653,18 +2740,19 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                 }
                             } else {
                                 state.set_success(
-                                    format!("已准备修改提交 {}", short_commit_id(&commit_id)),
-                                    Some("当前历史已刷新，可继续查看后续状态。".to_string()),
+                                    i18n.prepared_reword_fmt.replace("{}", short_commit_id(&commit_id)),
+                                    Some(i18n.history_refreshed_detail.to_string()),
                                     "workspace.history.reword",
                                 );
                             }
                         }
                         Err(error) => report_async_failure(
                             state,
-                            "启动改说明流程失败",
+                            i18n.start_reword_failed,
                             error.to_string(),
                             "workspace.history",
                             "workspace.history.reword",
+                        i18n,
                         ),
                     }
                 }
@@ -2674,40 +2762,41 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::fixup_commit_to_previous(&repo, &commit_id) {
                         Ok(execution) => {
                             state.history_view.context_menu_commit = None;
-                            if let Err(error) = refresh_repository_after_action(state, &repo, true)
+                            if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n)
                             {
                                 report_async_failure(
                                     state,
-                                    "刷新仓库状态失败",
+                                    i18n.refresh_repo_state_failed,
                                     error,
                                     "workspace.history",
                                     "workspace.history.fixup",
+                                i18n,
                                 );
                             } else if state.has_conflicts() {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_warning(
-                                    "Fixup 进入冲突状态",
+                                    i18n.fixup_conflict,
                                     Some(
-                                        "请先解决冲突，再返回 Rebase 面板继续或跳过当前步骤。"
+                                        i18n.fixup_conflict_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.fixup",
                                 );
                             } else if matches!(execution, git_core::RewriteExecution::InProgress) {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_info(
-                                    "Fixup 已进入整理流程",
+                                    i18n.fixup_in_progress,
                                     Some(
-                                        "当前 rewrite 还没结束，可在 Rebase 面板继续、跳过或中止。"
+                                        i18n.rewrite_in_progress_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.fixup",
                                 );
                             } else {
                                 state.set_success(
-                                    format!("已完成 Fixup {}", short_commit_id(&commit_id)),
+                                    i18n.fixup_done_fmt.replace("{}", short_commit_id(&commit_id)),
                                     Some(
-                                        "当前历史已刷新，可继续浏览或执行下一步整理。".to_string(),
+                                        i18n.history_refreshed_continue.to_string(),
                                     ),
                                     "workspace.history.fixup",
                                 );
@@ -2715,10 +2804,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         }
                         Err(error) => report_async_failure(
                             state,
-                            "Fixup 失败",
+                            i18n.fixup_failed,
                             error.to_string(),
                             "workspace.history",
                             "workspace.history.fixup",
+                        i18n,
                         ),
                     }
                 }
@@ -2728,40 +2818,41 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::squash_commit_to_previous(&repo, &commit_id) {
                         Ok(execution) => {
                             state.history_view.context_menu_commit = None;
-                            if let Err(error) = refresh_repository_after_action(state, &repo, true)
+                            if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n)
                             {
                                 report_async_failure(
                                     state,
-                                    "刷新仓库状态失败",
+                                    i18n.refresh_repo_state_failed,
                                     error,
                                     "workspace.history",
                                     "workspace.history.squash",
+                                i18n,
                                 );
                             } else if state.has_conflicts() {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_warning(
-                                    "压缩提交进入冲突状态",
+                                    i18n.squash_conflict,
                                     Some(
-                                        "请先解决冲突，再返回 Rebase 面板继续当前整理流程。"
+                                        i18n.squash_conflict_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.squash",
                                 );
                             } else if matches!(execution, git_core::RewriteExecution::InProgress) {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_info(
-                                    "压缩提交流程已启动",
+                                    i18n.squash_in_progress,
                                     Some(
-                                        "当前 rewrite 还没结束，可在 Rebase 面板继续、跳过或中止。"
+                                        i18n.rewrite_in_progress_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.squash",
                                 );
                             } else {
                                 state.set_success(
-                                    format!("已压缩提交 {}", short_commit_id(&commit_id)),
+                                    i18n.squash_done_fmt.replace("{}", short_commit_id(&commit_id)),
                                     Some(
-                                        "当前历史已刷新，可继续浏览或执行下一步整理。".to_string(),
+                                        i18n.history_refreshed_continue.to_string(),
                                     ),
                                     "workspace.history.squash",
                                 );
@@ -2769,10 +2860,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         }
                         Err(error) => report_async_failure(
                             state,
-                            "压缩提交失败",
+                            i18n.squash_failed,
                             error.to_string(),
                             "workspace.history",
                             "workspace.history.squash",
+                        i18n,
                         ),
                     }
                 }
@@ -2782,40 +2874,41 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::drop_commit_from_history(&repo, &commit_id) {
                         Ok(execution) => {
                             state.history_view.context_menu_commit = None;
-                            if let Err(error) = refresh_repository_after_action(state, &repo, true)
+                            if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n)
                             {
                                 report_async_failure(
                                     state,
-                                    "刷新仓库状态失败",
+                                    i18n.refresh_repo_state_failed,
                                     error,
                                     "workspace.history",
                                     "workspace.history.drop",
+                                i18n,
                                 );
                             } else if state.has_conflicts() {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_warning(
-                                    "删除提交进入冲突状态",
+                                    i18n.drop_conflict,
                                     Some(
-                                        "请先解决冲突，再返回 Rebase 面板继续当前整理流程。"
+                                        i18n.drop_conflict_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.drop",
                                 );
                             } else if matches!(execution, git_core::RewriteExecution::InProgress) {
-                                open_rebase_session_with_context(state, Some(&commit_id));
+                                open_rebase_session_with_context(state, Some(&commit_id), i18n);
                                 state.set_info(
-                                    "删除提交流程已启动",
+                                    i18n.drop_in_progress,
                                     Some(
-                                        "当前 rewrite 还没结束，可在 Rebase 面板继续、跳过或中止。"
+                                        i18n.rewrite_in_progress_detail
                                             .to_string(),
                                     ),
                                     "workspace.history.drop",
                                 );
                             } else {
                                 state.set_success(
-                                    format!("已删除提交 {}", short_commit_id(&commit_id)),
+                                    i18n.drop_done_fmt.replace("{}", short_commit_id(&commit_id)),
                                     Some(
-                                        "当前历史已刷新，可继续浏览或执行下一步整理。".to_string(),
+                                        i18n.history_refreshed_continue.to_string(),
                                     ),
                                     "workspace.history.drop",
                                 );
@@ -2823,10 +2916,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         }
                         Err(error) => report_async_failure(
                             state,
-                            "删除提交失败",
+                            i18n.drop_failed,
                             error.to_string(),
                             "workspace.history",
                             "workspace.history.drop",
+                        i18n,
                         ),
                     }
                 }
@@ -2837,14 +2931,15 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state
                         .rebase_editor
                         .prepare_interactive_rebase(&repo, commit_id);
-                    state.open_auxiliary_view(AuxiliaryView::Rebase);
+                    state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "打开交互式变基失败",
+                            i18n.open_rebase_from_here_failed,
                             error,
                             "workspace.history",
                             "workspace.history.rebase_from_here",
+                        i18n,
                         );
                     } else if let Some(message) = state.rebase_editor.success_message.clone() {
                         state.set_info(message, None, "workspace.history.rebase_from_here");
@@ -2867,8 +2962,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 let selected = &state.history_view.multi_selected_commits;
                 if selected.len() < 2 {
                     state.set_error_with_source(
-                        "无法压缩",
-                        "请先选中至少两个连续提交",
+                        i18n.cannot_squash,
+                        i18n.select_two_contiguous,
                         "workspace.squash",
                     );
                 } else {
@@ -2890,8 +2985,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
 
                     if !is_contiguous {
                         state.set_error_with_source(
-                            "无法压缩",
-                            "仅支持连续提交的压缩",
+                            i18n.cannot_squash,
+                            i18n.only_contiguous_squash,
                             "workspace.squash",
                         );
                     } else {
@@ -2916,20 +3011,21 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     match git_core::uncommit_to_commit(&repo, &commit_id) {
                         Ok(()) => {
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                             state.set_success(
-                                "提交已撤销",
-                                Some("改动已返回暂存区".to_string()),
+                                i18n.commits_uncommitted,
+                                Some(i18n.changes_returned_to_staging.to_string()),
                                 "workspace.uncommit",
                             );
                         }
                         Err(e) => {
                             report_async_failure(
                                 state,
-                                "撤销提交失败",
+                                i18n.uncommit_failed,
                                 e.to_string(),
                                 "workspace.uncommit",
                                 "workspace.uncommit",
+                            i18n,
                             );
                         }
                     }
@@ -2945,22 +3041,19 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         match git_core::push(&repo, &remote, &refspec, None) {
                             Ok(()) => {
                                 state.set_success(
-                                    "推送成功",
-                                    Some(format!(
-                                        "已推送到 {} 的 {}",
-                                        &commit_id[..7.min(commit_id.len())],
-                                        remote
-                                    )),
+                                    i18n.push_success,
+                                    Some(i18n.pushed_to_fmt.replace("{}", &commit_id[..7.min(commit_id.len())]).replacen("{}", &remote, 1)),
                                     "workspace.push.up_to",
                                 );
                             }
                             Err(e) => {
                                 report_async_failure(
                                     state,
-                                    "推送到此提交失败",
+                                    i18n.push_to_commit_failed,
                                     e.to_string(),
                                     "workspace.push.up_to",
                                     "workspace.push.up_to",
+                                i18n,
                                 );
                             }
                         }
@@ -2979,6 +3072,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             error,
                             "workspace.history",
                             "workspace.history.search",
+                        i18n,
                         );
                     }
                 }
@@ -3002,7 +3096,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 state.next_log_tab_id += 1;
                 state.log_tabs.push(state::LogTab {
                     id,
-                    label: format!("标签页 {}", id),
+                    label: i18n.log_tab_fmt.replace("{}", &id.to_string()),
                     is_closable: true,
                     branch_filter: None,
                     text_filter: String::new(),
@@ -3088,17 +3182,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "获取远程失败",
+                            i18n.fetch_remote_failed,
                             error,
                             "workspace.remote",
                             "workspace.remote.fetch",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.remote_dialog.load_remotes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Remotes);
+                        state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
                             state.set_success(message, None, "workspace.remote");
                         }
@@ -3111,23 +3206,24 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "推送远程失败",
+                            i18n.push_remote_dialog_failed,
                             error,
                             "workspace.remote",
                             "workspace.remote.push",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.remote_dialog.load_remotes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Remotes);
+                        state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
                             state.set_success(message, None, "workspace.remote");
                             state.show_toast(
                                 crate::state::FeedbackLevel::Success,
-                                "推送成功",
-                                Some("当前分支的提交已经推送到远端。".to_string()),
+                                i18n.push_toast_success,
+                                Some(i18n.push_toast_detail.to_string()),
                             );
                         }
                     }
@@ -3139,30 +3235,32 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "拉取远程失败",
+                            i18n.pull_remote_dialog_failed,
                             error,
                             "workspace.remote",
                             "workspace.remote.pull",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true) {
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n) {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.remote",
                             "workspace.remote.pull",
+                        i18n,
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
                             state.remote_dialog.load_remotes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Remotes);
+                        state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
                             state.set_success(message, None, "workspace.remote");
                             state.show_toast(
                                 crate::state::FeedbackLevel::Success,
-                                "拉取成功",
-                                Some("远程改动已同步到当前分支。".to_string()),
+                                i18n.pull_toast_success,
+                                Some(i18n.pull_toast_detail.to_string()),
                             );
                         }
                     }
@@ -3173,21 +3271,22 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             RemoteDialogMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
                     state.remote_dialog.load_remotes(&repo);
-                    state.open_auxiliary_view(AuxiliaryView::Remotes);
+                    state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "刷新远程列表失败",
+                            i18n.refresh_remote_list_failed,
                             error,
                             "workspace.remote",
                             "workspace.remote.refresh",
+                        i18n,
                         );
                     }
                 }
             }
             RemoteDialogMessage::Close => {
                 state.remote_dialog.mode = views::remote_dialog::RemoteDialogMode::Overview;
-                state.close_auxiliary_view();
+                state.close_auxiliary_view(i18n);
             }
             RemoteDialogMessage::SwitchMode(mode) => {
                 state.remote_dialog.mode = mode;
@@ -3231,8 +3330,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match result {
                         Ok(()) => {
                             state.remote_dialog.success_message =
-                                Some(format!("已推送 {} → {}/{}", branch, remote, branch));
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                                Some(i18n.pushed_fmt.replace("{}", &branch).replacen("{}", &remote, 1).replacen("{}", &branch, 1));
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         }
                         Err(e) => {
                             state.remote_dialog.error = Some(e.to_string());
@@ -3298,8 +3397,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match result {
                         Ok(()) => {
                             state.remote_dialog.success_message =
-                                Some(format!("已拉取 {}/{} → {}", remote, branch, branch));
-                            let _ = refresh_repository_after_action(state, &repo, false);
+                                Some(i18n.pulled_fmt.replace("{}", &remote).replacen("{}", &branch, 1).replacen("{}", &branch, 1));
+                            let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         }
                         Err(e) => {
                             state.remote_dialog.error = Some(e.to_string());
@@ -3322,17 +3421,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.tag_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "创建标签失败",
+                            i18n.create_tag_failed,
                             error,
                             "workspace.tags",
                             "workspace.tags.create",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.tag_dialog.load_tags(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Tags);
+                        state.open_auxiliary_view(AuxiliaryView::Tags, i18n);
                         if let Some(message) = state.tag_dialog.success_message.clone() {
                             state.set_success(message, None, "workspace.tags");
                         }
@@ -3345,17 +3445,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.tag_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "删除标签失败",
+                            i18n.delete_tag_failed,
                             error,
                             "workspace.tags",
                             "workspace.tags.delete",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.tag_dialog.load_tags(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Tags);
+                        state.open_auxiliary_view(AuxiliaryView::Tags, i18n);
                         if let Some(message) = state.tag_dialog.success_message.clone() {
                             state.set_success(message, None, "workspace.tags");
                         }
@@ -3370,10 +3471,10 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::push_tag(&repo, &name, &remote) {
                         Ok(()) => {
                             state.tag_dialog.success_message =
-                                Some(format!("标签 {name} 已推送到 {remote}"));
+                                Some(i18n.tag_pushed_fmt.replace("{}", &name).replacen("{}", &remote, 1));
                         }
                         Err(e) => {
-                            state.tag_dialog.error = Some(format!("推送标签失败: {e}"));
+                            state.tag_dialog.error = Some(i18n.push_tag_failed_fmt.replace("{}", &e.to_string()));
                         }
                     }
                 }
@@ -3386,10 +3487,10 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     match git_core::delete_remote_tag(&repo, &name, &remote) {
                         Ok(()) => {
                             state.tag_dialog.success_message =
-                                Some(format!("远程标签 {name} 已从 {remote} 删除"));
+                                Some(i18n.remote_tag_deleted_fmt.replace("{}", &name).replacen("{}", &remote, 1));
                         }
                         Err(e) => {
-                            state.tag_dialog.error = Some(format!("删除远程标签失败: {e}"));
+                            state.tag_dialog.error = Some(i18n.delete_remote_tag_failed_fmt.replace("{}", &e.to_string()));
                         }
                     }
                 }
@@ -3405,7 +3506,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         }
                         Err(_) => {
                             state.tag_dialog.validation_result =
-                                Some("✗ 无效的提交引用".to_string());
+                                Some(i18n.invalid_commit_ref.to_string());
                         }
                     }
                 }
@@ -3414,16 +3515,16 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     // Delete local first
                     if let Err(e) = git_core::delete_tag(&repo, &name) {
-                        state.tag_dialog.error = Some(format!("删除本地标签失败: {e}"));
+                        state.tag_dialog.error = Some(i18n.delete_local_tag_failed_fmt.replace("{}", &e.to_string()));
                     } else {
                         let remote = repo
                             .current_upstream_remote()
                             .unwrap_or_else(|| "origin".to_string());
                         if let Err(e) = git_core::delete_remote_tag(&repo, &name, &remote) {
-                            state.tag_dialog.error = Some(format!("删除远程标签失败: {e}"));
+                            state.tag_dialog.error = Some(i18n.delete_remote_tag_failed_fmt.replace("{}", &e.to_string()));
                         } else {
                             state.tag_dialog.success_message =
-                                Some(format!("标签 {name} 已从本地和远程删除"));
+                                Some(i18n.tag_deleted_local_remote_fmt.replace("{}", &name));
                             if let Some(current) = state.current_repository.clone() {
                                 state.tag_dialog.load_tags(&current);
                             }
@@ -3438,19 +3539,20 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             TagDialogMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
                     state.tag_dialog.load_tags(&repo);
-                    state.open_auxiliary_view(AuxiliaryView::Tags);
+                    state.open_auxiliary_view(AuxiliaryView::Tags, i18n);
                     if let Some(error) = state.tag_dialog.error.clone() {
                         report_async_failure(
                             state,
-                            "刷新标签列表失败",
+                            i18n.refresh_tag_list_failed,
                             error,
                             "workspace.tags",
                             "workspace.tags.refresh",
+                        i18n,
                         );
                     }
                 }
             }
-            TagDialogMessage::Close => state.close_auxiliary_view(),
+            TagDialogMessage::Close => state.close_auxiliary_view(i18n),
         },
         Message::StashPanelMessage(message) => match message {
             StashPanelMessage::SetNewStashMessage(value) => {
@@ -3466,17 +3568,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.stash_panel.error.clone() {
                         report_async_failure(
                             state,
-                            "保存储藏失败",
+                            i18n.save_stash_failed,
                             error,
                             "workspace.stash",
                             "workspace.stash.save",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.stash_panel.load_stashes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Stashes);
+                        state.open_auxiliary_view(AuxiliaryView::Stashes, i18n);
                         if let Some(message) = state.stash_panel.success_message.clone() {
                             state.set_success(message, None, "workspace.stash");
                         }
@@ -3489,24 +3592,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.stash_panel.error.clone() {
                         report_async_failure(
                             state,
-                            "应用储藏失败",
+                            i18n.apply_stash_failed,
                             error,
                             "workspace.stash",
                             "workspace.stash.apply",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true) {
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n) {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.stash",
                             "workspace.stash.apply",
+                        i18n,
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
                             state.stash_panel.load_stashes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Stashes);
+                        state.open_auxiliary_view(AuxiliaryView::Stashes, i18n);
                         if let Some(message) = state.stash_panel.success_message.clone() {
                             state.set_success(message, None, "workspace.stash");
                         }
@@ -3519,17 +3624,18 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.stash_panel.error.clone() {
                         report_async_failure(
                             state,
-                            "删除储藏失败",
+                            i18n.drop_stash_failed,
                             error,
                             "workspace.stash",
                             "workspace.stash.drop",
+                        i18n,
                         );
                     } else {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.stash_panel.load_stashes(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Stashes);
+                        state.open_auxiliary_view(AuxiliaryView::Stashes, i18n);
                         if let Some(message) = state.stash_panel.success_message.clone() {
                             state.set_success(message, None, "workspace.stash");
                         }
@@ -3539,24 +3645,25 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             StashPanelMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
                     state.stash_panel.load_stashes(&repo);
-                    state.open_auxiliary_view(AuxiliaryView::Stashes);
+                    state.open_auxiliary_view(AuxiliaryView::Stashes, i18n);
                     if let Some(error) = state.stash_panel.error.clone() {
                         report_async_failure(
                             state,
-                            "刷新储藏列表失败",
+                            i18n.refresh_stash_list_failed,
                             error,
                             "workspace.stash",
                             "workspace.stash.refresh",
+                        i18n,
                         );
                     }
                 }
             }
-            StashPanelMessage::Close => state.close_auxiliary_view(),
+            StashPanelMessage::Close => state.close_auxiliary_view(i18n),
             StashPanelMessage::PopStash(index) => {
                 if let Ok(repo) = require_repository(state) {
                     state.stash_panel.apply_stash(&repo, index);
                     if state.stash_panel.error.is_none() {
-                        let _ = refresh_repository_after_action(state, &repo, false);
+                        let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
                             state.stash_panel.load_stashes(&current);
                         }
@@ -3580,19 +3687,19 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Some(index) = state.stash_panel.show_unstash_dialog.take() {
                     let branch_name = state.stash_panel.unstash_branch_name.clone();
                     if branch_name.trim().is_empty() {
-                        state.stash_panel.error = Some("分支名不能为空".to_string());
+                        state.stash_panel.error = Some(i18n.branch_name_empty.to_string());
                     } else if let Ok(repo) = require_repository(state) {
                         match git_core::unstash_as_branch(&repo, index, &branch_name) {
                             Ok(()) => {
-                                let _ = refresh_repository_after_action(state, &repo, false);
+                                let _ = refresh_repository_after_action(state, &repo, false, i18n);
                                 state.stash_panel.success_message =
-                                    Some(format!("已应用到新分支 {branch_name}"));
+                                    Some(i18n.applied_to_branch_fmt.replace("{}", &branch_name));
                                 if let Some(current) = state.current_repository.clone() {
                                     state.stash_panel.load_stashes(&current);
                                 }
                             }
                             Err(e) => {
-                                state.stash_panel.error = Some(format!("应用到新分支失败: {e}"));
+                                state.stash_panel.error = Some(i18n.apply_to_branch_failed_fmt.replace("{}", &e.to_string()));
                             }
                         }
                     }
@@ -3605,12 +3712,12 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     match git_core::stash_clear(&repo) {
                         Ok(()) => {
-                            state.stash_panel.success_message = Some("所有储藏已清空".to_string());
+                            state.stash_panel.success_message = Some(i18n.all_stashes_cleared.to_string());
                             state.stash_panel.stashes.clear();
                             state.stash_panel.selected_stash = None;
                         }
                         Err(e) => {
-                            state.stash_panel.error = Some(format!("清空储藏失败: {e}"));
+                            state.stash_panel.error = Some(i18n.clear_stashes_failed_fmt.replace("{}", &e.to_string()));
                         }
                     }
                 }
@@ -3627,10 +3734,11 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Err(error) = switch_commit_dialog_to_amend(state) {
                     report_async_failure(
                         state,
-                        "无法打开提交说明编辑面板",
+                        i18n.cannot_open_commit_edit_panel,
                         error,
                         "workspace.rebase",
                         "workspace.rebase.edit_current",
+                    i18n,
                     );
                 }
             }
@@ -3670,29 +3778,31 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "开始变基失败",
+                            i18n.start_rebase_panel_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.start",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true) {
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n) {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.start",
+                        i18n,
                         );
                     } else {
                         if let Some(current) = state.current_repository.clone() {
                             state.rebase_editor.load_status(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Rebase);
+                        state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if state.has_conflicts() {
                             state.set_warning(
-                                "交互式变基出现冲突",
+                                i18n.rebase_conflict_warning,
                                 Some(
-                                    "请先解决冲突，再回到 Rebase 面板继续或跳过当前步骤。"
+                                    i18n.rebase_conflict_detail
                                         .to_string(),
                                 ),
                                 "workspace.rebase",
@@ -3709,24 +3819,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "继续变基失败",
+                            i18n.continue_rebase_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.continue",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true) {
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n) {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.continue",
+                        i18n,
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
                             state.rebase_editor.load_status(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Rebase);
+                        state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
                             state.set_success(message, None, "workspace.rebase");
                         }
@@ -3739,24 +3851,26 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "跳过提交失败",
+                            i18n.skip_commit_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.skip",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true) {
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, true, i18n) {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.skip",
+                        i18n,
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
                             state.rebase_editor.load_status(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Rebase);
+                        state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
                             state.set_success(message, None, "workspace.rebase");
                         }
@@ -3769,25 +3883,27 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "中止变基失败",
+                            i18n.abort_rebase_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.abort",
+                        i18n,
                         );
-                    } else if let Err(error) = refresh_repository_after_action(state, &repo, false)
+                    } else if let Err(error) = refresh_repository_after_action(state, &repo, false, i18n)
                     {
                         report_async_failure(
                             state,
-                            "刷新仓库状态失败",
+                            i18n.refresh_repo_state_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.abort",
+                        i18n,
                         );
                     } else {
                         if let Some(current) = state.current_repository.clone() {
                             state.rebase_editor.load_status(&current);
                         }
-                        state.open_auxiliary_view(AuxiliaryView::Rebase);
+                        state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
                             state.set_success(message, None, "workspace.rebase");
                         }
@@ -3797,19 +3913,20 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             RebaseEditorMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
                     state.rebase_editor.load_status(&repo);
-                    state.open_auxiliary_view(AuxiliaryView::Rebase);
+                    state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
-                            "刷新变基状态失败",
+                            i18n.refresh_rebase_status_failed,
                             error,
                             "workspace.rebase",
                             "workspace.rebase.refresh",
+                        i18n,
                         );
                     }
                 }
             }
-            RebaseEditorMessage::Close => state.close_auxiliary_view(),
+            RebaseEditorMessage::Close => state.close_auxiliary_view(i18n),
         },
     }
 
@@ -3884,10 +4001,11 @@ fn update_editor_diff_model(state: &mut AppState) {
 }
 
 fn require_repository(state: &AppState) -> Result<Repository, String> {
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state
         .current_repository
         .clone()
-        .ok_or_else(|| "没有打开的仓库".to_string())
+        .ok_or_else(|| i18n.no_repo_opened.to_string())
 }
 
 fn build_staged_diff(
@@ -3903,7 +4021,7 @@ fn build_staged_diff(
     for change in staged_changes {
         let file_diff = git_core::diff::diff_index_to_head(repo, Path::new(&change.path))
             .or_else(|_| git_core::diff::diff_file_to_index(repo, Path::new(&change.path)))
-            .map_err(|error| format!("加载暂存差异失败: {}", error))?;
+            .map_err(|error| format!("{}: {}", "load staged diff failed", error))?;
 
         diff.total_additions += file_diff.total_additions;
         diff.total_deletions += file_diff.total_deletions;
@@ -3924,15 +4042,15 @@ fn load_history_commit_file_diff(
     file_path: &str,
 ) -> Result<HistoryCommitFileDiffData, String> {
     let commit = git_core::commit::get_commit(repo, commit_id)
-        .map_err(|error| format!("读取提交详情失败: {error}"))?;
+        .map_err(|error| format!("read commit detail failed: {error}"))?;
 
     let diff = if commit.parent_ids.is_empty() {
         git_core::diff::diff_commit_against_parent(repo, commit_id)
-            .map_err(|error| format!("加载根提交差异失败: {error}"))?
+            .map_err(|error| format!("load root commit diff failed: {error}"))?
     } else {
         git_core::diff::diff_refs(repo, &format!("{commit_id}^"), commit_id)
             .or_else(|_| git_core::diff::diff_commit_against_parent(repo, commit_id))
-            .map_err(|error| format!("加载提交差异失败: {error}"))?
+            .map_err(|error| format!("load commit diff failed: {error}"))?
     };
 
     let files = diff
@@ -3944,7 +4062,7 @@ fn load_history_commit_file_diff(
         .collect::<Vec<_>>();
 
     if files.is_empty() {
-        return Err(format!("没有找到 {file_path} 在该提交中的差异"));
+        return Err(format!("no diff found for {file_path} in this commit"));
     }
 
     let total_additions = files.iter().map(|file| file.additions).sum();
@@ -3958,14 +4076,14 @@ fn load_history_commit_file_diff(
         let old_bytes = match (file_diff.old_path.as_deref(), commit.parent_ids.first()) {
             (Some(path), Some(parent_id)) => {
                 git_core::diff::read_file_bytes_at_commit(repo, parent_id, Path::new(path))
-                    .map_err(|error| format!("读取历史旧版本文件失败: {error}"))?
+                    .map_err(|error| format!("read old version failed: {error}"))?
                     .unwrap_or_default()
             }
             _ => Vec::new(),
         };
         let new_bytes = if let Some(path) = file_diff.new_path.as_deref() {
             git_core::diff::read_file_bytes_at_commit(repo, commit_id, Path::new(path))
-                .map_err(|error| format!("读取历史新版本文件失败: {error}"))?
+                .map_err(|error| format!("read new version failed: {error}"))?
                 .unwrap_or_default()
         } else {
             Vec::new()
@@ -4000,9 +4118,10 @@ fn refresh_repository_after_action(
     state: &mut AppState,
     repo: &Repository,
     prefer_conflicts: bool,
+    i18n: &I18n,
 ) -> Result<(), String> {
     let _ = repo;
-    state.refresh_current_repository(prefer_conflicts)?;
+    state.refresh_current_repository(prefer_conflicts, i18n)?;
     refresh_workspace_views(state);
     Ok(())
 }
@@ -4034,7 +4153,7 @@ fn refresh_open_auxiliary_view(state: &mut AppState) {
     }
 }
 
-fn open_rebase_session_with_context(state: &mut AppState, context_commit_id: Option<&str>) {
+fn open_rebase_session_with_context(state: &mut AppState, context_commit_id: Option<&str>, i18n: &I18n) {
     state.rebase_editor.todo_is_editable = false;
     state.rebase_editor.todo_base_ref = None;
     state.rebase_editor.onto_branch.clear();
@@ -4047,7 +4166,7 @@ fn open_rebase_session_with_context(state: &mut AppState, context_commit_id: Opt
         state.rebase_editor.load_status(&repo);
     }
 
-    state.open_auxiliary_view(AuxiliaryView::Rebase);
+    state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
 }
 
 #[derive(Debug, Clone)]
@@ -4101,57 +4220,58 @@ fn run_toolbar_remote_action(
     remote_name: String,
 ) -> Result<(), String> {
     state.close_toolbar_remote_menu();
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
 
     let repo = require_repository(state)?;
     let branch_name = match repo.current_branch() {
         Ok(Some(branch)) => branch,
         Ok(None) => {
             return Err(match action {
-                ToolbarRemoteAction::Pull => "当前为 detached HEAD，无法执行拉取。".to_string(),
-                ToolbarRemoteAction::Push => "当前为 detached HEAD，无法执行推送。".to_string(),
+                ToolbarRemoteAction::Pull => i18n.detached_no_pull.to_string(),
+                ToolbarRemoteAction::Push => i18n.detached_no_push.to_string(),
             });
         }
-        Err(error) => return Err(format!("读取当前分支失败: {error}")),
+        Err(error) => return Err(i18n.read_branch_failed_fmt.replace("{}", &error.to_string())),
     };
 
     match action {
         ToolbarRemoteAction::Pull => {
             git_core::remote::pull(&repo, &remote_name, &branch_name, None)
-                .map_err(|error| format!("拉取远程失败: {error}"))?;
-            refresh_repository_after_action(state, &repo, true)?;
+                .map_err(|error| i18n.pull_remote_failed_fmt.replace("{}", &error.to_string()))?;
+            refresh_repository_after_action(state, &repo, true, i18n)?;
 
             if state.has_conflicts() {
                 state.set_warning(
-                    format!("已拉取 {remote_name}/{branch_name}"),
-                    Some("发现合并冲突，已切到冲突视图。".to_string()),
+                    i18n.pulled_remote_fmt.replace("{}", &remote_name).replacen("{}", &branch_name, 1),
+                    Some(i18n.merge_conflict_found_detail.to_string()),
                     "workspace.remote.toolbar.pull",
                 );
             } else {
                 state.set_success(
-                    format!("已拉取 {remote_name}/{branch_name}"),
-                    Some("仓库状态已刷新。".to_string()),
+                    i18n.pulled_remote_fmt.replace("{}", &remote_name).replacen("{}", &branch_name, 1),
+                    Some(i18n.repo_state_refreshed.to_string()),
                     "workspace.remote.toolbar.pull",
                 );
                 state.show_toast(
                     crate::state::FeedbackLevel::Success,
-                    "拉取成功",
-                    Some(format!("已从 {remote_name} 拉取并刷新当前分支。")),
+                    i18n.pull_toast_success,
+                    Some(i18n.pull_toast_detail_fmt.replace("{}", &remote_name)),
                 );
             }
         }
         ToolbarRemoteAction::Push => {
             git_core::remote::push(&repo, &remote_name, &branch_name, None)
-                .map_err(|error| format!("推送远程失败: {error}"))?;
-            refresh_repository_after_action(state, &repo, false)?;
+                .map_err(|error| i18n.push_remote_failed_fmt.replace("{}", &error.to_string()))?;
+            refresh_repository_after_action(state, &repo, false, i18n)?;
             state.set_success(
-                format!("已推送 {branch_name} -> {remote_name}"),
-                Some("仓库状态已刷新。".to_string()),
+                i18n.pushed_remote_fmt.replace("{}", &branch_name).replacen("{}", &remote_name, 1),
+                Some(i18n.repo_state_refreshed.to_string()),
                 "workspace.remote.toolbar.push",
             );
             state.show_toast(
                 crate::state::FeedbackLevel::Success,
-                "推送成功",
-                Some(format!("已将 {branch_name} 推送到 {remote_name}。")),
+                i18n.push_toast_success,
+                Some(i18n.push_toast_detail_fmt.replace("{}", &branch_name).replacen("{}", &remote_name, 1)),
             );
         }
     }
@@ -4161,12 +4281,13 @@ fn run_toolbar_remote_action(
 
 fn open_commit_dialog(state: &mut AppState) -> Result<(), String> {
     require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
 
-    state.navigate_to(ShellSection::Changes);
-    state.switch_git_tool_window_tab(GitToolWindowTab::Changes);
+    state.navigate_to(ShellSection::Changes, i18n);
+    state.switch_git_tool_window_tab(GitToolWindowTab::Changes, i18n);
     state.set_info(
-        "已打开提交面板",
-        Some("确认暂存文件与提交说明后，即可创建提交。".to_string()),
+        i18n.commit_panel_opened,
+        Some(i18n.commit_panel_opened_detail.to_string()),
         "workspace.commit",
     );
     Ok(())
@@ -4174,35 +4295,37 @@ fn open_commit_dialog(state: &mut AppState) -> Result<(), String> {
 
 fn switch_commit_dialog_to_amend(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     let diff = build_staged_diff(&repo, &state.staged_changes)?;
     let head_commit = git_core::history::get_history(&repo, Some(1))
-        .map_err(|error| format!("读取最近提交失败: {}", error))?
+        .map_err(|error| i18n.read_recent_commit_failed_fmt.replace("{}", &error.to_string()))?
         .into_iter()
         .next()
-        .ok_or_else(|| "当前仓库还没有提交历史，无法进入 amend 模式。".to_string())?;
+        .ok_or_else(|| i18n.no_commit_history_amend.to_string())?;
     let commit = git_core::commit::get_commit(&repo, &head_commit.id)
-        .map_err(|error| format!("加载提交详情失败: {}", error))?;
+        .map_err(|error| i18n.load_commit_detail_err_fmt.replace("{}", &error.to_string()))?;
 
     state.commit_dialog.diff = diff;
     state.commit_dialog.staged_files = state.staged_changes.clone();
     state.commit_dialog.enable_amend_mode(commit);
     state.set_info(
-        "已切换到 amend 模式",
-        Some("你可以修改提交说明，或只保留部分暂存文件后更新最近一次提交。".to_string()),
+        i18n.switched_to_amend,
+        Some(i18n.switched_to_amend_detail.to_string()),
         "workspace.commit",
     );
     Ok(())
 }
 
 fn switch_commit_dialog_to_new_commit_mode(state: &mut AppState) -> Result<(), String> {
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     if state.commit_dialog.is_amend {
         state.commit_dialog.diff =
             build_staged_diff(&require_repository(state)?, &state.staged_changes)?;
         state.commit_dialog.staged_files = state.staged_changes.clone();
         state.commit_dialog.disable_amend_mode();
         state.set_info(
-            "已切回普通提交模式",
-            Some("当前提交面板会按暂存文件创建新的提交。".to_string()),
+            i18n.switched_to_normal_commit,
+            Some(i18n.switched_to_normal_commit_detail.to_string()),
             "workspace.commit",
         );
         Ok(())
@@ -4221,6 +4344,7 @@ fn toggle_commit_dialog_amend_mode(state: &mut AppState) -> Result<(), String> {
 
 fn submit_commit_dialog(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.commit_dialog.start_commit();
 
     let commit_id = if state.commit_dialog.is_amend {
@@ -4228,16 +4352,16 @@ fn submit_commit_dialog(state: &mut AppState) -> Result<(), String> {
             .commit_dialog
             .commit_to_amend
             .as_ref()
-            .ok_or_else(|| "缺少待修改的提交上下文。".to_string())?;
+            .ok_or_else(|| i18n.missing_amend_context.to_string())?;
         git_core::commit::amend_commit(&repo, &commit_to_amend.id, &state.commit_dialog.message)
-            .map_err(|error| format!("更新提交失败: {}", error))?
+            .map_err(|error| i18n.amend_commit_failed_fmt.replace("{}", &error.to_string()))?
     } else {
         git_core::commit::create_commit(&repo, &state.commit_dialog.message, "", "")
-            .map_err(|error| format!("创建提交失败: {}", error))?
+            .map_err(|error| i18n.create_commit_failed_fmt.replace("{}", &error.to_string()))?
     };
 
     state.commit_dialog.commit_success();
-    refresh_repository_after_action(state, &repo, false)?;
+    refresh_repository_after_action(state, &repo, false, i18n)?;
 
     let still_rebasing = state.current_repository.as_ref().is_some_and(|current| {
         current.get_state() == git_core::repository::RepositoryState::Rebasing
@@ -4246,25 +4370,25 @@ fn submit_commit_dialog(state: &mut AppState) -> Result<(), String> {
         if let Some(current) = state.current_repository.clone() {
             state.rebase_editor.load_status(&current);
         }
-        state.open_auxiliary_view(AuxiliaryView::Rebase);
+        state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
     } else {
-        state.close_auxiliary_view();
-        state.navigate_to(ShellSection::Changes);
+        state.close_auxiliary_view(i18n);
+        state.navigate_to(ShellSection::Changes, i18n);
     }
 
     let short_id = &commit_id[..commit_id.len().min(8)];
     state.set_success(
         if state.commit_dialog.is_amend && still_rebasing {
-            format!("已更新提交 {}，可继续 rebase", short_id)
+            i18n.updated_commit_rebase_fmt.replace("{}", short_id)
         } else if state.commit_dialog.is_amend {
-            format!("已更新提交 {}", short_id)
+            i18n.updated_commit_fmt.replace("{}", short_id)
         } else {
-            format!("已创建提交 {}", short_id)
+            i18n.created_commit_fmt.replace("{}", short_id)
         },
         Some(if state.commit_dialog.is_amend && still_rebasing {
-            "当前仍在交互式变基中，可在 Rebase 面板继续、跳过或中止。".to_string()
+            i18n.still_rebasing_detail.to_string()
         } else {
-            "仓库状态已刷新，可继续查看历史、分支或剩余变更。".to_string()
+            i18n.commit_done_detail.to_string()
         }),
         "workspace.commit",
     );
@@ -4326,55 +4450,60 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
 
 fn open_remote_dialog(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.remote_dialog.load_remotes(&repo);
     if let Some(error) = state.remote_dialog.error.clone() {
         return Err(error);
     }
-    state.open_auxiliary_view(AuxiliaryView::Remotes);
-    state.set_info("已打开远程", None, "workspace.remote");
+    state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
+    state.set_info(i18n.remote_opened, None, "workspace.remote");
     Ok(())
 }
 
 fn open_tag_dialog(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.tag_dialog.load_tags(&repo);
     if let Some(error) = state.tag_dialog.error.clone() {
         return Err(error);
     }
-    state.open_auxiliary_view(AuxiliaryView::Tags);
-    state.set_info("已打开标签", None, "workspace.tags");
+    state.open_auxiliary_view(AuxiliaryView::Tags, i18n);
+    state.set_info(i18n.tags_opened, None, "workspace.tags");
     Ok(())
 }
 
 fn open_stash_panel(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.stash_panel.load_stashes(&repo);
     if let Some(error) = state.stash_panel.error.clone() {
         return Err(error);
     }
-    state.open_auxiliary_view(AuxiliaryView::Stashes);
-    state.set_info("已打开储藏", None, "workspace.stash");
+    state.open_auxiliary_view(AuxiliaryView::Stashes, i18n);
+    state.set_info(i18n.stash_opened, None, "workspace.stash");
     Ok(())
 }
 
 fn open_rebase_editor(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.rebase_editor.clear_draft_context();
     state.rebase_editor.load_status(&repo);
     if let Some(error) = state.rebase_editor.error.clone() {
         return Err(error);
     }
-    state.open_auxiliary_view(AuxiliaryView::Rebase);
-    state.set_info("已打开 Rebase", None, "workspace.rebase");
+    state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
+    state.set_info(i18n.rebase_opened, None, "workspace.rebase");
     Ok(())
 }
 
 fn resolve_selected_conflict(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     let resolver = state
         .conflict_resolver
         .clone()
-        .ok_or_else(|| "当前没有可写回的冲突解析器状态。".to_string())?;
+        .ok_or_else(|| i18n.no_conflict_resolver_state.to_string())?;
     let resolved_content = resolver
         .preview_content
         .clone()
@@ -4385,26 +4514,20 @@ fn resolve_selected_conflict(state: &mut AppState) -> Result<(), String> {
         Path::new(&resolver.diff.path),
         ConflictResolution::Custom(resolved_content),
     )
-    .map_err(|error| format!("写回冲突解决结果失败: {}", error))?;
+    .map_err(|error| i18n.write_conflict_failed_fmt.replace("{}", &error.to_string()))?;
 
-    refresh_repository_after_action(state, &repo, true)?;
+    refresh_repository_after_action(state, &repo, true, i18n)?;
     if state.has_conflicts() {
         state.set_success(
-            "冲突文件已写回",
-            Some(format!(
-                "{} 已处理完毕，请继续解决剩余冲突。",
-                resolver.diff.path
-            )),
+            i18n.conflict_file_written_back,
+            Some(i18n.conflict_file_continue_fmt.replace("{}", &resolver.diff.path)),
             "workspace.conflicts",
         );
     } else {
-        state.navigate_to(ShellSection::Changes);
+        state.navigate_to(ShellSection::Changes, i18n);
         state.set_success(
-            "冲突已解决",
-            Some(format!(
-                "{} 已写回工作区并重新加入索引。",
-                resolver.diff.path
-            )),
+            i18n.all_conflicts_resolved,
+            Some(i18n.conflict_file_indexed_fmt.replace("{}", &resolver.diff.path)),
             "workspace.conflicts",
         );
     }
@@ -4419,29 +4542,30 @@ fn resolve_conflict_with_side(
     source: &'static str,
 ) -> Result<(), String> {
     let repo = require_repository(state)?;
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     let conflict = state
         .conflict_files
         .get(index)
         .cloned()
-        .ok_or_else(|| "未找到所选冲突文件".to_string())?;
+        .ok_or_else(|| i18n.conflict_file_not_found.to_string())?;
     let path = conflict.path.clone();
 
     git_core::diff::resolve_conflict(&repo, Path::new(&path), resolution)
-        .map_err(|error| format!("写回冲突解决结果失败: {}", error))?;
+        .map_err(|error| i18n.write_conflict_failed_fmt.replace("{}", &error.to_string()))?;
 
-    refresh_repository_after_action(state, &repo, true)?;
+    refresh_repository_after_action(state, &repo, true, i18n)?;
 
     if state.has_conflicts() {
         state.set_success(
             success_title.to_string(),
-            Some(format!("{path} 已处理，继续解决剩余冲突。")),
+            Some(i18n.conflict_path_continue_fmt.replace("{}", &path)),
             source,
         );
     } else {
-        state.navigate_to(ShellSection::Changes);
+        state.navigate_to(ShellSection::Changes, i18n);
         state.set_success(
             success_title.to_string(),
-            Some(format!("{path} 已写回工作区并重新加入索引。")),
+            Some(i18n.conflict_path_indexed_fmt.replace("{}", &path)),
             source,
         );
     }
@@ -4450,6 +4574,7 @@ fn resolve_conflict_with_side(
 }
 
 fn select_relative_file(state: &mut AppState, delta: isize) {
+    let i18n = i18n::locale(state.git_settings.language.as_deref());
     let all_changes: Vec<&Change> = state
         .staged_changes
         .iter()
@@ -4459,8 +4584,8 @@ fn select_relative_file(state: &mut AppState, delta: isize) {
 
     if all_changes.is_empty() {
         state.set_warning(
-            "当前没有可浏览的文件",
-            Some("工作区没有变更时，导航键不会执行任何动作。".to_string()),
+            i18n.no_files_to_browse,
+            Some(i18n.no_changes_no_navigation.to_string()),
             "workspace.navigation",
         );
         return;
@@ -4485,10 +4610,11 @@ fn select_relative_file(state: &mut AppState, delta: isize) {
         if let Err(error) = state.select_change(path) {
             report_async_failure(
                 state,
-                "加载文件差异失败",
+                i18n.load_file_diff_failed,
                 error,
                 "workspace.select_change",
                 "workspace.select_change",
+            i18n,
             );
         }
     }
@@ -4586,11 +4712,12 @@ fn report_async_failure(
     detail: impl Into<String>,
     source: &'static str,
     operation: &str,
+    i18n: &I18n,
 ) {
     let title = title.into();
     let detail = detail.into();
     let detail = state
-        .recovery_hint_for_source(source)
+        .recovery_hint_for_source(source, i18n)
         .map(|hint| format!("{detail} {hint}"))
         .unwrap_or(detail);
     logging::LogManager::log_async_failure(operation, source, &detail);
@@ -4722,19 +4849,19 @@ fn shell_section_name(section: ShellSection) -> &'static str {
     }
 }
 
-fn remote_panel_hint(repo: &Repository, action_label: &str) -> String {
+fn remote_panel_hint(repo: &Repository, action_label: &str, i18n: &i18n::I18n) -> String {
     if let Some(upstream_ref) = repo.current_upstream_ref() {
-        format!(
-            "将围绕当前分支 {} 与上游 {upstream_ref} 继续执行{action_label}。",
-            repo.current_branch_display()
-        )
+        i18n.remote_hint_upstream_fmt
+            .replace("{}", &repo.current_branch_display())
+            .replacen("{}", &upstream_ref, 1)
+            .replacen("{}", action_label, 1)
     } else if repo.current_branch().ok().flatten().is_some() {
-        format!(
-            "当前分支是 {}，请确认 remote 后继续执行{action_label}。",
-            repo.current_branch_display()
-        )
+        i18n.remote_hint_branch_fmt
+            .replace("{}", &repo.current_branch_display())
+            .replacen("{}", action_label, 1)
     } else {
-        format!("当前为 detached HEAD，只能先查看远程信息，暂不建议直接{action_label}。")
+        i18n.remote_hint_detached_fmt
+            .replace("{}", action_label)
     }
 }
 
@@ -4784,7 +4911,7 @@ fn view(state: &AppState) -> Element<'_, Message> {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(Text::new("📂").size(12))
-                    .push(Text::new("打开项目...").size(12)),
+                    .push(Text::new(i18n.open_project).size(12)),
             )
             .style(theme::button_style(theme::ButtonTone::Ghost))
             .padding([6, 12])
@@ -4799,7 +4926,7 @@ fn view(state: &AppState) -> Element<'_, Message> {
         if !state.project_history.is_empty() {
             project_list = project_list.push(
                 Container::new(
-                    Text::new("最近的项目")
+                    Text::new(i18n.recent_projects)
                         .size(10)
                         .color(theme::darcula::TEXT_DISABLED),
                 )
@@ -4936,18 +5063,18 @@ fn view(state: &AppState) -> Element<'_, Message> {
                 .spacing(8)
                 .align_y(Alignment::Center)
                 .push(
-                    Text::new(format!("新版本 v{} 可用", update.latest_version))
+                    Text::new(i18n.new_version_fmt.replace("{}", &update.latest_version))
                         .size(11)
                         .color(theme::darcula::TEXT_PRIMARY),
                 )
                 .push(
-                    Button::new(Text::new("下载更新").size(11))
+                    Button::new(Text::new(i18n.download_update).size(11))
                         .style(theme::button_style(theme::ButtonTone::Primary))
                         .padding([3, 10])
                         .on_press(Message::OpenUpdateUrl),
                 )
                 .push(
-                    Button::new(Text::new("忽略").size(11))
+                    Button::new(Text::new(i18n.ignore_update).size(11))
                         .style(theme::button_style(theme::ButtonTone::Ghost))
                         .padding([3, 6])
                         .on_press(Message::DismissUpdate),
@@ -5039,7 +5166,7 @@ fn wrap_with_history_commit_diff_popup<'a>(
                 Column::new()
                     .spacing(2)
                     .width(Length::Fill)
-                    .push(Text::new("提交文件差异").size(13))
+                    .push(Text::new(i18n.commit_file_diff).size(13))
                     .push(
                         Text::new(&popup.file_path)
                             .size(10)
@@ -5047,11 +5174,11 @@ fn wrap_with_history_commit_diff_popup<'a>(
                     ),
             )
             .push(widgets::compact_chip::<Message>(
-                format!("提交 {commit_label}"),
+                i18n.commit_label_fmt.replace("{}", &commit_label),
                 BadgeTone::Neutral,
             ))
             .push(button::compact_ghost(
-                "关闭",
+                i18n.close,
                 Some(Message::CloseHistoryCommitDiffPopup),
             )),
     )
@@ -5246,7 +5373,7 @@ fn build_changes_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<
     let changes_stack = Container::new(
         stack([
             changes_panel.into(),
-            build_change_context_menu_overlay(state),
+            build_change_context_menu_overlay(state, i18n),
         ])
         .width(Length::Fill)
         .height(Length::Fill),
@@ -5311,8 +5438,8 @@ fn build_change_sections<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Eleme
                     Row::new()
                         .spacing(theme::spacing::XS)
                         .push(button::secondary(i18n.refresh, Some(Message::Refresh)))
-                        .push(button::ghost("分支", Some(Message::ShowBranches)))
-                        .push(button::ghost("历史", Some(Message::ShowHistory))),
+                        .push(button::ghost(i18n.branches_btn, Some(Message::ShowBranches)))
+                        .push(button::ghost(i18n.history_btn, Some(Message::ShowHistory))),
                 ),
         )
         .width(Length::Fill)
@@ -5344,7 +5471,7 @@ const CHANGE_CONTEXT_MENU_WIDTH: f32 = 180.0;
 const CHANGE_CONTEXT_MENU_ESTIMATED_HEIGHT: f32 = 180.0;
 const CHANGE_CONTEXT_MENU_EDGE_PADDING: f32 = 8.0;
 
-fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Message> {
+fn build_change_context_menu_overlay<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     let Some(path) = state.change_context_menu_path.as_deref() else {
         return Space::new().width(Length::Shrink).into();
     };
@@ -5355,7 +5482,7 @@ fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Mes
     let is_staged = state.staged_changes.iter().any(|c| c.path == path);
     let _is_unstaged = state.unstaged_changes.iter().any(|c| c.path == path);
 
-    let stage_label = if is_staged { "取消暂存" } else { "暂存" };
+    let stage_label = if is_staged { i18n.unstage_file } else { i18n.stage_file };
     let stage_message = if is_staged {
         Some(Message::UnstageFile(path.to_string()))
     } else {
@@ -5374,31 +5501,31 @@ fn build_change_context_menu_overlay<'a>(state: &'a AppState) -> Element<'a, Mes
             widgets::menu::MenuTone::Neutral,
         ))
         .push(change_context_action_row(
-            "查看差异",
+            i18n.show_diff_ctx,
             String::new(),
             show_diff_enabled.then_some(Message::SelectChange(path.to_string())),
             widgets::menu::MenuTone::Neutral,
         ))
         .push(change_context_action_row(
-            "放弃更改",
+            i18n.discard_changes_ctx,
             String::new(),
             Some(Message::RevertFile(path.to_string())),
             widgets::menu::MenuTone::Danger,
         ))
         .push(change_context_action_row(
-            "显示历史",
+            i18n.show_history_ctx,
             String::new(),
             Some(Message::ShowFileHistory(path.to_string())),
             widgets::menu::MenuTone::Neutral,
         ))
         .push(change_context_action_row(
-            "复制路径",
+            i18n.copy_path_ctx,
             String::new(),
             Some(Message::CopyChangePath(path.to_string())),
             widgets::menu::MenuTone::Neutral,
         ))
         .push(change_context_action_row(
-            "在编辑器中打开",
+            i18n.open_in_editor_ctx,
             String::new(),
             Some(Message::OpenInEditor(path.to_string())),
             widgets::menu::MenuTone::Neutral,
@@ -5674,8 +5801,8 @@ fn build_read_only_diff_content<'a>(
         DiffPresentation::Split => {
             let (Some(model), Some(editor)) = (surface.editor_diff, surface.split_diff_editor) else {
                 return widgets::panel_empty_state_compact(
-                    "当前文件无法切换到分栏编辑器",
-                    "二进制、超大文件或无文本差异的文件继续使用空状态分支。",
+                    i18n.split_view_unavailable,
+                    i18n.split_view_unavailable_detail,
                 );
             };
 
@@ -5694,10 +5821,10 @@ fn build_read_only_diff_content<'a>(
 fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Message> {
     if state.conflict_files.is_empty() {
         return views::render_empty_state(
-            "冲突",
-            "当前没有冲突文件",
-            "如果仓库仍处于异常状态，先刷新一次仓库状态。",
-            Some(button::secondary("返回变更", Some(Message::ShowChanges)).into()),
+            i18n.resolve_conflict_header,
+            i18n.conflict_no_files,
+            i18n.conflict_no_files_detail,
+            Some(button::secondary(i18n.back_to_changes, Some(Message::ShowChanges)).into()),
         );
     }
 
@@ -5717,10 +5844,10 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
                 .into()
         } else {
             widgets::panel_empty_state(
-                "冲突",
-                "暂时无法打开三栏合并视图",
-                "请返回冲突列表后重新选择文件。",
-                Some(button::secondary("返回列表", Some(Message::ShowConflicts)).into()),
+                i18n.resolve_conflict_header,
+                i18n.conflict_merge_unavailable,
+                i18n.conflict_merge_unavailable_detail,
+                Some(button::secondary(i18n.back_to_list, Some(Message::ShowConflicts)).into()),
             )
         };
     }
@@ -5751,15 +5878,15 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
             .spacing(theme::spacing::SM)
             .align_y(Alignment::Center)
             .push(widgets::info_chip::<Message>(
-                format!("冲突文件 {}", state.conflict_files.len()),
+                i18n.conflict_files_count_fmt.replace("{}", &state.conflict_files.len().to_string()),
                 BadgeTone::Warning,
             ))
             .push(widgets::info_chip::<Message>(
-                format!("冲突块 {}", total_hunks),
+                i18n.conflict_hunks_fmt.replace("{}", &total_hunks.to_string()),
                 BadgeTone::Neutral,
             ))
             .push(widgets::info_chip::<Message>(
-                format!("需手工合并 {}", total_manual_conflicts),
+                i18n.manual_merge_fmt.replace("{}", &total_manual_conflicts.to_string()),
                 if total_manual_conflicts > 0 {
                     BadgeTone::Warning
                 } else {
@@ -5767,12 +5894,12 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
                 },
             ))
             .push(widgets::info_chip::<Message>(
-                format!("可直接处理 {}", total_auto_resolvable),
+                i18n.auto_resolvable_fmt.replace("{}", &total_auto_resolvable.to_string()),
                 BadgeTone::Accent,
             ))
             .push(Space::new().width(Length::Fill))
             .push(
-                Text::new("列表页先做整文件判断；真正复杂的文件再进入三栏合并。")
+                Text::new(i18n.conflict_list_hint)
                     .size(11)
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
@@ -5785,25 +5912,25 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
             .spacing(theme::spacing::SM)
             .align_y(Alignment::Center)
             .push(
-                Text::new("名称")
+                Text::new(i18n.name_column)
                     .size(10)
                     .width(Length::FillPortion(6))
                     .color(theme::darcula::TEXT_SECONDARY),
             )
             .push(
-                Text::new("您的更改")
+                Text::new(i18n.your_changes_column)
                     .size(10)
                     .width(Length::FillPortion(2))
                     .color(theme::darcula::TEXT_SECONDARY),
             )
             .push(
-                Text::new("他们的更改")
+                Text::new(i18n.their_changes_column)
                     .size(10)
                     .width(Length::FillPortion(2))
                     .color(theme::darcula::TEXT_SECONDARY),
             )
             .push(
-                Text::new("状态")
+                Text::new(i18n.status_column)
                     .size(10)
                     .width(Length::FillPortion(2))
                     .color(theme::darcula::TEXT_SECONDARY),
@@ -5819,6 +5946,7 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
                 index,
                 conflict,
                 state.selected_conflict_index == Some(index),
+                i18n,
             ))
         },
     );
@@ -5843,13 +5971,13 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
             state
                 .conflict_files
                 .get(index)
-                .map(|conflict| build_conflict_action_panel(index, conflict))
+                .map(|conflict| build_conflict_action_panel(index, conflict, i18n))
         })
         .unwrap_or_else(|| {
             widgets::panel_empty_state(
-                "冲突",
-                "还没有选中冲突文件",
-                "从左侧列表选择一个文件后，可直接接受一侧版本或进入三栏合并。",
+                i18n.resolve_conflict_header,
+                i18n.conflict_no_selection,
+                i18n.conflict_no_selection_detail,
                 None,
             )
         });
@@ -5858,18 +5986,18 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
         .spacing(theme::spacing::XS)
         .align_y(Alignment::Center)
         .push(button::ghost(
-            "返回变更",
+            i18n.back_changes_btn,
             Some(Message::CloseConflictResolver),
         ))
         .push(button::secondary(
-            "刷新",
+            i18n.refresh,
             Some(Message::ConflictResolverMessage(
                 ConflictResolverMessage::Refresh,
             )),
         ))
         .push(Space::new().width(Length::Fill))
         .push(
-            Text::new("选中一行后，右侧操作面板会显示与 PhpStorm 类似的快捷入口。")
+            Text::new(i18n.conflict_footer_hint)
                 .size(10)
                 .color(theme::darcula::TEXT_SECONDARY),
         );
@@ -5879,9 +6007,9 @@ fn build_conflict_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element
             .spacing(theme::spacing::MD)
             .height(Length::Fill)
             .push(widgets::section_header(
-                "冲突",
-                "解决冲突文件",
-                "列表页用于快速决定整文件取舍，三栏页用于逐块确认最终结果。",
+                i18n.resolve_conflict_header,
+                i18n.resolve_conflict_title,
+                i18n.resolve_conflict_detail,
             ))
             .push(summary_bar)
             .push(
@@ -5916,14 +6044,15 @@ fn build_conflict_list_row<'a>(
     index: usize,
     conflict: &'a ThreeWayDiff,
     is_selected: bool,
+    i18n: &'a i18n::I18n,
 ) -> Element<'a, Message> {
     let summary = summarize_conflict(conflict);
     let file_status = FileStatus::Conflict;
-    let (file_name, parent_path) = split_workspace_path(&conflict.path);
+    let (file_name, parent_path) = split_workspace_path(&conflict.path, i18n);
     let status_label = if summary.manual_conflicts > 0 {
-        format!("需合并 {}", summary.manual_conflicts)
+        i18n.needs_merge_fmt.replace("{}", &summary.manual_conflicts.to_string())
     } else {
-        "可直接处理".to_string()
+        i18n.auto_resolvable_label.to_string()
     };
 
     let content = Row::new()
@@ -5950,7 +6079,7 @@ fn build_conflict_list_row<'a>(
                                         .wrapping(text::Wrapping::WordOrGlyph),
                                 )
                                 .push_maybe(is_selected.then(|| {
-                                    widgets::info_chip::<Message>("当前", BadgeTone::Accent)
+                                    widgets::info_chip::<Message>(i18n.current_label, BadgeTone::Accent)
                                 })),
                         )
                         .push(
@@ -5962,20 +6091,20 @@ fn build_conflict_list_row<'a>(
                 ),
         )
         .push(build_conflict_status_cell(
-            "当前分支",
+            i18n.current_branch_label,
             if summary.ours_changed > 0 {
-                format!("已修改 · {} 块", summary.ours_changed)
+                i18n.modified_hunks_fmt.replace("{}", &summary.ours_changed.to_string())
             } else {
-                "无差异".to_string()
+                i18n.no_diff_label.to_string()
             },
             BadgeTone::Accent,
         ))
         .push(build_conflict_status_cell(
-            "传入分支",
+            i18n.incoming_branch_label,
             if summary.theirs_changed > 0 {
-                format!("已修改 · {} 块", summary.theirs_changed)
+                i18n.modified_hunks_fmt.replace("{}", &summary.theirs_changed.to_string())
             } else {
-                "无差异".to_string()
+                i18n.no_diff_label.to_string()
             },
             BadgeTone::Danger,
         ))
@@ -5992,7 +6121,7 @@ fn build_conflict_list_row<'a>(
                     },
                 ))
                 .push(
-                    Text::new(format!("{} 个冲突块", summary.hunk_count))
+                    Text::new(i18n.conflict_hunks_count_fmt.replace("{}", &summary.hunk_count.to_string()))
                         .size(10)
                         .color(theme::darcula::TEXT_SECONDARY),
                 ),
@@ -6026,9 +6155,10 @@ fn build_conflict_list_row<'a>(
 fn build_conflict_action_panel<'a>(
     index: usize,
     conflict: &'a ThreeWayDiff,
+    i18n: &'a i18n::I18n,
 ) -> Element<'a, Message> {
     let summary = summarize_conflict(conflict);
-    let (file_name, parent_path) = split_workspace_path(&conflict.path);
+    let (file_name, parent_path) = split_workspace_path(&conflict.path, i18n);
 
     // IDEA-style: compact file info + toolbar action buttons
     Container::new(
@@ -6057,11 +6187,11 @@ fn build_conflict_action_panel<'a>(
                 Row::new()
                     .spacing(theme::spacing::XS)
                     .push(widgets::info_chip::<Message>(
-                        format!("冲突 {}", summary.hunk_count),
+                        i18n.conflict_count_fmt.replace("{}", &summary.hunk_count.to_string()),
                         BadgeTone::Warning,
                     ))
                     .push(widgets::info_chip::<Message>(
-                        format!("手工 {}", summary.manual_conflicts),
+                        i18n.manual_count_fmt.replace("{}", &summary.manual_conflicts.to_string()),
                         if summary.manual_conflicts > 0 {
                             BadgeTone::Danger
                         } else {
@@ -6069,7 +6199,7 @@ fn build_conflict_action_panel<'a>(
                         },
                     ))
                     .push(widgets::info_chip::<Message>(
-                        format!("可自动 {}", summary.auto_resolvable),
+                        i18n.auto_count_fmt.replace("{}", &summary.auto_resolvable.to_string()),
                         BadgeTone::Neutral,
                     )),
             )
@@ -6078,15 +6208,15 @@ fn build_conflict_action_panel<'a>(
                 Row::new()
                     .spacing(theme::spacing::SM)
                     .push(build_conflict_stat_card(
-                        "当前分支",
+                        i18n.current_branch_label,
                         summary.ours_changed.to_string(),
-                        "发生变化的块",
+                        i18n.changed_hunks_label,
                         BadgeTone::Accent,
                     ))
                     .push(build_conflict_stat_card(
-                        "传入分支",
+                        i18n.incoming_branch_label,
                         summary.theirs_changed.to_string(),
-                        "发生变化的块",
+                        i18n.changed_hunks_label,
                         BadgeTone::Danger,
                     )),
             )
@@ -6096,7 +6226,7 @@ fn build_conflict_action_panel<'a>(
                 Column::new()
                     .spacing(theme::spacing::XS)
                     .push(
-                        button::primary("合并...", Some(Message::OpenConflictMerge(index)))
+                        button::primary(i18n.merge_btn, Some(Message::OpenConflictMerge(index)))
                             .width(Length::Fill),
                     )
                     .push(
@@ -6104,14 +6234,14 @@ fn build_conflict_action_panel<'a>(
                             .spacing(theme::spacing::XS)
                             .push(
                                 button::secondary(
-                                    "接受您的",
+                                    i18n.accept_yours_btn,
                                     Some(Message::ResolveConflictWithOurs(index)),
                                 )
                                 .width(Length::FillPortion(1)),
                             )
                             .push(
                                 button::secondary(
-                                    "接受对方",
+                                    i18n.accept_theirs_btn,
                                     Some(Message::ResolveConflictWithTheirs(index)),
                                 )
                                 .width(Length::FillPortion(1)),
@@ -6119,7 +6249,7 @@ fn build_conflict_action_panel<'a>(
                     ),
             )
             .push(
-                Text::new("配置文件可直接接受；业务代码建议进入合并逐块确认。")
+                Text::new(i18n.conflict_action_hint)
                     .size(10)
                     .color(theme::darcula::TEXT_SECONDARY)
                     .wrapping(text::Wrapping::WordOrGlyph),
@@ -6258,7 +6388,7 @@ fn summarize_conflict_hunk(hunk: &ConflictHunk) -> ConflictHunkType {
     }
 }
 
-fn split_workspace_path(path: &str) -> (String, String) {
+fn split_workspace_path<'a>(path: &str, i18n: &'a i18n::I18n) -> (String, String) {
     let path = Path::new(path);
     let file_name = path
         .file_name()
@@ -6273,7 +6403,7 @@ fn split_workspace_path(path: &str) -> (String, String) {
             let rendered = segment.display().to_string();
             (!rendered.is_empty() && rendered != ".").then_some(rendered)
         })
-        .unwrap_or_else(|| "仓库根目录".to_string());
+        .unwrap_or_else(|| i18n.repo_root.to_string());
 
     (file_name, parent)
 }
@@ -6388,6 +6518,7 @@ pub enum Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::EN;
     use crate::state::ViewMode;
     use git_core::diff::{Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff};
 
@@ -6443,8 +6574,8 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(GitToolWindowTab::Log, &EN);
         open_commit_dialog(&mut state).expect("should open commit dialog");
         assert_eq!(state.shell.git_tool_window_tab, GitToolWindowTab::Changes);
         assert_eq!(state.view_mode, ViewMode::Repository);
@@ -6456,8 +6587,8 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(GitToolWindowTab::Log, &EN);
         state.selected_change_path = Some("workspace-file.rs".to_string());
 
         show_history_commit_file_diff(
@@ -6484,8 +6615,8 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(GitToolWindowTab::Log, &EN);
         state.history_view.selected_commit = Some("abc123".to_string());
 
         show_history_commit_file_diff(
@@ -6512,8 +6643,8 @@ mod tests {
         let repo =
             git_core::Repository::init(temp_dir.path()).expect("repository should initialize");
         let mut state = AppState::new();
-        state.set_repository(repo);
-        state.switch_git_tool_window_tab(GitToolWindowTab::Log);
+        state.set_repository(repo, &EN);
+        state.switch_git_tool_window_tab(GitToolWindowTab::Log, &EN);
 
         show_history_commit_file_diff(
             &mut state,
