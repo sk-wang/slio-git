@@ -35,7 +35,7 @@ impl Eq for DiffFileHeaderMeta {}
 
 impl DiffFileHeaderMeta {
     pub fn describe(old_path: Option<&str>, new_path: Option<&str>) -> Self {
-        let full_label = new_path.or(old_path).unwrap_or("未命名文件");
+        let full_label = new_path.or(old_path).unwrap_or("Unnamed");
         let file_name = Path::new(full_label)
             .file_name()
             .and_then(|value| value.to_str())
@@ -51,10 +51,10 @@ impl DiffFileHeaderMeta {
             _ => None,
         };
         let (status_label, status_tone) = match (old_path, new_path) {
-            (None, Some(_)) => ("新文件", BadgeTone::Success),
-            (Some(_), None) => ("删除", BadgeTone::Danger),
-            (Some(old), Some(new)) if old != new => ("重命名", BadgeTone::Accent),
-            _ => ("修改", BadgeTone::Accent),
+            (None, Some(_)) => ("New File", BadgeTone::Success),
+            (Some(_), None) => ("Deleted", BadgeTone::Danger),
+            (Some(old), Some(new)) if old != new => ("Renamed", BadgeTone::Accent),
+            _ => ("Modified", BadgeTone::Accent),
         };
 
         Self {
@@ -120,7 +120,7 @@ pub fn view<'a, Message: Clone + 'static>(
             )
             .push(widgets::compact_chip::<Message>(status_label, status_tone))
             .push(
-                Text::new(format!("{} 区块 · +{} / -{}", hunks, additions, deletions))
+                Text::new(format!("{} hunks, +{} / -{}", hunks, additions, deletions))
                     .size(theme::typography::CAPTION_SIZE)
                     .color(theme::darcula::TEXT_SECONDARY),
             ),
@@ -144,7 +144,7 @@ mod tests {
             meta.rename_hint.as_deref(),
             Some("old/src/lib.rs -> new/src/lib.rs")
         );
-        assert_eq!(meta.status_label, "重命名");
+        assert_eq!(meta.status_label, "Renamed");
         assert!(matches!(meta.status_tone, BadgeTone::Accent));
     }
 
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(meta.file_name, "new.rs");
         assert_eq!(meta.parent_path.as_deref(), Some("src"));
         assert_eq!(meta.rename_hint, None);
-        assert_eq!(meta.status_label, "新文件");
+        assert_eq!(meta.status_label, "New File");
         assert!(matches!(meta.status_tone, BadgeTone::Success));
     }
 
@@ -173,7 +173,7 @@ mod tests {
 
         assert_eq!(summary.meta.file_name, "new.rs");
         assert_eq!(summary.meta.parent_path.as_deref(), Some("src"));
-        assert_eq!(summary.meta.status_label, "新文件");
+        assert_eq!(summary.meta.status_label, "New File");
         assert!(matches!(summary.meta.status_tone, BadgeTone::Success));
         assert_eq!(summary.change_summary, "+7 / -0");
     }

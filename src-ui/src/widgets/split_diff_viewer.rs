@@ -17,8 +17,8 @@ pub fn view<'a, Message: Clone + 'static>(
 ) -> Element<'a, Message> {
     if model.hunks.is_empty() {
         return widgets::panel_empty_state_compact(
-            "当前没有可显示的分栏 diff",
-            "先选择有文本差异的文件，再切换到分栏查看。",
+            "No split diff to display",
+            "Select a file with text changes, then switch to split view.",
         );
     }
 
@@ -62,7 +62,7 @@ fn hunk_strip<'a, Message: Clone + 'static>(
             .spacing(theme::spacing::SM)
             .align_y(Alignment::Center)
             .push(widgets::compact_chip::<Message>(
-                format!("区块 {}/{}", hunk.id + 1, model.hunks.len()),
+                format!("Hunk {}/{}", hunk.id + 1, model.hunks.len()),
                 BadgeTone::Accent,
             ))
             .push(
@@ -72,10 +72,10 @@ fn hunk_strip<'a, Message: Clone + 'static>(
             )
             .push(Space::new().width(Length::Fill))
             .push_maybe(
-                stage_message.map(|message| button::compact_ghost("暂存区块", Some(message))),
+                stage_message.map(|message| button::compact_ghost("Stage Hunk", Some(message))),
             )
             .push_maybe(
-                unstage_message.map(|message| button::compact_ghost("取消暂存", Some(message))),
+                unstage_message.map(|message| button::compact_ghost("Unstage", Some(message))),
             ),
     )
     .padding(theme::density::SECONDARY_BAR_PADDING)

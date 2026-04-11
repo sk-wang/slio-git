@@ -20,7 +20,7 @@ struct ChromeBadges {
     sync_badge: Option<(String, BadgeTone)>,
 }
 
-const CONTEXT_FOCUS_LABEL: &str = "当前焦点";
+const CONTEXT_FOCUS_LABEL: &str = "Current Focus";
 const MAX_CHROME_BRANCH_NAME_LENGTH: usize = 28;
 
 #[derive(Debug, Clone)]
@@ -512,15 +512,15 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             .as_ref()
             .map(|remote| {
                 format!(
-                    "当前分支：{} · 上游 remote：{remote}",
+                    "Branch: {} · Upstream: {remote}",
                     state.shell.context_switcher.branch_name
                 )
             })
-            .unwrap_or_else(|| format!("当前分支：{}", state.shell.context_switcher.branch_name));
+            .unwrap_or_else(|| format!("Branch: {}", state.shell.context_switcher.branch_name));
 
         let remote_list = if remotes.is_empty() {
             Column::new().push(
-                Text::new("当前分支还没有配置上游 remote。可以先点主按钮打开远程面板。")
+                Text::new("No upstream remote configured. Open the remote panel to set one up.")
                     .size(11)
                     .width(Length::Fill)
                     .wrapping(text::Wrapping::WordOrGlyph)
@@ -549,7 +549,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         .align_y(Alignment::Center)
                         .push(
                             Text::new(format!(
-                                "{}当前分支 remote",
+                                "{}Branch Remote",
                                 Self::toolbar_remote_action_label(i18n, menu.action)
                             ))
                             .size(12),
@@ -557,7 +557,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
                         .push_maybe(
                             menu.preferred_remote
                                 .as_ref()
-                                .map(|_| widgets::info_chip::<Message>("上游", BadgeTone::Accent)),
+                                .map(|_| widgets::info_chip::<Message>("Upstream", BadgeTone::Accent)),
                         )
                         .push(Space::new().width(Length::Fill))
                         .push(button::compact_ghost(
@@ -595,7 +595,7 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
             Some(Self::toolbar_remote_action_symbol(action)),
             &remote.name,
             Some(remote.url.clone()),
-            is_preferred.then(|| ("默认".to_string(), BadgeTone::Accent)),
+            is_preferred.then(|| ("Default".to_string(), BadgeTone::Accent)),
             Some(on_toolbar_remote_action(action, remote.name.clone())),
             widgets::menu::MenuTone::Accent,
         )
@@ -769,15 +769,15 @@ impl<'a, Message: Clone + 'a> MainWindow<'a, Message> {
         let status = &state.shell.status_surface;
         let selected_path = state.selected_change_path.clone();
         let workspace_summary = format!(
-            "{} 个改动{}",
+            "{} changes{}",
             state.shell.chrome.change_count,
             if state.shell.chrome.conflict_count > 0 {
-                format!(" · {} 个冲突", state.shell.chrome.conflict_count)
+                format!(", {} conflicts", state.shell.chrome.conflict_count)
             } else {
                 String::new()
             }
         );
-        let default_workspace_status = format!("{} 项变更", state.workspace_change_count());
+        let default_workspace_status = format!("{} changes", state.workspace_change_count());
         let is_common_workspace_status = state.workspace_change_count() > 0
             && status.severity == StatusSeverity::Info
             && status.message.as_deref() == Some(default_workspace_status.as_str())
@@ -1018,15 +1018,15 @@ mod tests {
     #[test]
     fn pick_branch_badges_prefers_state_hint_over_secondary_label() {
         let badges = MainWindow::<()>::pick_branch_badges(
-            Some("跟踪 origin/main"),
-            Some("有冲突"),
+            Some("tracking origin/main"),
+            Some("conflicts"),
             Some("ahead 1"),
             "✓",
         );
 
         assert!(matches!(
             badges.branch_badge.as_ref(),
-            Some((label, BadgeTone::Warning)) if label == "有冲突"
+            Some((label, BadgeTone::Warning)) if label == "conflicts"
         ));
         assert!(badges.sync_badge.is_none());
     }
@@ -1034,15 +1034,15 @@ mod tests {
     #[test]
     fn pick_branch_badges_ignores_current_focus_secondary_label() {
         let badges = MainWindow::<()>::pick_branch_badges(
-            Some("当前焦点"),
+            Some("Current Focus"),
             None,
-            Some("跟踪 origin/main"),
+            Some("tracking origin/main"),
             "✓",
         );
 
         assert!(matches!(
             badges.branch_badge.as_ref(),
-            Some((label, BadgeTone::Neutral)) if label == "跟踪 origin/main"
+            Some((label, BadgeTone::Neutral)) if label == "tracking origin/main"
         ));
     }
 
@@ -1106,7 +1106,7 @@ mod tests {
             },
         ];
         state.shell.status_surface = LightweightStatusSurface {
-            message: Some("3 项变更".to_string()),
+            message: Some("3 changes".to_string()),
             detail: Some("src-ui/src/main.rs".to_string()),
             severity: StatusSeverity::Info,
             ..LightweightStatusSurface::default()
@@ -1114,9 +1114,9 @@ mod tests {
 
         let content = MainWindow::<()>::build_status_bar_content(&crate::i18n::ZH_CN, &state);
 
-        assert_eq!(content.workspace_summary, "3 个改动 · 1 个冲突");
+        assert_eq!(content.workspace_summary, "3 changes, 1 conflicts");
         assert_eq!(content.selected_path.as_deref(), Some("src-ui/src/main.rs"));
-        assert_eq!(content.activity_label, "就绪");
+        assert_eq!(content.activity_label, crate::i18n::ZH_CN.ready);
         assert!(matches!(content.activity_tone, BadgeTone::Neutral));
         assert_eq!(content.detail, None);
     }
@@ -1124,9 +1124,9 @@ mod tests {
     #[test]
     fn status_bar_content_keeps_long_detail_for_widget_truncation() {
         let mut state = AppState::default();
-        let long_detail = "origin/main 比本地领先 12 次提交，建议先拉取后再继续推送。".to_string();
+        let long_detail = "origin/main is 12 commits ahead, pull before pushing.".to_string();
         state.shell.status_surface = LightweightStatusSurface {
-            message: Some("远程状态".to_string()),
+            message: Some("Remote Status".to_string()),
             detail: Some(long_detail.clone()),
             severity: StatusSeverity::Warning,
             ..LightweightStatusSurface::default()
@@ -1134,7 +1134,7 @@ mod tests {
 
         let content = MainWindow::<()>::build_status_bar_content(&crate::i18n::ZH_CN, &state);
 
-        assert_eq!(content.activity_label, "远程状态");
+        assert_eq!(content.activity_label, "Remote Status");
         assert!(matches!(content.activity_tone, BadgeTone::Warning));
         assert_eq!(content.detail, Some(long_detail));
     }

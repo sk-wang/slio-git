@@ -926,11 +926,11 @@ fn checkbox_base_style(is_checked: bool, hovered: bool, disabled: bool) -> check
 /// Get color for file status.
 pub fn status_color(status: &str) -> Color {
     match status {
-        "added" | "Added" | "新增" => darcula::STATUS_ADDED,
-        "modified" | "Modified" | "已修改" => darcula::STATUS_MODIFIED,
-        "deleted" | "Deleted" | "已删除" => darcula::STATUS_DELETED,
-        "renamed" | "Renamed" | "已重命名" => darcula::STATUS_RENAMED,
-        "unversioned" | "Unversioned" | "未版本控制" => darcula::STATUS_UNVERSIONED,
+        "added" | "Added" | "Added_zh" => darcula::STATUS_ADDED,
+        "modified" | "Modified" | "Modified_zh" => darcula::STATUS_MODIFIED,
+        "deleted" | "Deleted" | "Deleted_zh" => darcula::STATUS_DELETED,
+        "renamed" | "Renamed" | "Renamed_zh" => darcula::STATUS_RENAMED,
+        "unversioned" | "Unversioned" | "Unversioned_zh" => darcula::STATUS_UNVERSIONED,
         _ => darcula::TEXT_SECONDARY,
     }
 }

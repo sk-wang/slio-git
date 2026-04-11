@@ -2,6 +2,7 @@
 //!
 //! Provides a dialog for tag operations.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, scrollable, text_input, OptionalPush};
 use git_core::{
@@ -80,7 +81,7 @@ impl TagDialogState {
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("加载标签失败: {error}"));
+                self.error = Some(format!("Failed to load tags: {error}"));
                 self.success_message = None;
                 self.is_loading = false;
             }
@@ -89,7 +90,7 @@ impl TagDialogState {
 
     pub fn create_tag(&mut self, repo: &Repository) {
         if self.tag_name.is_empty() || self.target.is_empty() {
-            self.error = Some("标签名称和目标不能为空".to_string());
+            self.error = Some("Tag name and target cannot be empty".to_string());
             self.success_message = None;
             return;
         }
@@ -118,11 +119,11 @@ impl TagDialogState {
                 self.target.clear();
                 self.message.clear();
                 self.selected_tag = Some(tag_name.clone());
-                self.success_message = Some(format!("已创建标签 {tag_name}"));
+                self.success_message = Some(format!("Created tag {tag_name}"));
                 self.load_tags(repo);
             }
             Err(error) => {
-                self.error = Some(format!("创建标签失败: {error}"));
+                self.error = Some(format!("Failed to create tag: {error}"));
                 self.is_loading = false;
             }
         }
@@ -138,11 +139,11 @@ impl TagDialogState {
                 if self.selected_tag.as_deref() == Some(name.as_str()) {
                     self.selected_tag = None;
                 }
-                self.success_message = Some(format!("已删除标签 {name}"));
+                self.success_message = Some(format!("Deleted tag {name}"));
                 self.load_tags(repo);
             }
             Err(error) => {
-                self.error = Some(format!("删除标签失败: {error}"));
+                self.error = Some(format!("Failed to delete tag: {error}"));
                 self.is_loading = false;
             }
         }
@@ -155,7 +156,7 @@ impl Default for TagDialogState {
     }
 }
 
-fn build_tag_row(tag: &TagInfo, is_selected: bool) -> Element<'_, TagDialogMessage> {
+fn build_tag_row<'a>(tag: &'a TagInfo, is_selected: bool, i18n: &'a I18n) -> Element<'a, TagDialogMessage> {
     let row = Container::new(
         Column::new()
             .spacing(4)
@@ -167,9 +168,9 @@ fn build_tag_row(tag: &TagInfo, is_selected: bool) -> Element<'_, TagDialogMessa
                         .push(Text::new(&tag.name).size(13))
                         .push(widgets::info_chip::<TagDialogMessage>(
                             if tag.message.is_some() {
-                                "注释"
+                                i18n.td_annotated
                             } else {
-                                "轻量"
+                                i18n.td_lightweight
                             },
                             if tag.message.is_some() {
                                 BadgeTone::Accent
@@ -182,7 +183,7 @@ fn build_tag_row(tag: &TagInfo, is_selected: bool) -> Element<'_, TagDialogMessa
             )
             .push(
                 Text::new(if tag.target.is_empty() {
-                    "目标待解析"
+                    i18n.td_target_pending
                 } else {
                     &tag.target
                 })
@@ -205,10 +206,10 @@ fn build_tag_row(tag: &TagInfo, is_selected: bool) -> Element<'_, TagDialogMessa
         .into()
 }
 
-fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
+fn build_tags_list<'a>(state: &'a TagDialogState, i18n: &'a I18n) -> Element<'a, TagDialogMessage> {
     let list = if state.tags.is_empty() {
         Column::new().push(
-            Text::new("当前仓库还没有任何标签。")
+            Text::new(i18n.td_no_tags)
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
         )
@@ -222,7 +223,7 @@ fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                     .as_ref()
                     .map(|selected| selected == &tag.name)
                     .unwrap_or(false);
-                column.push(build_tag_row(tag, is_selected))
+                column.push(build_tag_row(tag, is_selected, i18n))
             })
     };
 
@@ -234,7 +235,7 @@ fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("标签列表")
+                        Text::new(i18n.td_tag_list)
                             .size(13)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -244,7 +245,7 @@ fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                     )),
             )
             .push(
-                Text::new("选择现有标签后可直接删除，也可在下方表单创建新标签。")
+                Text::new(i18n.td_select_hint)
                     .size(12)
                     .color(theme::darcula::TEXT_SECONDARY),
             )
@@ -255,23 +256,23 @@ fn build_tags_list(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
     .into()
 }
 
-fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
+fn build_tag_form<'a>(state: &'a TagDialogState, i18n: &'a I18n) -> Element<'a, TagDialogMessage> {
     // IDEA-style tag dialog layout: name / force / commit+validate / message
     let mut form = Column::new()
         .spacing(theme::spacing::SM)
         .push(widgets::section_header(
-            "创建".to_uppercase(),
-            "新建标签",
-            "支持轻量标签与注释标签两种模式。",
+            i18n.td_create_section.to_uppercase(),
+            i18n.td_create_title,
+            i18n.td_create_detail,
         ))
         .push(text_input::styled(
-            "标签名称",
+            i18n.td_tag_name,
             &state.tag_name,
             TagDialogMessage::SetTagName,
         ))
         .push(widgets::compact_checkbox(
             state.is_force,
-            "强制覆盖已有标签",
+            i18n.force_overwrite,
             TagDialogMessage::SetForceTag,
         ))
         .push(
@@ -280,14 +281,14 @@ fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                 .align_y(Alignment::Center)
                 .push(
                     Container::new(text_input::styled(
-                        "目标 commit（HEAD 或 hash）",
+                        i18n.td_target_placeholder,
                         &state.target,
                         TagDialogMessage::SetTarget,
                     ))
                     .width(Length::Fill),
                 )
                 .push(button::secondary(
-                    "验证",
+                    i18n.validate_ref,
                     (!state.target.trim().is_empty())
                         .then_some(TagDialogMessage::ValidateCommitRef),
                 )),
@@ -308,13 +309,13 @@ fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
 
     form = form
         .push(text_input::styled(
-            "标签消息（仅注释标签会使用）",
+            i18n.td_tag_message,
             &state.message,
             TagDialogMessage::SetMessage,
         ))
         .push(widgets::compact_checkbox(
             state.is_lightweight,
-            "创建轻量标签",
+            i18n.td_create_lightweight_btn,
             TagDialogMessage::SetLightweight,
         ));
 
@@ -324,7 +325,7 @@ fn build_tag_form(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         .into()
 }
 
-fn build_action_buttons(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
+fn build_action_buttons<'a>(state: &'a TagDialogState, i18n: &'a I18n) -> Element<'a, TagDialogMessage> {
     let can_create =
         !state.is_loading && !state.tag_name.trim().is_empty() && !state.target.trim().is_empty();
 
@@ -332,7 +333,7 @@ fn build_action_buttons(state: &TagDialogState) -> Element<'_, TagDialogMessage>
         Row::new()
             .spacing(theme::spacing::XS)
             .push(button::primary(
-                "创建标签",
+                i18n.td_create_tag_btn,
                 can_create.then(|| {
                     TagDialogMessage::CreateTag(
                         state.tag_name.clone(),
@@ -342,36 +343,36 @@ fn build_action_buttons(state: &TagDialogState) -> Element<'_, TagDialogMessage>
                 }),
             ))
             .push(button::secondary(
-                "推送到远程",
+                i18n.td_push_remote_btn,
                 state.selected_tag.clone().map(TagDialogMessage::PushTag),
             ))
             .push(button::ghost(
-                "删除本地",
+                i18n.td_delete_local_btn,
                 state.selected_tag.clone().map(TagDialogMessage::DeleteTag),
             ))
             .push(button::ghost(
-                "删除远程",
+                i18n.td_delete_remote_btn,
                 state
                     .selected_tag
                     .clone()
                     .map(TagDialogMessage::DeleteRemoteTag),
             ))
             .push(button::ghost(
-                "删除本地和远程",
+                i18n.delete_local_and_remote,
                 state
                     .selected_tag
                     .clone()
                     .map(TagDialogMessage::DeleteLocalAndRemote),
             ))
-            .push(button::ghost("刷新", Some(TagDialogMessage::Refresh)))
-            .push(button::ghost("关闭", Some(TagDialogMessage::Close))),
+            .push(button::ghost(i18n.refresh, Some(TagDialogMessage::Refresh)))
+            .push(button::ghost(i18n.close, Some(TagDialogMessage::Close))),
     )
     .width(Length::Fill)
     .into()
 }
 
 /// Build the tag dialog view.
-pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
+pub fn view<'a>(state: &'a TagDialogState, i18n: &'a I18n) -> Element<'a, TagDialogMessage> {
     // IDEA-style: compact loading indicator when processing
     let status_panel: Option<Element<'_, TagDialogMessage>> = if state.is_loading {
         Some(
@@ -381,7 +382,7 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                     .align_y(Alignment::Center)
                     .push(widgets::loading_spinner::<TagDialogMessage>())
                     .push(
-                        Text::new("正在刷新标签列表...")
+                        Text::new(i18n.td_loading)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     ),
@@ -392,20 +393,20 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<TagDialogMessage>(
-            "失败",
+            i18n.td_status_failed,
             error,
             BadgeTone::Danger,
         ))
     } else if let Some(message) = state.success_message.as_ref() {
         Some(build_status_panel::<TagDialogMessage>(
-            "完成",
+            i18n.td_status_done,
             message,
             BadgeTone::Success,
         ))
     } else if state.tags.is_empty() {
         Some(build_status_panel::<TagDialogMessage>(
-            "空状态",
-            "当前仓库还没有标签；填写名称与目标后即可创建第一条标签。",
+            i18n.td_status_empty,
+            i18n.td_status_empty_detail,
             BadgeTone::Neutral,
         ))
     } else {
@@ -416,16 +417,16 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(Text::new("标签").size(16))
+            .push(Text::new(i18n.td_title).size(16))
             .push(widgets::info_chip::<TagDialogMessage>(
-                format!("总数 {}", state.tags.len()),
+                i18n.td_total_count_fmt.replace("{}", &state.tags.len().to_string()),
                 BadgeTone::Neutral,
             ))
             .push_maybe(state.selected_tag.as_ref().map(|tag| {
-                widgets::info_chip::<TagDialogMessage>(format!("已选 {tag}"), BadgeTone::Accent)
+                widgets::info_chip::<TagDialogMessage>(i18n.td_selected_fmt.replace("{}", tag), BadgeTone::Accent)
             }))
-            .push(button::ghost("刷新", Some(TagDialogMessage::Refresh)))
-            .push(button::ghost("关闭", Some(TagDialogMessage::Close))),
+            .push(button::ghost(i18n.refresh, Some(TagDialogMessage::Refresh)))
+            .push(button::ghost(i18n.close, Some(TagDialogMessage::Close))),
     )
     .padding([10, 12])
     .style(theme::panel_style(Surface::Panel));
@@ -437,12 +438,12 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
         .push_maybe(
             (state.tags.is_empty() && !state.is_loading && state.error.is_none()).then(|| {
                 widgets::panel_empty_state(
-                    "标签",
-                    "当前仓库还没有标签",
-                    "填写名称和目标后即可创建第一条标签；创建后也可以回到上方列表直接删除。",
+                    i18n.td_empty_title,
+                    i18n.td_empty_subtitle,
+                    i18n.td_empty_detail,
                     Some(
                         button::primary(
-                            "创建标签",
+                            i18n.td_create_tag_btn,
                             (!state.is_loading
                                 && !state.tag_name.trim().is_empty()
                                 && !state.target.trim().is_empty())
@@ -459,9 +460,9 @@ pub fn view(state: &TagDialogState) -> Element<'_, TagDialogMessage> {
                 )
             }),
         )
-        .push(build_tags_list(state))
-        .push(build_tag_form(state))
-        .push(build_action_buttons(state));
+        .push(build_tags_list(state, i18n))
+        .push(build_tag_form(state, i18n))
+        .push(build_action_buttons(state, i18n));
 
     Container::new(scrollable::styled(content).height(Length::Fill))
         .padding([10, 12])

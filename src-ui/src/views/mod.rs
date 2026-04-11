@@ -22,12 +22,12 @@ pub fn render_feedback_banner<'a, Message: Clone + 'a>(
     on_dismiss: Option<Message>,
 ) -> Element<'a, Message> {
     let (tone, label) = match feedback.level {
-        FeedbackLevel::Info => (BadgeTone::Accent, "提示"),
-        FeedbackLevel::Success => (BadgeTone::Success, "完成"),
-        FeedbackLevel::Warning => (BadgeTone::Warning, "注意"),
-        FeedbackLevel::Error => (BadgeTone::Danger, "失败"),
-        FeedbackLevel::Loading => (BadgeTone::Neutral, "处理中"),
-        FeedbackLevel::Empty => (BadgeTone::Neutral, "空状态"),
+        FeedbackLevel::Info => (BadgeTone::Accent, "Info"),
+        FeedbackLevel::Success => (BadgeTone::Success, "Done"),
+        FeedbackLevel::Warning => (BadgeTone::Warning, "Warning"),
+        FeedbackLevel::Error => (BadgeTone::Danger, "Failed"),
+        FeedbackLevel::Loading => (BadgeTone::Neutral, "Processing"),
+        FeedbackLevel::Empty => (BadgeTone::Neutral, "Empty"),
     };
 
     // IDEA-style: compact mode for inline feedback without full banner
@@ -60,7 +60,7 @@ pub fn render_feedback_banner<'a, Message: Clone + 'a>(
     }
 
     let dismiss_button: Option<Element<'a, Message>> = on_dismiss.map(|message| {
-        Button::new(Text::new("收起").size(12))
+        Button::new(Text::new("Dismiss").size(12))
             .style(theme::button_style(theme::ButtonTone::Ghost))
             .on_press(message)
             .into()

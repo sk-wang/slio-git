@@ -1,5 +1,6 @@
 //! Git settings view — matches IDEA's Version Control > Git settings panel.
 
+use crate::i18n::I18n;
 use crate::theme::{self, Surface};
 use crate::widgets;
 use crate::widgets::{button, scrollable, text_input};
@@ -48,9 +49,9 @@ pub enum UpdateMethod {
 impl UpdateMethod {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::BranchDefault => "分支默认",
-            Self::Merge => "合并",
-            Self::Rebase => "变基",
+            Self::BranchDefault => "Branch Default",
+            Self::Merge => "Merge",
+            Self::Rebase => "Rebase",
         }
     }
 }
@@ -66,9 +67,9 @@ pub enum FetchTagsMode {
 impl FetchTagsMode {
     pub fn label(&self) -> &'static str {
         match self {
-            Self::Default => "默认",
-            Self::AllTags => "获取所有标签",
-            Self::NoTags => "不获取标签",
+            Self::Default => "Default",
+            Self::AllTags => "All Tags",
+            Self::NoTags => "No Tags",
         }
     }
 }
@@ -305,17 +306,17 @@ impl GitSettings {
 }
 
 /// Render the settings panel
-pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
+pub fn view<'a>(settings: &'a GitSettings, i18n: &'a I18n) -> Element<'a, SettingsMessage> {
     let header = Container::new(
         Row::new()
             .align_y(Alignment::Center)
             .push(
-                Text::new("Git 设置")
+                Text::new(i18n.sv_title)
                     .size(14)
                     .color(theme::darcula::TEXT_PRIMARY),
             )
             .push(Space::new().width(Length::Fill))
-            .push(button::compact_ghost("关闭", Some(SettingsMessage::Close))),
+            .push(button::compact_ghost(i18n.close, Some(SettingsMessage::Close))),
     )
     .padding([6, 14])
     .width(Length::Fill)
@@ -323,31 +324,31 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
 
     // ── 提交 ──
     let commit_section = settings_section(
-        "提交",
+        i18n.sv_section_commit,
         vec![
             checkbox_row(
                 settings.sign_off_commit,
-                "签署提交 (--sign-off)",
+                i18n.sv_sign_off,
                 SettingsMessage::ToggleSignOffCommit,
             ),
             checkbox_row(
                 settings.staging_area_enabled,
-                "启用暂存区",
+                i18n.sv_enable_staging,
                 SettingsMessage::ToggleStagingArea,
             ),
             checkbox_row(
                 settings.warn_crlf,
-                "换行符 CRLF 警告",
+                i18n.sv_crlf_warning,
                 SettingsMessage::ToggleWarnCrlf,
             ),
             checkbox_row(
                 settings.warn_detached_head,
-                "游离 HEAD 警告",
+                i18n.sv_detached_warning,
                 SettingsMessage::ToggleWarnDetachedHead,
             ),
             checkbox_row(
                 settings.warn_large_files,
-                "大文件警告",
+                i18n.sv_large_file_warning,
                 SettingsMessage::ToggleWarnLargeFiles,
             ),
         ],
@@ -359,7 +360,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
             .align_y(Alignment::Center)
             .push(Space::new().width(Length::Fixed(20.0)))
             .push(
-                Text::new("大文件阈值 (MB):")
+                Text::new(i18n.sv_large_file_threshold)
                     .size(12)
                     .color(theme::darcula::TEXT_SECONDARY),
             )
@@ -379,7 +380,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("编辑器")
+                Text::new(i18n.sv_editor)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -388,7 +389,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("Diff 字号:")
+                        Text::new(i18n.sv_diff_font_size)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -418,7 +419,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("语言 / Language")
+                Text::new(i18n.sv_language_label)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -431,7 +432,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                         SettingsMessage::SetLanguage(None),
                     ))
                     .push(radio_button(
-                        "中文",
+                        i18n.sv_lang_zh,
                         lang_zh,
                         SettingsMessage::SetLanguage(Some("zh-CN".to_string())),
                     ))
@@ -446,16 +447,16 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
 
     // ── 推送 ──
     let push_section = settings_section(
-        "推送",
+        i18n.sv_section_push,
         vec![
             checkbox_row(
                 settings.auto_update_on_push_reject,
-                "推送被拒时自动更新",
+                i18n.sv_auto_update_on_reject,
                 SettingsMessage::ToggleAutoUpdateOnPushReject,
             ),
             checkbox_row(
                 settings.preview_push_on_commit,
-                "提交并推送时预览推送",
+                i18n.sv_preview_push,
                 SettingsMessage::TogglePreviewPushOnCommit,
             ),
         ],
@@ -466,7 +467,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
             .spacing(8)
             .align_y(Alignment::Center)
             .push(
-                Text::new("受保护分支:")
+                Text::new(i18n.sv_protected_branches)
                     .size(12)
                     .color(theme::darcula::TEXT_SECONDARY),
             )
@@ -486,7 +487,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("更新方式")
+                Text::new(i18n.sv_update_method)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -494,17 +495,17 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                 Row::new()
                     .spacing(12)
                     .push(radio_button(
-                        "分支默认",
+                        i18n.sv_branch_default,
                         settings.update_method == UpdateMethod::BranchDefault,
                         SettingsMessage::SetUpdateMethod(UpdateMethod::BranchDefault),
                     ))
                     .push(radio_button(
-                        "合并",
+                        i18n.sv_merge,
                         settings.update_method == UpdateMethod::Merge,
                         SettingsMessage::SetUpdateMethod(UpdateMethod::Merge),
                     ))
                     .push(radio_button(
-                        "变基",
+                        i18n.sv_rebase,
                         settings.update_method == UpdateMethod::Rebase,
                         SettingsMessage::SetUpdateMethod(UpdateMethod::Rebase),
                     )),
@@ -517,7 +518,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("获取标签")
+                Text::new(i18n.sv_fetch_tags)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -525,17 +526,17 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                 Row::new()
                     .spacing(12)
                     .push(radio_button(
-                        "默认",
+                        i18n.sv_fetch_default,
                         settings.fetch_tags_mode == FetchTagsMode::Default,
                         SettingsMessage::SetFetchTagsMode(FetchTagsMode::Default),
                     ))
                     .push(radio_button(
-                        "所有标签",
+                        i18n.sv_fetch_all_tags,
                         settings.fetch_tags_mode == FetchTagsMode::AllTags,
                         SettingsMessage::SetFetchTagsMode(FetchTagsMode::AllTags),
                     ))
                     .push(radio_button(
-                        "不获取",
+                        i18n.sv_fetch_no_tags,
                         settings.fetch_tags_mode == FetchTagsMode::NoTags,
                         SettingsMessage::SetFetchTagsMode(FetchTagsMode::NoTags),
                     )),
@@ -548,13 +549,13 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
         Column::new()
             .spacing(4)
             .push(
-                Text::new("AI 提交消息")
+                Text::new(i18n.sv_ai_commit)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
             .push(checkbox_row(
                 settings.llm_enabled,
-                "启用 AI 生成提交消息 (OpenAI 兼容)",
+                i18n.sv_ai_enable,
                 SettingsMessage::ToggleLlmEnabled,
             ))
             .push(
@@ -562,7 +563,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("API 地址:")
+                        Text::new(i18n.sv_api_url)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -580,7 +581,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("API 密钥:")
+                        Text::new(i18n.sv_api_key)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -598,7 +599,7 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("模型名称:")
+                        Text::new(i18n.sv_model_name)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -620,8 +621,8 @@ pub fn view(settings: &GitSettings) -> Element<'_, SettingsMessage> {
             .spacing(8)
             .align_y(Alignment::Center)
             .push(Space::new().width(Length::Fill))
-            .push(button::ghost("取消", Some(SettingsMessage::Close)))
-            .push(button::primary("保存", Some(SettingsMessage::SaveAndClose))),
+            .push(button::ghost(i18n.cancel, Some(SettingsMessage::Close)))
+            .push(button::primary(i18n.sv_save, Some(SettingsMessage::SaveAndClose))),
     )
     .padding([8, 14])
     .width(Length::Fill)

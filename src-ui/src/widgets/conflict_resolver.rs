@@ -206,20 +206,20 @@ impl ConflictResolver {
         let selected_index = self.selected_hunk;
 
         let next_step = if total_count == 0 {
-            "当前文件已经没有剩余冲突块。可以返回列表继续处理其他文件。".to_string()
+            "No remaining conflict hunks. Return to the list to continue.".to_string()
         } else if unresolved_count == 0 {
-            "所有冲突块都已处理。检查中间结果列后，点击“应用”写回文件。".to_string()
+            "All conflict hunks resolved. Review the result, then click Apply.".to_string()
         } else if let Some(index) = selected_index {
             format!(
-                "当前聚焦第 {} 个冲突块。可接受左侧、右侧或基础版本，也可先自动合并可安全处理的块。",
+                "Focused on conflict hunk {}. Accept left, right, or base version.",
                 index + 1
             )
         } else {
-            "先从下方选中一个冲突块，再决定接受左侧、右侧还是基础版本。".to_string()
+            "Select a conflict hunk below first.".to_string()
         };
 
         let instruction_bar = build_inline_status(
-            "下一步",
+            "Next Step",
             next_step,
             if unresolved_count == 0 {
                 BadgeTone::Success
@@ -233,15 +233,15 @@ impl ConflictResolver {
         let stats = Row::new()
             .spacing(theme::spacing::XS)
             .push(widgets::info_chip::<ConflictResolverMessage>(
-                format!("文件 {}", self.diff.path),
+                format!("File {}", self.diff.path),
                 BadgeTone::Accent,
             ))
             .push(widgets::info_chip::<ConflictResolverMessage>(
-                format!("冲突块 {total_count}"),
+                format!("Hunks {total_count}"),
                 BadgeTone::Neutral,
             ))
             .push(widgets::info_chip::<ConflictResolverMessage>(
-                format!("已处理 {resolved_count}/{total_count}"),
+                format!("Resolved {resolved_count}/{total_count}"),
                 if unresolved_count == 0 {
                     BadgeTone::Success
                 } else {
@@ -249,11 +249,11 @@ impl ConflictResolver {
                 },
             ))
             .push_maybe(self.is_auto_merged.then(|| {
-                widgets::info_chip::<ConflictResolverMessage>("自动合并已执行", BadgeTone::Neutral)
+                widgets::info_chip::<ConflictResolverMessage>("Auto merge executed", BadgeTone::Neutral)
             }))
             .push_maybe(selected_index.map(|index| {
                 widgets::info_chip::<ConflictResolverMessage>(
-                    format!("当前块 {}", index + 1),
+                    format!("Hunk {}", index + 1),
                     BadgeTone::Accent,
                 )
             }));
@@ -263,23 +263,23 @@ impl ConflictResolver {
         let headers = Row::new()
             .spacing(theme::spacing::SM)
             .push(build_column_header(
-                "您的版本",
-                "来自当前分支",
-                "<< 接受左侧",
+                "Yours",
+                "From current branch",
+                "<< Accept Left",
                 EditorColumnKind::Ours,
                 BadgeTone::Accent,
             ))
             .push(build_column_header(
-                "合并结果",
-                "最终写回文件",
-                "<> 当前结果",
+                "Merge Result",
+                "Final result",
+                "<> Current Result",
                 EditorColumnKind::Result,
                 BadgeTone::Success,
             ))
             .push(build_column_header(
-                "他们的版本",
-                "来自传入分支",
-                ">> 接受右侧",
+                "Theirs",
+                "From incoming branch",
+                ">> Accept Right",
                 EditorColumnKind::Theirs,
                 BadgeTone::Danger,
             ));
@@ -289,14 +289,14 @@ impl ConflictResolver {
         let footer = Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(Text::new(format!("{} 个变更块待检查", unresolved_count)).size(11))
+            .push(Text::new(format!("{} hunks to review", unresolved_count)).size(11))
             .push(Space::new().width(Length::Fill))
             .push(button::ghost(
-                "取消",
+                "Cancel",
                 Some(ConflictResolverMessage::BackToList),
             ))
             .push(button::primary(
-                "应用",
+                "Apply",
                 (total_count > 0 && unresolved_count == 0)
                     .then_some(ConflictResolverMessage::Resolve),
             ));
@@ -305,8 +305,8 @@ impl ConflictResolver {
             .map(|hunk| build_selected_hunk_hint(selected_index.unwrap_or(0), hunk, self))
             .unwrap_or_else(|| {
                 build_inline_status(
-                    "状态",
-                    "当前文件没有可编辑的冲突块。".to_string(),
+                    "Status",
+                    "No editable conflict hunks.".to_string(),
                     BadgeTone::Neutral,
                 )
             });
@@ -315,9 +315,9 @@ impl ConflictResolver {
             Column::new()
                 .spacing(theme::spacing::MD)
                 .push(widgets::section_header(
-                    "冲突",
-                    "三栏合并",
-                    "左侧查看当前分支，右侧查看对方分支，中间直接确认最终结果。",
+                    "Conflicts",
+                    "Three-Way Merge",
+                    "Left: current, Right: incoming, Center: final result.",
                 ))
                 .push(stats)
                 .push(instruction_bar)
@@ -369,10 +369,10 @@ impl ConflictResolver {
         let is_selected = self.selected_hunk == Some(index);
         let resolution = self.effective_resolution(index);
         let resolution_label = match resolution {
-            Some(ResolutionOption::Ours) => "接受左侧",
-            Some(ResolutionOption::Theirs) => "接受右侧",
-            Some(ResolutionOption::Base) => "接受基础",
-            None => "未解决",
+            Some(ResolutionOption::Ours) => "Accepted Left",
+            Some(ResolutionOption::Theirs) => "Accepted Right",
+            Some(ResolutionOption::Base) => "Accepted Base",
+            None => "Unresolved",
         };
         let conflict_type = classify_hunk(hunk);
         let resolution_tone = match resolution {
@@ -398,7 +398,7 @@ impl ConflictResolver {
                                 .spacing(theme::spacing::XS)
                                 .align_y(Alignment::Center)
                                 .push(widgets::info_chip::<ConflictResolverMessage>(
-                                    format!("冲突 {}", index + 1),
+                                    format!("Conflict {}", index + 1),
                                     if is_selected {
                                         BadgeTone::Accent
                                     } else {
@@ -407,10 +407,10 @@ impl ConflictResolver {
                                 ))
                                 .push(widgets::info_chip::<ConflictResolverMessage>(
                                     match conflict_type {
-                                        ConflictHunkType::Modified => "需人工决策",
-                                        ConflictHunkType::OursOnly => "左侧可直接采用",
-                                        ConflictHunkType::TheirsOnly => "右侧可直接采用",
-                                        ConflictHunkType::Unchanged => "基础版本一致",
+                                        ConflictHunkType::Modified => "Needs manual resolution",
+                                        ConflictHunkType::OursOnly => "Left side can be accepted",
+                                        ConflictHunkType::TheirsOnly => "Right side can be accepted",
+                                        ConflictHunkType::Unchanged => "Base version unchanged",
                                     },
                                     match conflict_type {
                                         ConflictHunkType::Modified => BadgeTone::Warning,
@@ -425,7 +425,7 @@ impl ConflictResolver {
                                 ))
                                 .push(
                                     Text::new(format!(
-                                        "{} 行 · base {}, ours {}, theirs {}",
+                                        "{} lines, base {}, ours {}, theirs {}",
                                         hunk.lines.len(),
                                         hunk.base_start + 1,
                                         hunk.ours_start + 1,
@@ -436,7 +436,7 @@ impl ConflictResolver {
                                 )
                                 .push(Space::new().width(Length::Fill))
                                 .push(button::compact_ghost(
-                                    "定位",
+                                    "Locate",
                                     Some(ConflictResolverMessage::SelectHunk(index)),
                                 )),
                         )
@@ -445,19 +445,19 @@ impl ConflictResolver {
                                 .spacing(theme::spacing::XS)
                                 .push(build_header_action(
                                     "<<",
-                                    "接受左侧",
+                                    "Accept Left",
                                     ButtonFlavor::Ours,
                                     Some(ConflictResolverMessage::ChooseOursForHunk(index)),
                                 ))
                                 .push(build_header_action(
                                     "=",
-                                    "保留基础",
+                                    "Keep Base",
                                     ButtonFlavor::Base,
                                     Some(ConflictResolverMessage::ChooseBaseForHunk(index)),
                                 ))
                                 .push(build_header_action(
                                     ">>",
-                                    "接受右侧",
+                                    "Accept Right",
                                     ButtonFlavor::Theirs,
                                     Some(ConflictResolverMessage::ChooseTheirsForHunk(index)),
                                 )),
@@ -672,10 +672,10 @@ fn build_result_lines(hunk: &ConflictHunk, resolution: Option<ResolutionOption>)
                 .filter_map(|line| line.theirs_line.clone())
                 .collect();
             let mut result = Vec::new();
-            // IDEA-style: show "未解决冲突" instead of raw markers when unresolved
+            // IDEA-style: show "Unresolved Conflict" instead of raw markers when unresolved
             result.push(PaneLine {
                 number: None,
-                text: "── 未解决冲突 ──".to_string(),
+                text: "── Unresolved Conflict ──".to_string(),
                 tone: PaneTone::Marker,
             });
             for text in ours_lines {
@@ -757,9 +757,9 @@ fn build_column_header(
                 Container::new(
                     Text::new(match kind {
                         // IDEA-style: more descriptive column labels
-                        EditorColumnKind::Ours => "您的",
-                        EditorColumnKind::Result => "结果",
-                        EditorColumnKind::Theirs => "他们的",
+                        EditorColumnKind::Ours => "Yours",
+                        EditorColumnKind::Result => "Result",
+                        EditorColumnKind::Theirs => "Theirs",
                     })
                     .size(11)
                     .color(theme::darcula::TEXT_PRIMARY),
@@ -802,30 +802,30 @@ fn build_selected_hunk_hint(
     let conflict_type = classify_hunk(hunk);
     let detail = match resolver.effective_resolution(index) {
         Some(ResolutionOption::Ours) => {
-            "当前冲突块已采用左侧内容。可继续跳到下一处，或直接应用全部结果。".to_string()
+            "Hunk accepted left. Jump to next or apply all.".to_string()
         }
         Some(ResolutionOption::Theirs) => {
-            "当前冲突块已采用右侧内容。可继续跳到下一处，或直接应用全部结果。".to_string()
+            "Hunk accepted right. Jump to next or apply all.".to_string()
         }
         Some(ResolutionOption::Base) => {
-            "当前冲突块已采用基础版本。请确认中间结果是否符合预期。".to_string()
+            "Hunk accepted base version. Verify the result.".to_string()
         }
         None => match conflict_type {
             ConflictHunkType::Modified => {
-                "这是一个真正的冲突块。请在左侧 / 右侧 / 基础之间做选择。".to_string()
+                "Real conflict. Choose between left, right, or base.".to_string()
             }
             ConflictHunkType::OursOnly => {
-                "只有左侧发生变化，自动合并或直接接受左侧都安全。".to_string()
+                "Only left changed. Auto-merge or accept left is safe.".to_string()
             }
             ConflictHunkType::TheirsOnly => {
-                "只有右侧发生变化，自动合并或直接接受右侧都安全。".to_string()
+                "Only right changed. Auto-merge or accept right is safe.".to_string()
             }
-            ConflictHunkType::Unchanged => "该块内容一致，可直接保留基础版本。".to_string(),
+            ConflictHunkType::Unchanged => "Content identical. Keep base.".to_string(),
         },
     };
 
     build_inline_status(
-        format!("当前块 {}", index + 1),
+        format!("Hunk {}", index + 1),
         detail,
         match resolver.effective_resolution(index) {
             Some(ResolutionOption::Ours) => BadgeTone::Accent,
@@ -860,24 +860,24 @@ fn build_merge_toolbar(
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
             .push(button::compact_ghost(
-                "返回列表",
+                "Back to List",
                 Some(ConflictResolverMessage::BackToList),
             ))
             .push(button::compact_ghost(
-                "上一处",
+                "Previous",
                 selected_index
                     .filter(|index| *index > 0)
                     .map(|_| ConflictResolverMessage::SelectPrevHunk),
             ))
             .push(button::compact_ghost(
-                "下一处",
+                "Next",
                 selected_index
                     .filter(|index| index + 1 < total_count)
                     .map(|_| ConflictResolverMessage::SelectNextHunk),
             ))
             .push_maybe(selected_index.map(|index| {
                 widgets::info_chip::<ConflictResolverMessage>(
-                    format!("定位到 {}", index + 1),
+                    format!("Go to {}", index + 1),
                     BadgeTone::Accent,
                 )
             })),
@@ -891,19 +891,19 @@ fn build_merge_toolbar(
             .align_y(Alignment::Center)
             .push(build_toolbar_action(
                 "<<",
-                "左侧",
+                "Left",
                 ButtonFlavor::Ours,
                 selected_index.map(ConflictResolverMessage::ChooseOursForHunk),
             ))
             .push(build_toolbar_action(
                 "=",
-                "基础",
+                "Base",
                 ButtonFlavor::Base,
                 selected_index.map(ConflictResolverMessage::ChooseBaseForHunk),
             ))
             .push(build_toolbar_action(
                 ">>",
-                "右侧",
+                "Right",
                 ButtonFlavor::Theirs,
                 selected_index.map(ConflictResolverMessage::ChooseTheirsForHunk),
             )),
@@ -916,19 +916,19 @@ fn build_merge_toolbar(
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
             .push(button::compact_ghost(
-                "自动合并",
+                "Auto Merge",
                 (total_count > 0).then_some(ConflictResolverMessage::AutoMerge),
             ))
             .push(button::compact_ghost(
-                "全部左侧",
+                "All Left",
                 (total_count > 0).then_some(ConflictResolverMessage::AcceptOursAll),
             ))
             .push(button::compact_ghost(
-                "全部右侧",
+                "All Right",
                 (total_count > 0).then_some(ConflictResolverMessage::AcceptTheirsAll),
             ))
             .push(button::compact_ghost(
-                "刷新",
+                "Refresh",
                 Some(ConflictResolverMessage::Refresh),
             )),
     )
@@ -974,10 +974,10 @@ fn build_hunk_navigator(resolver: &ConflictResolver) -> Element<'static, Conflic
                         )
                         .push(widgets::info_chip::<ConflictResolverMessage>(
                             match resolution {
-                                Some(ResolutionOption::Ours) => "左侧",
-                                Some(ResolutionOption::Theirs) => "右侧",
-                                Some(ResolutionOption::Base) => "基础",
-                                None => "待处理",
+                                Some(ResolutionOption::Ours) => "Left",
+                                Some(ResolutionOption::Theirs) => "Right",
+                                Some(ResolutionOption::Base) => "Base",
+                                None => "Pending",
                             },
                             tone,
                         )),

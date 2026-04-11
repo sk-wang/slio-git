@@ -2930,7 +2930,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.history_view.context_menu_commit = None;
                     state
                         .rebase_editor
-                        .prepare_interactive_rebase(&repo, commit_id);
+                        .prepare_interactive_rebase(&repo, commit_id, i18n);
                     state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
@@ -3191,7 +3191,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     } else {
                         let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
-                            state.remote_dialog.load_remotes(&current);
+                            state.remote_dialog.load_remotes(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
@@ -3215,7 +3215,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     } else {
                         let _ = refresh_repository_after_action(state, &repo, false, i18n);
                         if let Some(current) = state.current_repository.clone() {
-                            state.remote_dialog.load_remotes(&current);
+                            state.remote_dialog.load_remotes(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
@@ -3252,7 +3252,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
-                            state.remote_dialog.load_remotes(&current);
+                            state.remote_dialog.load_remotes(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                         if let Some(message) = state.remote_dialog.success_message.clone() {
@@ -3270,7 +3270,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             RemoteDialogMessage::SetPassword(value) => state.remote_dialog.password = value,
             RemoteDialogMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
-                    state.remote_dialog.load_remotes(&repo);
+                    state.remote_dialog.load_remotes(&repo, i18n);
                     state.open_auxiliary_view(AuxiliaryView::Remotes, i18n);
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
@@ -3774,7 +3774,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             RebaseEditorMessage::StartRebase => {
                 if let Ok(repo) = require_repository(state) {
-                    state.rebase_editor.start_rebase(&repo);
+                    state.rebase_editor.start_rebase(&repo, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
@@ -3795,7 +3795,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                     } else {
                         if let Some(current) = state.current_repository.clone() {
-                            state.rebase_editor.load_status(&current);
+                            state.rebase_editor.load_status(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if state.has_conflicts() {
@@ -3815,7 +3815,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             RebaseEditorMessage::ContinueRebase => {
                 if let Ok(repo) = require_repository(state) {
-                    state.rebase_editor.continue_rebase(&repo);
+                    state.rebase_editor.continue_rebase(&repo, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
@@ -3836,7 +3836,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
-                            state.rebase_editor.load_status(&current);
+                            state.rebase_editor.load_status(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
@@ -3847,7 +3847,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             RebaseEditorMessage::SkipCommit => {
                 if let Ok(repo) = require_repository(state) {
-                    state.rebase_editor.skip_commit(&repo);
+                    state.rebase_editor.skip_commit(&repo, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
@@ -3868,7 +3868,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                     } else if !state.has_conflicts() {
                         if let Some(current) = state.current_repository.clone() {
-                            state.rebase_editor.load_status(&current);
+                            state.rebase_editor.load_status(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
@@ -3879,7 +3879,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             RebaseEditorMessage::AbortRebase => {
                 if let Ok(repo) = require_repository(state) {
-                    state.rebase_editor.abort_rebase(&repo);
+                    state.rebase_editor.abort_rebase(&repo, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
                             state,
@@ -3901,7 +3901,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         );
                     } else {
                         if let Some(current) = state.current_repository.clone() {
-                            state.rebase_editor.load_status(&current);
+                            state.rebase_editor.load_status(&current, i18n);
                         }
                         state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                         if let Some(message) = state.rebase_editor.success_message.clone() {
@@ -3912,7 +3912,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             RebaseEditorMessage::Refresh => {
                 if let Ok(repo) = require_repository(state) {
-                    state.rebase_editor.load_status(&repo);
+                    state.rebase_editor.load_status(&repo, i18n);
                     state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
                     if let Some(error) = state.rebase_editor.error.clone() {
                         report_async_failure(
@@ -4141,10 +4141,16 @@ fn refresh_open_auxiliary_view(state: &mut AppState) {
             let i18n = i18n::locale(state.git_settings.language.as_deref());
             state.branch_popup.load_branches(&repo, i18n);
         }
-        Some(AuxiliaryView::Remotes) => state.remote_dialog.load_remotes(&repo),
+        Some(AuxiliaryView::Remotes) => {
+            let i18n = i18n::locale(state.git_settings.language.as_deref());
+            state.remote_dialog.load_remotes(&repo, i18n);
+        }
         Some(AuxiliaryView::Tags) => state.tag_dialog.load_tags(&repo),
         Some(AuxiliaryView::Stashes) => state.stash_panel.load_stashes(&repo),
-        Some(AuxiliaryView::Rebase) => state.rebase_editor.load_status(&repo),
+        Some(AuxiliaryView::Rebase) => {
+            let i18n = i18n::locale(state.git_settings.language.as_deref());
+            state.rebase_editor.load_status(&repo, i18n);
+        }
         Some(AuxiliaryView::Worktrees) => state.worktree_state.load_worktrees(&repo),
         Some(AuxiliaryView::Settings)
         | Some(AuxiliaryView::Commit)
@@ -4163,7 +4169,7 @@ fn open_rebase_session_with_context(state: &mut AppState, context_commit_id: Opt
     }
 
     if let Some(repo) = state.current_repository.clone() {
-        state.rebase_editor.load_status(&repo);
+        state.rebase_editor.load_status(&repo, i18n);
     }
 
     state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
@@ -4368,7 +4374,7 @@ fn submit_commit_dialog(state: &mut AppState) -> Result<(), String> {
     });
     if still_rebasing && state.commit_dialog.is_amend {
         if let Some(current) = state.current_repository.clone() {
-            state.rebase_editor.load_status(&current);
+            state.rebase_editor.load_status(&current, i18n);
         }
         state.open_auxiliary_view(AuxiliaryView::Rebase, i18n);
     } else {
@@ -4451,7 +4457,7 @@ fn branch_popup_message_closes_context_menu(message: &BranchPopupMessage) -> boo
 fn open_remote_dialog(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
     let i18n = i18n::locale(state.git_settings.language.as_deref());
-    state.remote_dialog.load_remotes(&repo);
+    state.remote_dialog.load_remotes(&repo, i18n);
     if let Some(error) = state.remote_dialog.error.clone() {
         return Err(error);
     }
@@ -4488,7 +4494,7 @@ fn open_rebase_editor(state: &mut AppState) -> Result<(), String> {
     let repo = require_repository(state)?;
     let i18n = i18n::locale(state.git_settings.language.as_deref());
     state.rebase_editor.clear_draft_context();
-    state.rebase_editor.load_status(&repo);
+    state.rebase_editor.load_status(&repo, i18n);
     if let Some(error) = state.rebase_editor.error.clone() {
         return Err(error);
     }
@@ -5246,22 +5252,22 @@ fn build_body<'a>(state: &'a AppState, i18n: &'a i18n::I18n) -> Element<'a, Mess
         return match auxiliary {
             AuxiliaryView::Branches => build_changes_body(state, i18n),
             AuxiliaryView::Remotes => {
-                remote_dialog::view(&state.remote_dialog).map(Message::RemoteDialogMessage)
+                remote_dialog::view(&state.remote_dialog, i18n).map(Message::RemoteDialogMessage)
             }
             AuxiliaryView::Tags => {
-                tag_dialog::view(&state.tag_dialog).map(Message::TagDialogMessage)
+                tag_dialog::view(&state.tag_dialog, i18n).map(Message::TagDialogMessage)
             }
             AuxiliaryView::Stashes => {
-                stash_panel::view(&state.stash_panel).map(Message::StashPanelMessage)
+                stash_panel::view(&state.stash_panel, i18n).map(Message::StashPanelMessage)
             }
             AuxiliaryView::Rebase => {
-                rebase_editor::view(&state.rebase_editor).map(Message::RebaseEditorMessage)
+                rebase_editor::view(&state.rebase_editor, i18n).map(Message::RebaseEditorMessage)
             }
             AuxiliaryView::Worktrees => {
-                views::worktree_view::view(&state.worktree_state).map(Message::WorktreeMessage)
+                views::worktree_view::view(&state.worktree_state, i18n).map(Message::WorktreeMessage)
             }
             AuxiliaryView::Settings => {
-                views::settings_view::view(&state.git_settings).map(Message::SettingsMessage)
+                views::settings_view::view(&state.git_settings, i18n).map(Message::SettingsMessage)
             }
             AuxiliaryView::Commit => build_changes_body(state, i18n),
             AuxiliaryView::History => build_log_body(state, i18n),

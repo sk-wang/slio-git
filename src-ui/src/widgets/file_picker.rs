@@ -8,7 +8,7 @@ use std::path::PathBuf;
 /// Open a folder selection dialog
 pub fn pick_folder() -> Option<PathBuf> {
     FileDialog::new()
-        .set_title("选择一个 Git 仓库")
+        .set_title("Select a Git Repository")
         .set_directory(
             std::env::current_dir()
                 .ok()
@@ -20,13 +20,13 @@ pub fn pick_folder() -> Option<PathBuf> {
 
 /// Open a file selection dialog
 pub fn pick_file() -> Option<PathBuf> {
-    FileDialog::new().set_title("选择文件").pick_file()
+    FileDialog::new().set_title("Select File").pick_file()
 }
 
 /// Save file dialog
 pub fn save_file(default_name: &str) -> Option<PathBuf> {
     FileDialog::new()
-        .set_title("保存文件")
+        .set_title("Save File")
         .set_file_name(default_name)
         .save_file()
 }

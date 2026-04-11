@@ -2,6 +2,7 @@
 //!
 //! Provides a dialog for remote operations.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, scrollable, text_input, OptionalPush};
 use git_core::{remote::RemoteInfo, Repository};
@@ -104,7 +105,7 @@ impl RemoteDialogState {
         }
     }
 
-    pub fn load_remotes(&mut self, repo: &Repository) {
+    pub fn load_remotes(&mut self, repo: &Repository, i18n: &I18n) {
         self.is_loading = true;
         self.error = None;
         self.current_branch_name = repo.current_branch().ok().flatten();
@@ -136,7 +137,7 @@ impl RemoteDialogState {
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("加载远程失败: {error}"));
+                self.error = Some(i18n.rd_load_failed_fmt.replace("{}", &error.to_string()));
                 self.success_message = None;
                 self.is_loading = false;
             }
@@ -156,27 +157,27 @@ impl RemoteDialogState {
         self.current_branch_name.is_some()
     }
 
-    fn branch_scope_detail(&self) -> String {
+    fn branch_scope_detail(&self, i18n: &I18n) -> String {
         if let Some(upstream_ref) = self.current_upstream_ref.as_ref() {
             if let Some(remote) = self.preferred_remote.as_ref() {
-                return format!("当前分支跟踪 {upstream_ref}，下面只保留主线同步目标 {remote}。");
+                return i18n.rd_tracking_upstream_fmt.replace("{}", &upstream_ref.to_string()).replacen("{}", &remote.to_string(), 1);
             }
 
-            return format!("当前分支跟踪 {upstream_ref}。");
+            return i18n.rd_tracking_upstream_only_fmt.replace("{}", &upstream_ref.to_string());
         }
 
         if self.has_current_branch() {
-            "当前分支还没有配置上游；可以先确认 remote，再按同名分支继续 fetch / pull / push。"
+            i18n.rd_no_upstream
                 .to_string()
         } else {
-            "当前为 detached HEAD，建议先切回一个分支；此时只保留 fetch，pull / push 会被禁用。"
+            i18n.rd_detached_head
                 .to_string()
         }
     }
 
     pub fn fetch_selected(&mut self, repo: &Repository) {
         let Some(remote_name) = self.selected_remote.clone() else {
-            self.error = Some("请先选择一个远程仓库".to_string());
+            self.error = Some("Please select a remote first".to_string());
             self.success_message = None;
             return;
         };
@@ -195,10 +196,10 @@ impl RemoteDialogState {
         ) {
             Ok(()) => {
                 self.is_loading = false;
-                self.success_message = Some(format!("已获取 {remote_name}"));
+                self.success_message = Some(format!("Fetched {remote_name}"));
             }
             Err(error) => {
-                self.error = Some(format!("获取远程失败: {error}"));
+                self.error = Some(format!("Failed to fetch remote: {error}"));
                 self.is_loading = false;
             }
         }
@@ -206,7 +207,7 @@ impl RemoteDialogState {
 
     pub fn pull_selected(&mut self, repo: &Repository) {
         let Some(remote_name) = self.selected_remote.clone() else {
-            self.error = Some("请先选择一个远程仓库".to_string());
+            self.error = Some("Please select a remote first".to_string());
             self.success_message = None;
             return;
         };
@@ -214,12 +215,12 @@ impl RemoteDialogState {
         let branch_name = match repo.current_branch() {
             Ok(Some(branch)) => branch,
             Ok(None) => {
-                self.error = Some("当前为 detached HEAD，无法执行拉取。".to_string());
+                self.error = Some("Detached HEAD, cannot pull.".to_string());
                 self.success_message = None;
                 return;
             }
             Err(error) => {
-                self.error = Some(format!("读取当前分支失败: {error}"));
+                self.error = Some(format!("Failed to read current branch: {error}"));
                 self.success_message = None;
                 return;
             }
@@ -240,10 +241,10 @@ impl RemoteDialogState {
         ) {
             Ok(()) => {
                 self.is_loading = false;
-                self.success_message = Some(format!("已拉取 {remote_name}/{branch_name}"));
+                self.success_message = Some(format!("Pulled {remote_name}/{branch_name}"));
             }
             Err(error) => {
-                self.error = Some(format!("拉取远程失败: {error}"));
+                self.error = Some(format!("Failed to pull from remote: {error}"));
                 self.is_loading = false;
             }
         }
@@ -251,7 +252,7 @@ impl RemoteDialogState {
 
     pub fn push_selected(&mut self, repo: &Repository) {
         let Some(remote_name) = self.selected_remote.clone() else {
-            self.error = Some("请先选择一个远程仓库".to_string());
+            self.error = Some("Please select a remote first".to_string());
             self.success_message = None;
             return;
         };
@@ -259,12 +260,12 @@ impl RemoteDialogState {
         let branch_name = match repo.current_branch() {
             Ok(Some(branch)) => branch,
             Ok(None) => {
-                self.error = Some("当前为 detached HEAD，无法执行推送。".to_string());
+                self.error = Some("Detached HEAD, cannot push.".to_string());
                 self.success_message = None;
                 return;
             }
             Err(error) => {
-                self.error = Some(format!("读取当前分支失败: {error}"));
+                self.error = Some(format!("Failed to read current branch: {error}"));
                 self.success_message = None;
                 return;
             }
@@ -285,10 +286,10 @@ impl RemoteDialogState {
         ) {
             Ok(()) => {
                 self.is_loading = false;
-                self.success_message = Some(format!("已推送 {branch_name} -> {remote_name}"));
+                self.success_message = Some(format!("Pushed {branch_name} -> {remote_name}"));
             }
             Err(error) => {
-                self.error = Some(format!("推送远程失败: {error}"));
+                self.error = Some(format!("Failed to push to remote: {error}"));
                 self.is_loading = false;
             }
         }
@@ -339,10 +340,10 @@ fn build_remote_row(remote: &RemoteInfo, is_selected: bool) -> Element<'_, Remot
         .into()
 }
 
-fn build_remotes_list(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_remotes_list<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     let list = if state.remotes.is_empty() {
         Column::new().push(
-            Text::new("当前仓库还没有配置远程。")
+            Text::new(i18n.rd_no_remotes)
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
         )
@@ -369,9 +370,9 @@ fn build_remotes_list(state: &RemoteDialogState) -> Element<'_, RemoteDialogMess
                     .align_y(Alignment::Center)
                     .push(
                         Text::new(if state.preferred_remote.is_some() {
-                            "当前分支 remote"
+                            i18n.rd_branch_remote
                         } else {
-                            "远程仓库"
+                            i18n.rd_remote_repos
                         })
                         .size(10)
                         .color(theme::darcula::TEXT_DISABLED),
@@ -383,9 +384,9 @@ fn build_remotes_list(state: &RemoteDialogState) -> Element<'_, RemoteDialogMess
             )
             .push(
                 Text::new(if state.preferred_remote.is_some() {
-                    "当前分支已经有上游 remote，这里只保留主线同步目标。"
+                    i18n.rd_has_upstream_hint
                 } else {
-                    "先选择目标远程，再执行 fetch / pull / push。"
+                    i18n.rd_select_target_hint
                 })
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
@@ -397,17 +398,17 @@ fn build_remotes_list(state: &RemoteDialogState) -> Element<'_, RemoteDialogMess
     .into()
 }
 
-fn build_credential_inputs(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_credential_inputs<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     Container::new(
         Column::new()
             .spacing(theme::spacing::SM)
             .push(text_input::styled(
-                "用户名（可选覆盖）",
+                i18n.rd_username_optional,
                 &state.username,
                 RemoteDialogMessage::SetUsername,
             ))
             .push(text_input::styled(
-                "密码（可选覆盖）",
+                i18n.rd_password_optional,
                 &state.password,
                 RemoteDialogMessage::SetPassword,
             )),
@@ -417,7 +418,7 @@ fn build_credential_inputs(state: &RemoteDialogState) -> Element<'_, RemoteDialo
     .into()
 }
 
-fn build_branch_scope_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_branch_scope_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     let sync_chip = state
         .current_branch_sync_hint
         .as_ref()
@@ -443,7 +444,7 @@ fn build_branch_scope_panel(state: &RemoteDialogState) -> Element<'_, RemoteDial
                     .push_maybe(sync_chip),
             )
             .push(
-                Text::new(state.branch_scope_detail())
+                Text::new(state.branch_scope_detail(i18n))
                     .size(11)
                     .width(Length::Fill)
                     .wrapping(text::Wrapping::WordOrGlyph)
@@ -455,7 +456,7 @@ fn build_branch_scope_panel(state: &RemoteDialogState) -> Element<'_, RemoteDial
     .into()
 }
 
-fn build_action_buttons(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_action_buttons<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     let has_remote = state.selected_remote.is_some() && !state.is_loading;
     let can_sync_branch = has_remote && state.has_current_branch();
 
@@ -463,27 +464,27 @@ fn build_action_buttons(state: &RemoteDialogState) -> Element<'_, RemoteDialogMe
         Row::new()
             .spacing(theme::spacing::XS)
             .push(button::primary(
-                "获取",
+                i18n.rd_fetch_btn,
                 has_remote.then_some(RemoteDialogMessage::Fetch),
             ))
             .push(button::secondary(
                 if state.preferred_remote.is_some() {
-                    "拉取当前分支"
+                    i18n.rd_pull_branch_btn
                 } else {
-                    "拉取"
+                    i18n.rd_pull_btn
                 },
                 can_sync_branch.then_some(RemoteDialogMessage::Pull),
             ))
             .push(button::secondary(
                 if state.preferred_remote.is_some() {
-                    "推送当前分支"
+                    i18n.rd_push_branch_btn
                 } else {
-                    "推送"
+                    i18n.rd_push_btn
                 },
                 can_sync_branch.then_some(RemoteDialogMessage::Push),
             ))
-            .push(button::ghost("刷新", Some(RemoteDialogMessage::Refresh)))
-            .push(button::ghost("关闭", Some(RemoteDialogMessage::Close))),
+            .push(button::ghost(i18n.refresh, Some(RemoteDialogMessage::Refresh)))
+            .push(button::ghost(i18n.close, Some(RemoteDialogMessage::Close))),
     )
     .width(Length::Fill)
     .into()
@@ -491,7 +492,7 @@ fn build_action_buttons(state: &RemoteDialogState) -> Element<'_, RemoteDialogMe
 
 /// Build the remote dialog view.
 /// IDEA-style Push dialog — compact, clear visual hierarchy
-fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_push_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     let remote_name = state
         .selected_remote
         .as_deref()
@@ -509,13 +510,13 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
         Row::new()
             .align_y(Alignment::Center)
             .push(
-                Text::new(format!("推送提交到 {}", remote_name))
+                Text::new(i18n.rd_push_commits_fmt.replace("{}", remote_name))
                     .size(14)
                     .color(theme::darcula::TEXT_PRIMARY),
             )
             .push(iced::widget::Space::new().width(Length::Fill))
             .push(button::compact_ghost(
-                "关闭",
+                i18n.close,
                 Some(RemoteDialogMessage::Close),
             )),
     )
@@ -558,17 +559,17 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
             .spacing(6)
             .push(widgets::compact_checkbox(
                 state.force_push,
-                "强制推送 (--force-with-lease)",
+                i18n.rd_force_push,
                 |_| RemoteDialogMessage::ToggleForcePush,
             ))
             .push(widgets::compact_checkbox(
                 state.push_tags,
-                "推送标签",
+                i18n.rd_push_tags,
                 |_| RemoteDialogMessage::TogglePushTags,
             ))
             .push(widgets::compact_checkbox(
                 state.set_upstream,
-                "设置上游分支",
+                i18n.rd_set_upstream,
                 |_| RemoteDialogMessage::ToggleSetUpstream,
             )),
     )
@@ -577,7 +578,7 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
     // ── Status ──
     let status: Option<Element<'_, RemoteDialogMessage>> = if let Some(error) = &state.error {
         Some(build_status_panel::<RemoteDialogMessage>(
-            "失败",
+            i18n.rd_status_failed,
             error,
             BadgeTone::Danger,
         ))
@@ -585,7 +586,7 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
         state
             .success_message
             .as_ref()
-            .map(|msg| build_status_panel::<RemoteDialogMessage>("完成", msg, BadgeTone::Success))
+            .map(|msg| build_status_panel::<RemoteDialogMessage>(i18n.rd_status_done, msg, BadgeTone::Success))
     };
 
     // ── Footer ──
@@ -594,9 +595,9 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
             .spacing(theme::spacing::SM)
             .align_y(Alignment::Center)
             .push(iced::widget::Space::new().width(Length::Fill))
-            .push(button::ghost("取消", Some(RemoteDialogMessage::Close)))
+            .push(button::ghost(i18n.cancel, Some(RemoteDialogMessage::Close)))
             .push(button::primary(
-                "推送",
+                i18n.rd_push_btn,
                 (!state.is_loading).then_some(RemoteDialogMessage::ExecutePush),
             )),
     )
@@ -624,7 +625,7 @@ fn build_push_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
 }
 
 /// IDEA-style Pull dialog — compact, clear visual hierarchy
-fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     let remote_name = state
         .selected_remote
         .as_deref()
@@ -642,13 +643,13 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
         Row::new()
             .align_y(Alignment::Center)
             .push(
-                Text::new(format!("拉取到 {}", branch))
+                Text::new(i18n.rd_pull_to_fmt.replace("{}", branch))
                     .size(14)
                     .color(theme::darcula::TEXT_PRIMARY),
             )
             .push(iced::widget::Space::new().width(Length::Fill))
             .push(button::compact_ghost(
-                "关闭",
+                i18n.close,
                 Some(RemoteDialogMessage::Close),
             )),
     )
@@ -673,7 +674,7 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
             )
             .push(
                 Container::new(text_input::styled(
-                    "选择要拉取的分支",
+                    i18n.rd_select_pull_branch,
                     pull_target,
                     RemoteDialogMessage::SetPullBranch,
                 ))
@@ -690,22 +691,22 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
             .spacing(6)
             .push(widgets::compact_checkbox(
                 state.pull_rebase,
-                "变基 (--rebase)",
+                i18n.rd_rebase_option,
                 |_| RemoteDialogMessage::TogglePullRebase,
             ))
             .push(widgets::compact_checkbox(
                 state.pull_ff_only,
-                "仅快进 (--ff-only)",
+                i18n.rd_ff_only_option,
                 |_| RemoteDialogMessage::TogglePullFfOnly,
             ))
             .push(widgets::compact_checkbox(
                 state.pull_no_ff,
-                "禁止快进 (--no-ff)",
+                i18n.rd_no_ff_option,
                 |_| RemoteDialogMessage::TogglePullNoFf,
             ))
             .push(widgets::compact_checkbox(
                 state.pull_squash,
-                "压缩 (--squash)",
+                i18n.rd_squash_option,
                 |_| RemoteDialogMessage::TogglePullSquash,
             )),
     )
@@ -714,7 +715,7 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
     // ── Status ──
     let status: Option<Element<'_, RemoteDialogMessage>> = if let Some(error) = &state.error {
         Some(build_status_panel::<RemoteDialogMessage>(
-            "失败",
+            i18n.rd_status_failed,
             error,
             BadgeTone::Danger,
         ))
@@ -722,7 +723,7 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
         state
             .success_message
             .as_ref()
-            .map(|msg| build_status_panel::<RemoteDialogMessage>("完成", msg, BadgeTone::Success))
+            .map(|msg| build_status_panel::<RemoteDialogMessage>(i18n.rd_status_done, msg, BadgeTone::Success))
     };
 
     // ── Footer ──
@@ -731,9 +732,9 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
             .spacing(theme::spacing::SM)
             .align_y(Alignment::Center)
             .push(iced::widget::Space::new().width(Length::Fill))
-            .push(button::ghost("取消", Some(RemoteDialogMessage::Close)))
+            .push(button::ghost(i18n.cancel, Some(RemoteDialogMessage::Close)))
             .push(button::primary(
-                "拉取",
+                i18n.rd_pull_btn,
                 (!state.is_loading).then_some(RemoteDialogMessage::ExecutePull),
             )),
     )
@@ -760,10 +761,10 @@ fn build_pull_panel(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessag
         .into()
 }
 
-pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
+pub fn view<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element<'a, RemoteDialogMessage> {
     match state.mode {
-        RemoteDialogMode::Push => return build_push_panel(state),
-        RemoteDialogMode::Pull => return build_pull_panel(state),
+        RemoteDialogMode::Push => return build_push_panel(state, i18n),
+        RemoteDialogMode::Pull => return build_pull_panel(state, i18n),
         RemoteDialogMode::Overview => {} // fall through to existing overview
     }
     // IDEA-style: compact loading indicator when processing
@@ -775,7 +776,7 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
                     .align_y(Alignment::Center)
                     .push(widgets::loading_spinner::<RemoteDialogMessage>())
                     .push(
-                        Text::new("正在与远程仓库交互...")
+                        Text::new(i18n.rd_loading)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     ),
@@ -786,20 +787,20 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
         )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<RemoteDialogMessage>(
-            "失败",
+            i18n.rd_status_failed,
             error,
             BadgeTone::Danger,
         ))
     } else if let Some(message) = state.success_message.as_ref() {
         Some(build_status_panel::<RemoteDialogMessage>(
-            "完成",
+            i18n.rd_status_done,
             message,
             BadgeTone::Success,
         ))
     } else if state.remotes.is_empty() {
         Some(build_status_panel::<RemoteDialogMessage>(
-            "空状态",
-            "当前仓库还没有配置远程；先添加 remote，再执行同步操作。",
+            i18n.rd_status_empty,
+            i18n.rd_status_empty_detail,
             BadgeTone::Neutral,
         ))
     } else {
@@ -810,9 +811,9 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(Text::new("远程").size(14))
+            .push(Text::new(i18n.rd_title).size(14))
             .push(widgets::info_chip::<RemoteDialogMessage>(
-                format!("远程 {}", state.remotes.len()),
+                i18n.rd_remote_count_fmt.replace("{}", &state.remotes.len().to_string()),
                 BadgeTone::Neutral,
             ))
             .push(widgets::info_chip::<RemoteDialogMessage>(
@@ -821,7 +822,7 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
             ))
             .push_maybe(state.selected_remote.as_ref().map(|remote| {
                 widgets::info_chip::<RemoteDialogMessage>(
-                    format!("已选 {remote}"),
+                    i18n.rd_selected_fmt.replace("{}", &remote.to_string()),
                     BadgeTone::Success,
                 )
             })),
@@ -836,13 +837,13 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
             .width(Length::Fill)
             .push(toolbar)
             .push(iced::widget::rule::horizontal(1))
-            .push(build_branch_scope_panel(state))
+            .push(build_branch_scope_panel(state, i18n))
             .push_maybe(status_panel)
             .push(widgets::panel_empty_state(
-                "远程",
-                "当前仓库还没有配置远程",
-                "先在仓库里添加 remote，随后就能在这里执行 fetch、pull 和 push。",
-                Some(build_action_buttons(state)),
+                i18n.rd_empty_title,
+                i18n.rd_empty_subtitle,
+                i18n.rd_empty_detail,
+                Some(build_action_buttons(state, i18n)),
             ))
     } else {
         Column::new()
@@ -850,14 +851,14 @@ pub fn view(state: &RemoteDialogState) -> Element<'_, RemoteDialogMessage> {
             .width(Length::Fill)
             .push(toolbar)
             .push(iced::widget::rule::horizontal(1))
-            .push(build_branch_scope_panel(state))
+            .push(build_branch_scope_panel(state, i18n))
             .push(iced::widget::rule::horizontal(1))
             .push_maybe(status_panel)
-            .push(build_remotes_list(state))
+            .push(build_remotes_list(state, i18n))
             .push(iced::widget::rule::horizontal(1))
-            .push(build_credential_inputs(state))
+            .push(build_credential_inputs(state, i18n))
             .push(iced::widget::rule::horizontal(1))
-            .push(build_action_buttons(state))
+            .push(build_action_buttons(state, i18n))
     };
 
     Container::new(scrollable::styled(content).height(Length::Fill))

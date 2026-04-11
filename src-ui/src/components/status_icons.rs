@@ -41,25 +41,25 @@ impl FileStatus {
 
     fn symbol_and_label(self) -> (&'static str, &'static str) {
         match self {
-            FileStatus::Added => ("A", "新增"),
-            FileStatus::Modified => ("M", "修改"),
-            FileStatus::Deleted => ("D", "删除"),
-            FileStatus::Renamed => ("R", "重命名"),
-            FileStatus::Unversioned => ("U", "未跟踪"),
-            FileStatus::Conflict => ("!", "冲突"),
-            FileStatus::Ignored => ("I", "忽略"),
+            FileStatus::Added => ("A", "Added"),
+            FileStatus::Modified => ("M", "Modified"),
+            FileStatus::Deleted => ("D", "Deleted"),
+            FileStatus::Renamed => ("R", "Renamed"),
+            FileStatus::Unversioned => ("U", "Untracked"),
+            FileStatus::Conflict => ("!", "Conflict"),
+            FileStatus::Ignored => ("I", "Ignored"),
         }
     }
 
     pub fn label(self) -> &'static str {
         match self {
-            FileStatus::Added => "新增文件",
-            FileStatus::Modified => "修改文件",
-            FileStatus::Deleted => "删除文件",
-            FileStatus::Renamed => "重命名",
-            FileStatus::Unversioned => "未跟踪",
-            FileStatus::Conflict => "存在冲突",
-            FileStatus::Ignored => "已忽略",
+            FileStatus::Added => "Added File",
+            FileStatus::Modified => "Modified File",
+            FileStatus::Deleted => "Deleted File",
+            FileStatus::Renamed => "Renamed",
+            FileStatus::Unversioned => "Untracked",
+            FileStatus::Conflict => "Has Conflicts",
+            FileStatus::Ignored => "Ignored",
         }
     }
 

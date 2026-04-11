@@ -55,7 +55,7 @@ impl CommitCompareState {
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("加载提交历史失败: {error}"));
+                self.error = Some(format!("Failed to load commit history: {error}"));
                 self.is_loading = false;
             }
         }
@@ -80,7 +80,7 @@ impl CommitCompareState {
         let left = match &self.left_commit {
             Some(id) => id.as_str(),
             None => {
-                self.error = Some("请选择左侧提交".to_string());
+                self.error = Some("Please select a left commit".to_string());
                 return;
             }
         };
@@ -88,7 +88,7 @@ impl CommitCompareState {
         let right = match &self.right_commit {
             Some(id) => id.as_str(),
             None => {
-                self.error = Some("请选择右侧提交".to_string());
+                self.error = Some("Please select a right commit".to_string());
                 return;
             }
         };
@@ -102,7 +102,7 @@ impl CommitCompareState {
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("比较失败: {error}"));
+                self.error = Some(format!("Comparison failed: {error}"));
                 self.is_loading = false;
             }
         }
@@ -148,15 +148,15 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
             Column::new()
                 .spacing(theme::spacing::MD)
                 .push(widgets::section_header(
-                    "比较",
-                    "提交比较",
-                    "为两个提交选择左右版本，然后直接查看统一 diff 结果。",
+                    "Compare",
+                    "Commit Comparison",
+                    "Select left and right commits, then view the unified diff.",
                 ))
                 .push(widgets::panel_empty_state(
-                    "结果",
-                    "还没有可比较的提交历史",
-                    "先创建提交，或刷新一次历史列表后再回到比较视图。",
-                    Some(button::ghost("刷新", Some(CommitCompareMessage::Refresh)).into()),
+                    "Result",
+                    "No commit history to compare",
+                    "Create commits first, or refresh the history list.",
+                    Some(button::ghost("Refresh", Some(CommitCompareMessage::Refresh)).into()),
                 )),
         )
         .padding(20)
@@ -166,21 +166,21 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
 
     let status_panel = if state.is_loading {
         Some(build_status_panel::<CommitCompareMessage>(
-            "加载中",
-            "正在比较两个提交之间的差异。",
+            "Loading",
+            "Comparing the two commits.",
             BadgeTone::Neutral,
         ))
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<CommitCompareMessage>(
-            "失败",
+            "Failed",
             error,
             BadgeTone::Danger,
         ))
     } else if let Some(diff) = state.diff.as_ref() {
         Some(build_status_panel::<CommitCompareMessage>(
-            "比较完成",
+            "Comparison complete",
             format!(
-                "共影响 {} 个文件，+{} / -{} 行。",
+                "{} files affected, +{} / -{} lines.",
                 diff.files.len(),
                 diff.total_additions,
                 diff.total_deletions
@@ -189,8 +189,8 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
         ))
     } else {
         Some(build_status_panel::<CommitCompareMessage>(
-            "待比较",
-            "从左右两侧选择提交后即可生成比较结果。",
+            "Pending",
+            "Select commits from both sides to compare.",
             BadgeTone::Accent,
         ))
     };
@@ -202,18 +202,18 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
             .into()
     } else {
         widgets::panel_empty_state(
-            "结果",
+            "Result",
             if state.left_commit.is_none() || state.right_commit.is_none() {
-                "先选择左右两个提交"
+                "Select left and right commits first"
             } else {
-                "还没有可显示的比较结果"
+                "No comparison results yet"
             },
             if state.left_commit.is_none() || state.right_commit.is_none() {
-                "在两侧各选一个提交, 点击比较查看差异."
+                "Select a commit on each side, then click Compare."
             } else {
-                "重新比较或切换提交后查看更新结果。"
+                "Re-compare or switch commits to update."
             },
-            Some(button::primary("比较", Some(CommitCompareMessage::Compare)).into()),
+            Some(button::primary("Compare", Some(CommitCompareMessage::Compare)).into()),
         )
     };
 
@@ -221,27 +221,27 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
         Column::new()
             .spacing(theme::spacing::MD)
             .push(widgets::section_header(
-                "比较",
-                "提交比较",
-                "为两个提交选择左右版本，然后直接查看统一 diff 结果。",
+                "Compare",
+                "Commit Comparison",
+                "Select left and right commits, then view the unified diff.",
             ))
             .push(
                 scrollable::styled_horizontal(
                     Row::new()
                         .spacing(theme::spacing::XS)
                         .push(widgets::info_chip::<CommitCompareMessage>(
-                            format!("候选提交 {}", state.entries.len()),
+                            format!("Candidates {}", state.entries.len()),
                             BadgeTone::Neutral,
                         ))
                         .push_maybe(state.left_commit.as_ref().map(|left| {
                             widgets::info_chip::<CommitCompareMessage>(
-                                format!("左侧 {}", &left[..left.len().min(8)]),
+                                format!("Left {}", &left[..left.len().min(8)]),
                                 BadgeTone::Accent,
                             )
                         }))
                         .push_maybe(state.right_commit.as_ref().map(|right| {
                             widgets::info_chip::<CommitCompareMessage>(
-                                format!("右侧 {}", &right[..right.len().min(8)]),
+                                format!("Right {}", &right[..right.len().min(8)]),
                                 BadgeTone::Warning,
                             )
                         })),
@@ -255,7 +255,7 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
                     .push(build_commit_selector(
                         &state.entries,
                         state.left_commit.as_deref(),
-                        "左侧提交（旧）",
+                        "Left Commit (Old)",
                         CommitCompareMessage::SetLeftCommit,
                     ))
                     .push(
@@ -263,18 +263,18 @@ pub fn view(state: &CommitCompareState) -> Element<'_, CommitCompareMessage> {
                             Row::new()
                                 .spacing(theme::spacing::XS)
                                 .push(button::ghost(
-                                    "交换",
+                                    "Swap",
                                     Some(CommitCompareMessage::SwapCommits),
                                 ))
-                                .push(button::primary("比较", Some(CommitCompareMessage::Compare)))
-                                .push(button::ghost("刷新", Some(CommitCompareMessage::Refresh))),
+                                .push(button::primary("Compare", Some(CommitCompareMessage::Compare)))
+                                .push(button::ghost("Refresh", Some(CommitCompareMessage::Refresh))),
                         )
                         .width(Length::Fill),
                     )
                     .push(build_commit_selector(
                         &state.entries,
                         state.right_commit.as_deref(),
-                        "右侧提交（新）",
+                        "Right Commit (New)",
                         CommitCompareMessage::SetRightCommit,
                     )),
             )

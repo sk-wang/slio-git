@@ -1,5 +1,6 @@
 //! Working tree management view.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, scrollable};
 use git_core::worktree::{self, WorkingTree};
@@ -33,7 +34,7 @@ impl WorktreeState {
                 self.is_loading = false;
             }
             Err(e) => {
-                self.error = Some(format!("加载工作树失败: {e}"));
+                self.error = Some(format!("Failed to load worktrees: {e}"));
                 self.is_loading = false;
             }
         }
@@ -45,38 +46,38 @@ impl WorktreeState {
         let p = std::path::Path::new(&path);
         match worktree::remove_worktree(repo, p) {
             Ok(()) => {
-                self.success_message = Some(format!("已移除工作树: {path}"));
+                self.success_message = Some(format!("Removed worktree: {path}"));
                 self.load_worktrees(repo);
             }
             Err(e) => {
-                self.error = Some(format!("移除工作树失败: {e}"));
+                self.error = Some(format!("Failed to remove worktree: {e}"));
             }
         }
     }
 }
 
-pub fn view(state: &WorktreeState) -> Element<'_, WorktreeMessage> {
+pub fn view<'a>(state: &'a WorktreeState, i18n: &'a I18n) -> Element<'a, WorktreeMessage> {
     let header = Row::new()
         .spacing(theme::spacing::XS)
         .align_y(Alignment::Center)
-        .push(Text::new("工作树").size(14))
+        .push(Text::new(i18n.wt_title).size(14))
         .push(widgets::info_chip::<WorktreeMessage>(
             state.worktrees.len().to_string(),
             BadgeTone::Neutral,
         ))
         .push(Space::new().width(Length::Fill))
-        .push(button::ghost("刷新", Some(WorktreeMessage::Refresh)))
-        .push(button::ghost("关闭", Some(WorktreeMessage::Close)));
+        .push(button::ghost(i18n.refresh, Some(WorktreeMessage::Refresh)))
+        .push(button::ghost(i18n.close, Some(WorktreeMessage::Close)));
 
     let status = if let Some(error) = &state.error {
         Some(widgets::status_banner::<WorktreeMessage>(
-            "错误",
+            i18n.wt_error,
             error.as_str(),
             BadgeTone::Danger,
         ))
     } else {
         state.success_message.as_ref().map(|msg| {
-            widgets::status_banner::<WorktreeMessage>("完成", msg.as_str(), BadgeTone::Success)
+            widgets::status_banner::<WorktreeMessage>(i18n.wt_done, msg.as_str(), BadgeTone::Success)
         })
     };
 
@@ -84,7 +85,7 @@ pub fn view(state: &WorktreeState) -> Element<'_, WorktreeMessage> {
 
     if state.worktrees.is_empty() {
         list = list.push(
-            Text::new("当前没有额外的工作树。")
+            Text::new(i18n.wt_no_worktrees)
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
         );
@@ -93,13 +94,13 @@ pub fn view(state: &WorktreeState) -> Element<'_, WorktreeMessage> {
     for wt in &state.worktrees {
         let branch_label = wt.branch.as_deref().unwrap_or("(detached)");
         let status_label = if wt.is_main {
-            "主工作树"
+            i18n.wt_main
         } else if wt.is_locked {
-            "已锁定"
+            i18n.wt_locked
         } else if !wt.is_valid {
-            "无效"
+            i18n.wt_invalid
         } else {
-            "正常"
+            i18n.wt_normal
         };
 
         let mut row = Row::new()
@@ -135,7 +136,7 @@ pub fn view(state: &WorktreeState) -> Element<'_, WorktreeMessage> {
 
         if !wt.is_main {
             row = row.push(button::ghost(
-                "移除",
+                i18n.wt_remove_btn,
                 Some(WorktreeMessage::Remove(
                     wt.path.to_string_lossy().to_string(),
                 )),

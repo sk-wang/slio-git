@@ -518,7 +518,7 @@ pub fn hunk_header<'a, Message: Clone + 'static>(
     if let Some(msg) = stage_msg {
         row = row.push(
             iced::widget::Button::new(
-                Text::new("暂存区块")
+                Text::new("Stage Hunk")
                     .size(theme::typography::MICRO_SIZE)
                     .color(theme::darcula::STATUS_ADDED),
             )
@@ -531,7 +531,7 @@ pub fn hunk_header<'a, Message: Clone + 'static>(
     if let Some(msg) = unstage_msg {
         row = row.push(
             iced::widget::Button::new(
-                Text::new("取消暂存")
+                Text::new("Unstage")
                     .size(theme::typography::MICRO_SIZE)
                     .color(theme::darcula::STATUS_DELETED),
             )

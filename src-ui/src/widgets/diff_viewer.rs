@@ -39,8 +39,8 @@ impl<'a, Message: Clone + 'static> DiffViewer<'a, Message> {
     pub fn view(&self) -> Element<'a, Message> {
         if self.diff.files.is_empty() {
             return widgets::panel_empty_state_compact(
-                "当前没有可显示的 diff",
-                "选择文件或比较提交后查看差异内容。",
+                "No diff to display",
+                "Select a file or compare commits to view diff.",
             );
         }
 
@@ -93,7 +93,7 @@ impl<'a, Message: Clone + 'static> DiffViewer<'a, Message> {
 
         if file_diff.hunks.is_empty() {
             lines = lines.push(diff_core::empty_editor_row(
-                "当前文件没有文本 diff，可切换其它文件继续查看。",
+                "No text diff for this file.",
             ));
         }
 
@@ -173,7 +173,7 @@ pub fn file_preview<'a, Message: Clone + 'static>(file_diff: &'a FileDiff) -> El
 
     if file_diff.hunks.is_empty() {
         lines = lines.push(diff_core::empty_editor_row(
-            "当前文件没有文本 diff，可切换其它文件继续查看。",
+            "No text diff for this file.",
         ));
     }
 

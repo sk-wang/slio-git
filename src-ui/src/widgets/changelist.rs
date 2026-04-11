@@ -29,9 +29,9 @@ impl ChangeSectionKind {
     #[allow(dead_code)]
     fn context_label(self) -> &'static str {
         match self {
-            ChangeSectionKind::Staged => "已暂存",
-            ChangeSectionKind::Unstaged => "工作区修改",
-            ChangeSectionKind::Untracked => "新文件",
+            ChangeSectionKind::Staged => "Staged",
+            ChangeSectionKind::Unstaged => "Changes",
+            ChangeSectionKind::Untracked => "New Files",
         }
     }
 }
@@ -527,9 +527,9 @@ mod tests {
 
     #[test]
     fn change_section_kind_exposes_compact_context_label() {
-        assert_eq!(ChangeSectionKind::Staged.context_label(), "已暂存");
-        assert_eq!(ChangeSectionKind::Unstaged.context_label(), "工作区修改");
-        assert_eq!(ChangeSectionKind::Untracked.context_label(), "新文件");
+        assert_eq!(ChangeSectionKind::Staged.context_label(), "Staged");
+        assert_eq!(ChangeSectionKind::Unstaged.context_label(), "Changes");
+        assert_eq!(ChangeSectionKind::Untracked.context_label(), "New Files");
     }
 
     #[test]

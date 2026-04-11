@@ -3,6 +3,7 @@
 //! Provides a dialog for creating and amending commits.
 
 use crate::components::status_icons::FileStatus;
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, diff_viewer, scrollable, OptionalPush};
 use git_core::commit::CommitInfo;
@@ -169,9 +170,9 @@ impl CommitDialogState {
         self.is_committing = false;
         self.error = None;
         self.success_message = Some(if self.is_amend {
-            "已更新最近一次提交。".to_string()
+            "Commit amended.".to_string()
         } else {
-            "已创建提交。".to_string()
+            "Commit created.".to_string()
         });
         self.message.clear();
         self.message_editor = text_editor::Content::new();
@@ -266,11 +267,11 @@ impl Default for CommitDialogState {
 }
 
 /// Build the commit dialog view.
-pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
+pub fn view<'a>(state: &'a CommitDialogState, i18n: &'a I18n) -> Element<'a, CommitDialogMessage> {
     let files_list: Element<'_, CommitDialogMessage> = if state.staged_files.is_empty() {
         Column::new()
             .push(
-                Text::new("当前没有可提交的暂存文件。")
+                Text::new(i18n.cd_no_staged_files)
                     .size(12)
                     .color(theme::darcula::TEXT_SECONDARY),
             )
@@ -294,16 +295,16 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("待提交文件")
+                        Text::new(i18n.cd_files_to_commit)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
                     .push(widgets::compact_chip::<CommitDialogMessage>(
-                        format!("暂存 {}", state.staged_files.len()),
+                        i18n.cd_staged_count_fmt.replace("{}", &state.staged_files.len().to_string()),
                         BadgeTone::Success,
                     ))
                     .push(widgets::compact_chip::<CommitDialogMessage>(
-                        format!("已选 {}", state.selected_files.len()),
+                        i18n.cd_selected_count_fmt.replace("{}", &state.selected_files.len().to_string()),
                         BadgeTone::Accent,
                     )),
             )
@@ -323,7 +324,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                 .spacing(theme::spacing::XS)
                 .align_y(Alignment::Center)
                 .push(widgets::compact_chip::<CommitDialogMessage>(
-                    format!("{} 文件", selected_file_count),
+                    i18n.cd_file_count_fmt.replace("{}", &selected_file_count.to_string()),
                     BadgeTone::Success,
                 ))
                 .push(widgets::compact_chip::<CommitDialogMessage>(
@@ -336,7 +337,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                 ))
                 .push_maybe(state.previewed_file.as_ref().map(|path| {
                     widgets::compact_chip::<CommitDialogMessage>(
-                        format!("预览 {}", path),
+                        i18n.cd_preview_fmt.replace("{}", &path.to_string()),
                         BadgeTone::Accent,
                     )
                 })),
@@ -356,17 +357,17 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .into()
             } else {
                 widgets::panel_empty_state(
-                    "预览",
-                    "没有找到当前文件的 diff",
-                    "请重新选择左侧文件，或刷新后再试。",
+                    i18n.cd_preview,
+                    i18n.cd_no_diff,
+                    i18n.cd_no_diff_detail,
                     None,
                 )
             }
         } else {
             widgets::panel_empty_state(
-                "预览",
-                "当前没有可显示的文件改动",
-                "先保留至少一个待提交文件，或在左侧点击要预览的文件。",
+                i18n.cd_preview,
+                i18n.cd_no_changes,
+                i18n.cd_no_changes_detail,
                 None,
             )
         };
@@ -380,12 +381,12 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("文件改动")
+                        Text::new(i18n.cd_file_changes)
                             .size(12)
                             .color(theme::darcula::TEXT_PRIMARY),
                     )
                     .push(
-                        Text::new("· 勾选提交，点击文件名预览")
+                        Text::new(i18n.cd_check_preview_hint)
                             .size(10)
                             .color(theme::darcula::TEXT_DISABLED),
                     ),
@@ -404,11 +405,11 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
     let is_valid = state.is_message_valid();
 
     let message_hint_text = if state.message.trim().is_empty() {
-        "请输入至少一行提交摘要。"
+        i18n.cd_msg_hint_empty
     } else if message_lines == 1 {
-        "提交说明已就绪，可以直接执行提交。"
+        i18n.cd_msg_hint_ready
     } else {
-        "提交说明已就绪，可以直接执行提交。"
+        i18n.cd_msg_hint_ready
     };
 
     let message_panel = Container::new(
@@ -419,19 +420,19 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("提交说明")
+                        Text::new(i18n.cd_commit_msg)
                             .size(12)
                             .color(theme::darcula::TEXT_PRIMARY),
                     )
                     .push(
-                        Text::new("· 首行为标题，可多行")
+                        Text::new(i18n.cd_msg_first_line_hint)
                             .size(10)
                             .color(theme::darcula::TEXT_DISABLED),
                     ),
             )
             .push(
                 text_editor(&state.message_editor)
-                    .placeholder("输入提交消息（第一行为标题）...")
+                    .placeholder(i18n.cd_msg_placeholder)
                     .padding([8, 10])
                     .size(theme::typography::BODY_SIZE as f32)
                     .height(Length::Fixed(88.0))
@@ -443,7 +444,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .spacing(theme::spacing::SM)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new(format!("{} 行 · {} 字符", message_lines, message_chars))
+                        Text::new(i18n.cd_msg_stats_fmt.replace("{}", &message_lines.to_string()).replacen("{}", &message_chars.to_string(), 1))
                             .size(10)
                             .color(theme::darcula::TEXT_DISABLED),
                     )
@@ -455,7 +456,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     })),
             )
             .push(
-                Text::new("提交者身份由 Git 全局配置决定。")
+                Text::new(i18n.cd_committer_identity)
                     .size(9)
                     .color(theme::darcula::TEXT_DISABLED),
             ),
@@ -465,32 +466,32 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
 
     let status_panel = if state.is_committing {
         Some(build_compact_commit_status::<CommitDialogMessage>(
-            "处理中",
-            "正在写入提交，请稍候。",
+            i18n.cd_status_processing,
+            i18n.cd_status_processing_detail,
             BadgeTone::Neutral,
         ))
     } else if let Some(error) = state.error.as_ref() {
         Some(build_compact_commit_status::<CommitDialogMessage>(
-            "失败",
+            i18n.cd_status_failed,
             error,
             BadgeTone::Danger,
         ))
     } else if let Some(message) = state.success_message.as_ref() {
         Some(build_compact_commit_status::<CommitDialogMessage>(
-            "完成",
+            i18n.cd_status_done,
             message,
             BadgeTone::Success,
         ))
     } else if state.staged_files.is_empty() {
         Some(build_compact_commit_status::<CommitDialogMessage>(
-            "空状态",
-            "当前没有暂存文件，先在工作区整理出一组待提交变更。",
+            i18n.cd_status_empty,
+            i18n.cd_status_empty_detail,
             BadgeTone::Neutral,
         ))
     } else if !state.is_message_valid() {
         Some(build_compact_commit_status::<CommitDialogMessage>(
-            "待补充",
-            "文件已就绪，请填写一行提交摘要。",
+            i18n.cd_status_needs_msg,
+            i18n.cd_status_needs_msg_detail,
             BadgeTone::Warning,
         ))
     } else {
@@ -498,11 +499,11 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
     };
 
     let commit_label = if state.is_committing {
-        "提交中..."
+        i18n.cd_committing_btn
     } else if state.is_amend {
-        "应用修改"
+        i18n.cd_amend_btn
     } else {
-        "创建提交"
+        i18n.cd_create_commit_btn
     };
     let commit_enabled =
         state.is_message_valid() && state.has_files_to_commit() && !state.is_committing;
@@ -526,7 +527,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                                 .on_toggle(amend_checkbox_message),
                         )
                         .push(
-                            Text::new("修正提交")
+                            Text::new(i18n.cd_amend_label)
                                 .size(theme::typography::CAPTION_SIZE)
                                 .font(theme::app_font())
                                 .line_height(text::LineHeight::Relative(1.0))
@@ -548,7 +549,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
             }))
             .push(Space::new().width(Length::Fill))
             .push(button::ghost(
-                "取消",
+                i18n.cancel,
                 Some(CommitDialogMessage::CancelPressed),
             ))
             .push(button::primary(
@@ -563,13 +564,13 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(Text::new("提交").size(14))
+            .push(Text::new(i18n.cd_title).size(14))
             .push(widgets::compact_chip::<CommitDialogMessage>(
-                if state.is_amend { "Amend" } else { "新提交" },
+                if state.is_amend { i18n.cd_mode_amend } else { i18n.cd_mode_new },
                 BadgeTone::Neutral,
             ))
             .push(widgets::compact_chip::<CommitDialogMessage>(
-                format!("{} 文件", selected_file_count),
+                i18n.cd_file_count_fmt.replace("{}", &selected_file_count.to_string()),
                 BadgeTone::Accent,
             ))
             .push(widgets::compact_chip::<CommitDialogMessage>(
@@ -594,7 +595,7 @@ pub fn view(state: &CommitDialogState) -> Element<'_, CommitDialogMessage> {
                     .push(files_panel)
                     .push(diff_panel),
             )
-            .push(widgets::separator_with_text(Some("提交消息")))
+            .push(widgets::separator_with_text(Some(i18n.cd_commit_msg_separator)))
             .push(message_panel)
             .push(actions),
     )
@@ -679,7 +680,7 @@ fn build_file_row<'a>(
                     )
                 }))
                 .push_maybe(is_previewed.then(|| {
-                    widgets::info_chip::<CommitDialogMessage>("预览中", BadgeTone::Accent)
+                    widgets::info_chip::<CommitDialogMessage>("Previewing", BadgeTone::Accent)
                 })),
         )
         .padding([4, 6])

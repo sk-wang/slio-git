@@ -602,7 +602,7 @@ impl MergeEditorState {
                 .align_y(Alignment::Center)
                 .push(
                     Text::new(format!(
-                        "{} 个冲突 · 已解决 {}/{}",
+                        "{} conflicts, resolved {}/{}",
                         conflict_total, resolved_conflicts, conflict_total
                     ))
                     .size(11)

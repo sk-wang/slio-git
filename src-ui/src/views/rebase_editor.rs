@@ -2,6 +2,7 @@
 //!
 //! Provides a dialog for editing the rebase todo list.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, scrollable, text_input, OptionalPush};
 use git_core::Repository;
@@ -106,7 +107,7 @@ impl RebaseEditorState {
         self.todo_is_editable && !self.todo_list.is_empty() && !self.base_branch.trim().is_empty()
     }
 
-    pub fn load_status(&mut self, repo: &Repository) {
+    pub fn load_status(&mut self, repo: &Repository, i18n: &I18n) {
         match git_core::rebase::get_rebase_status(repo) {
             Ok(Some(status)) => {
                 self.is_rebasing = true;
@@ -134,7 +135,7 @@ impl RebaseEditorState {
                             .collect();
                     }
                     Err(error) => {
-                        self.error = Some(format!("读取变基 todo 失败: {error}"));
+                        self.error = Some(i18n.re_read_todo_failed_fmt.replace("{}", &error.to_string()));
                         self.success_message = None;
                     }
                 }
@@ -152,14 +153,14 @@ impl RebaseEditorState {
                 }
             }
             Err(error) => {
-                self.error = Some(format!("获取变基状态失败: {error}"));
+                self.error = Some(i18n.re_get_status_failed_fmt.replace("{}", &error.to_string()));
                 self.success_message = None;
                 self.has_conflicts = false;
             }
         }
     }
 
-    pub fn prepare_interactive_rebase(&mut self, repo: &Repository, commit_id: String) {
+    pub fn prepare_interactive_rebase(&mut self, repo: &Repository, commit_id: String, i18n: &I18n) {
         self.is_loading = true;
         self.error = None;
         self.success_message = None;
@@ -184,21 +185,21 @@ impl RebaseEditorState {
                 self.total_steps = self.todo_list.len() as u32;
                 self.has_conflicts = false;
                 self.current_step_item = None;
-                self.success_message = Some(format!(
-                    "已载入从 {} 开始的 {} 条 todo，可先调整动作与顺序。",
-                    short_commit_id(&self.base_branch),
-                    self.todo_list.len()
-                ));
+                self.success_message = Some(
+                    i18n.re_loaded_todo_fmt
+                        .replace("{}", short_commit_id(&self.base_branch))
+                        .replacen("{}", &self.todo_list.len().to_string(), 1)
+                );
             }
             Err(error) => {
-                self.error = Some(format!("准备交互式变基失败: {error}"));
+                self.error = Some(i18n.re_prepare_failed_fmt.replace("{}", &error.to_string()));
             }
         }
 
         self.is_loading = false;
     }
 
-    pub fn start_rebase(&mut self, repo: &Repository) {
+    pub fn start_rebase(&mut self, repo: &Repository, i18n: &I18n) {
         self.is_loading = true;
         self.error = None;
         self.success_message = None;
@@ -221,19 +222,19 @@ impl RebaseEditorState {
             ) {
                 Ok(message) => {
                     self.todo_is_editable = false;
-                    self.load_status(repo);
+                    self.load_status(repo, i18n);
                     self.success_message = Some(if self.is_rebasing {
                         if self.has_conflicts {
-                            "交互式变基已启动，但当前有冲突。".to_string()
+                            i18n.re_started_with_conflicts.to_string()
                         } else {
-                            "交互式变基已启动，可继续在这里推进后续步骤。".to_string()
+                            i18n.re_started_continue.to_string()
                         }
                     } else {
                         message
                     });
                 }
                 Err(error) => {
-                    self.error = Some(format!("开始交互式变基失败: {error}"));
+                    self.error = Some(i18n.re_start_interactive_failed_fmt.replace("{}", &error.to_string()));
                 }
             }
 
@@ -243,7 +244,7 @@ impl RebaseEditorState {
 
         let onto_branch = self.onto_branch.trim().to_string();
         if onto_branch.is_empty() {
-            self.error = Some("目标分支不能为空".to_string());
+            self.error = Some(i18n.re_onto_branch_empty.to_string());
             self.is_loading = false;
             return;
         }
@@ -251,23 +252,23 @@ impl RebaseEditorState {
         match git_core::rebase::rebase_start(repo, &onto_branch) {
             Ok(_) => {
                 self.is_rebasing = true;
-                self.load_status(repo);
+                self.load_status(repo, i18n);
                 self.success_message = Some(if self.has_conflicts {
-                    format!("已开始变基到 {onto_branch}，当前有冲突。")
+                    i18n.re_started_onto_conflict_fmt.replace("{}", &onto_branch.to_string())
                 } else {
-                    format!("已开始变基到 {onto_branch}")
+                    i18n.re_started_onto_fmt.replace("{}", &onto_branch.to_string())
                 });
             }
             Err(error) => {
-                self.error = Some(format!("开始变基失败: {error}"));
+                self.error = Some(i18n.re_start_failed_fmt.replace("{}", &error.to_string()));
             }
         }
         self.is_loading = false;
     }
 
-    pub fn continue_rebase(&mut self, repo: &Repository) {
+    pub fn continue_rebase(&mut self, repo: &Repository, i18n: &I18n) {
         if self.has_conflicts {
-            self.error = Some("仍有冲突待解决，请先处理冲突后再继续。".to_string());
+            self.error = Some(i18n.re_conflicts_pending.to_string());
             self.success_message = None;
             return;
         }
@@ -278,61 +279,58 @@ impl RebaseEditorState {
 
         match git_core::rebase::rebase_continue(repo) {
             Ok(result) => {
-                self.load_status(repo);
+                self.load_status(repo, i18n);
                 if result.success {
                     self.success_message = Some(if self.is_rebasing {
-                        format!("已推进到第 {}/{} 步", self.current_step, self.total_steps)
+                        i18n.re_advanced_step_fmt.replace("{}", &self.current_step.to_string()).replacen("{}", &self.total_steps.to_string(), 1)
                     } else {
-                        "变基已完成".to_string()
+                        i18n.re_rebase_complete.to_string()
                     });
                 } else {
                     self.error = Some(if result.message.trim().is_empty() {
-                        "继续变基失败，请检查当前仓库状态。".to_string()
+                        i18n.re_continue_failed_check.to_string()
                     } else {
-                        format!("继续变基失败: {}", result.message.trim())
+                        i18n.re_continue_failed_fmt.replace("{}", result.message.trim())
                     });
                 }
             }
             Err(error) => {
-                self.error = Some(format!("继续变基失败: {error}"));
+                self.error = Some(i18n.re_continue_error_fmt.replace("{}", &error.to_string()));
             }
         }
         self.is_loading = false;
     }
 
-    pub fn skip_commit(&mut self, repo: &Repository) {
+    pub fn skip_commit(&mut self, repo: &Repository, i18n: &I18n) {
         self.is_loading = true;
         self.error = None;
         self.success_message = None;
 
         match git_core::rebase::rebase_skip(repo) {
             Ok(result) => {
-                self.load_status(repo);
+                self.load_status(repo, i18n);
                 if result.success {
                     self.success_message = Some(if self.is_rebasing {
-                        format!(
-                            "已跳过当前提交，第 {}/{} 步",
-                            self.current_step, self.total_steps
-                        )
+                        i18n.re_skipped_step_fmt.replace("{}", &self.current_step.to_string()).replacen("{}", &self.total_steps.to_string(), 1)
                     } else {
-                        "已跳过最后一个提交".to_string()
+                        i18n.re_skipped_last.to_string()
                     });
                 } else {
                     self.error = Some(if result.message.trim().is_empty() {
-                        "跳过提交失败，请检查当前仓库状态。".to_string()
+                        i18n.re_skip_failed_check.to_string()
                     } else {
-                        format!("跳过提交失败: {}", result.message.trim())
+                        i18n.re_skip_failed_fmt.replace("{}", result.message.trim())
                     });
                 }
             }
             Err(error) => {
-                self.error = Some(format!("跳过提交失败: {error}"));
+                self.error = Some(i18n.re_skip_error_fmt.replace("{}", &error.to_string()));
             }
         }
         self.is_loading = false;
     }
 
-    pub fn abort_rebase(&mut self, repo: &Repository) {
+    pub fn abort_rebase(&mut self, repo: &Repository, i18n: &I18n) {
         self.is_loading = true;
         self.error = None;
         self.success_message = None;
@@ -340,11 +338,11 @@ impl RebaseEditorState {
         match git_core::rebase::rebase_abort(repo) {
             Ok(_) => {
                 self.is_rebasing = false;
-                self.load_status(repo);
-                self.success_message = Some("已中止当前变基".to_string());
+                self.load_status(repo, i18n);
+                self.success_message = Some(i18n.re_aborted.to_string());
             }
             Err(error) => {
-                self.error = Some(format!("中止变基失败: {error}"));
+                self.error = Some(i18n.re_abort_failed_fmt.replace("{}", &error.to_string()));
             }
         }
         self.is_loading = false;
@@ -438,7 +436,7 @@ impl Default for RebaseEditorState {
     }
 }
 
-fn build_rebase_controls(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
+fn build_rebase_controls<'a>(state: &'a RebaseEditorState, i18n: &'a I18n) -> Element<'a, RebaseEditorMessage> {
     if state.is_rebasing {
         // In-progress rebase: continue/skip/abort
         let row = Row::new()
@@ -451,22 +449,22 @@ fn build_rebase_controls(state: &RebaseEditorState) -> Element<'_, RebaseEditorM
                     .and((!state.is_loading && !state.has_conflicts).then_some(()))
                     .map(|_| {
                         button::warning(
-                            "编辑当前提交消息",
+                            i18n.re_edit_commit_message,
                             Some(RebaseEditorMessage::OpenAmendForCurrentStep),
                         )
                     }),
             )
             .push(button::primary(
-                "继续",
+                i18n.re_continue_btn,
                 (!state.is_loading && !state.has_conflicts)
                     .then_some(RebaseEditorMessage::ContinueRebase),
             ))
             .push(button::secondary(
-                "跳过",
+                i18n.re_skip_btn,
                 (!state.is_loading).then_some(RebaseEditorMessage::SkipCommit),
             ))
             .push(button::ghost(
-                "中止",
+                i18n.re_abort_btn,
                 (!state.is_loading).then_some(RebaseEditorMessage::AbortRebase),
             ));
 
@@ -506,7 +504,7 @@ fn build_rebase_controls(state: &RebaseEditorState) -> Element<'_, RebaseEditorM
                 ))
                 .push(Text::new("│").size(12).color(theme::darcula::SEPARATOR))
                 .push(button::primary(
-                    "开始交互式变基",
+                    i18n.re_start_interactive_btn,
                     (!state.is_loading).then_some(RebaseEditorMessage::StartRebase),
                 )),
         )
@@ -515,7 +513,7 @@ fn build_rebase_controls(state: &RebaseEditorState) -> Element<'_, RebaseEditorM
     } else {
         scrollable::styled_horizontal(
             Row::new().spacing(theme::spacing::XS).push(button::primary(
-                "开始变基",
+                i18n.re_start_rebase_btn,
                 (!state.is_loading && !state.onto_branch.trim().is_empty())
                     .then_some(RebaseEditorMessage::StartRebase),
             )),
@@ -525,14 +523,14 @@ fn build_rebase_controls(state: &RebaseEditorState) -> Element<'_, RebaseEditorM
     }
 }
 
-fn build_todo_list(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
+fn build_todo_list<'a>(state: &'a RebaseEditorState, i18n: &'a I18n) -> Element<'a, RebaseEditorMessage> {
     if state.todo_list.is_empty() {
         return Column::new()
             .push(
                 Text::new(if state.is_rebasing {
-                    "当前没有额外的 todo 项可显示。"
+                    i18n.re_no_todo_rebasing
                 } else {
-                    "还没有载入 todo 列表，可先从历史视图选择从这里进行交互式变基。"
+                    i18n.re_no_todo_idle
                 })
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
@@ -545,7 +543,7 @@ fn build_todo_list(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage
         .spacing(0)
         .push(
             Container::new(
-                Text::new("操作")
+                Text::new(i18n.re_col_action)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -554,7 +552,7 @@ fn build_todo_list(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage
         )
         .push(
             Container::new(
-                Text::new("哈希")
+                Text::new(i18n.re_col_hash)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -563,7 +561,7 @@ fn build_todo_list(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage
         )
         .push(
             Container::new(
-                Text::new("消息")
+                Text::new(i18n.re_col_message)
                     .size(10)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -603,7 +601,7 @@ fn build_todo_list(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage
         // Column 3: Message (inline editable on double-click)
         let message_cell: Element<'_, RebaseEditorMessage> = if is_editing {
             text_input::styled(
-                "提交消息...",
+                i18n.re_commit_msg_placeholder,
                 &state.inline_edit_text,
                 RebaseEditorMessage::InlineEditChanged,
             )
@@ -673,26 +671,25 @@ fn todo_action_color(action: &str) -> Color {
     }
 }
 
-fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
+fn build_progress<'a>(state: &'a RebaseEditorState, i18n: &'a I18n) -> Element<'a, RebaseEditorMessage> {
     if state.is_rebasing {
-        let progress_text = format!(
-            "变基进度: {}/{} ({:.0}%)",
-            state.current_step,
-            state.total_steps,
-            if state.total_steps > 0 {
-                (state.current_step as f32 / state.total_steps as f32) * 100.0
-            } else {
-                0.0
-            }
-        );
+        let pct = if state.total_steps > 0 {
+            (state.current_step as f32 / state.total_steps as f32) * 100.0
+        } else {
+            0.0
+        };
+        let progress_text = i18n.re_progress_fmt
+            .replace("{}", &state.current_step.to_string())
+            .replacen("{}", &state.total_steps.to_string(), 1)
+            .replacen("{}", &format!("{:.0}", pct), 1);
 
         Container::new(
             Column::new()
                 .spacing(theme::spacing::SM)
                 .push(widgets::section_header(
-                    "进度".to_uppercase(),
-                    "当前变基状态",
-                    "继续、跳过或中止前先确认当前步骤和剩余操作。",
+                    i18n.re_section_progress.to_uppercase(),
+                    i18n.re_progress_title,
+                    i18n.re_progress_detail,
                 ))
                 .push(widgets::info_chip::<RebaseEditorMessage>(
                     progress_text,
@@ -703,19 +700,19 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
                     },
                 ))
                 .push(build_status_panel::<RebaseEditorMessage>(
-                    "下一步",
+                    i18n.re_next_step,
                     if state.has_conflicts {
-                        "先在冲突视图解决文件冲突，再返回这里继续 rebase。"
+                        i18n.re_next_resolve_conflicts
                     } else if state
                         .current_step_item
                         .as_ref()
                         .is_some_and(|item| item.action.eq_ignore_ascii_case("edit"))
                     {
-                        "当前步骤要求修改提交说明；先打开提交面板完成 amend，再回来继续 rebase。"
+                        i18n.re_next_edit_amend
                     } else if state.current_step < state.total_steps {
-                        "当前步骤已准备好，可继续推进或根据需要跳过这一提交。"
+                        i18n.re_next_ready
                     } else {
-                        "已经来到最后一步，确认无误后继续即可完成 rebase。"
+                        i18n.re_next_last_step
                     },
                     if state.has_conflicts {
                         BadgeTone::Danger
@@ -725,7 +722,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
                 ))
                 .push_maybe(state.current_step_item.as_ref().map(|item| {
                     build_status_panel::<RebaseEditorMessage>(
-                        "当前步骤",
+                        i18n.re_current_step,
                         format!(
                             "{} {} {}",
                             todo_action_label(&item.action),
@@ -735,7 +732,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
                         todo_action_tone(&item.action),
                     )
                 }))
-                .push(scrollable::styled(build_todo_list(state)).height(Length::Fixed(200.0))),
+                .push(scrollable::styled(build_todo_list(state, i18n)).height(Length::Fixed(200.0))),
         )
         .padding([12, 12])
         .style(theme::panel_style(Surface::Panel))
@@ -745,16 +742,16 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
             Column::new()
                 .spacing(theme::spacing::SM)
                 .push(widgets::section_header(
-                    "待办".to_uppercase(),
-                    "交互式变基待办",
-                    "点击动作可循环切换 pick / reword / edit / fixup / squash / drop，用上下箭头调整顺序。",
+                    i18n.re_section_todo.to_uppercase(),
+                    i18n.re_todo_title,
+                    i18n.re_todo_detail,
                 ))
                 .push(build_status_panel::<RebaseEditorMessage>(
-                    "编辑规则",
-                    "首条 todo 不能是 fixup / squash；当前仅支持当前分支第一父链上的本地未发布提交。",
+                    i18n.re_edit_rules,
+                    i18n.re_edit_rules_detail,
                     BadgeTone::Accent,
                 ))
-                .push(scrollable::styled(build_todo_list(state)).height(Length::Fixed(260.0))),
+                .push(scrollable::styled(build_todo_list(state, i18n)).height(Length::Fixed(260.0))),
         )
         .padding([12, 12])
         .style(theme::panel_style(Surface::Panel))
@@ -765,7 +762,7 @@ fn build_progress(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage>
     }
 }
 
-pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
+pub fn view<'a>(state: &'a RebaseEditorState, i18n: &'a I18n) -> Element<'a, RebaseEditorMessage> {
     // IDEA-style: compact loading indicator when processing
     let status_panel: Option<Element<'_, RebaseEditorMessage>> = if state.is_loading {
         Some(
@@ -775,7 +772,7 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                     .align_y(Alignment::Center)
                     .push(widgets::loading_spinner::<RebaseEditorMessage>())
                     .push(
-                        Text::new("正在执行 rebase 操作...")
+                        Text::new(i18n.re_loading)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     ),
@@ -786,35 +783,32 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
         )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<RebaseEditorMessage>(
-            "失败",
+            i18n.re_status_failed,
             error,
             BadgeTone::Danger,
         ))
     } else if state.is_rebasing && state.has_conflicts {
         Some(build_status_panel::<RebaseEditorMessage>(
-            "冲突阻塞",
-            "当前 rebase 已暂停；请先解决冲突，再继续后续步骤。",
+            i18n.re_conflict_blocked,
+            i18n.re_conflict_blocked_detail,
             BadgeTone::Danger,
         ))
     } else if let Some(message) = state.success_message.as_ref() {
         Some(build_status_panel::<RebaseEditorMessage>(
-            "完成",
+            i18n.re_status_done,
             message,
             BadgeTone::Success,
         ))
     } else if state.is_rebasing {
         Some(build_status_panel::<RebaseEditorMessage>(
-            "进行中",
-            "当前仓库正在 rebase。",
+            i18n.re_status_in_progress,
+            i18n.re_in_progress_detail,
             BadgeTone::Warning,
         ))
     } else if state.has_interactive_draft() {
         Some(build_status_panel::<RebaseEditorMessage>(
-            "待开始",
-            format!(
-                "已载入 {} 条 todo，可调整动作与顺序后开始交互式变基。",
-                state.todo_list.len()
-            ),
+            i18n.re_status_pending,
+            i18n.re_pending_detail_fmt.replace("{}", &state.todo_list.len().to_string()),
             BadgeTone::Accent,
         ))
     } else {
@@ -829,17 +823,17 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                 Column::new()
                     .spacing(theme::spacing::SM)
                     .push(
-                        Text::new("目标分支")
+                        Text::new(i18n.re_target_branch)
                             .size(11)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
                     .push(text_input::styled(
-                        "输入 onto 分支名，如 main、origin/main",
+                        i18n.re_onto_placeholder,
                         &state.onto_branch,
                         RebaseEditorMessage::SetBaseBranch,
                     ))
                     .push(
-                        Text::new("若要整理具体提交，请从历史视图右键选择交互式变基。")
+                        Text::new(i18n.re_from_history_hint)
                             .size(10)
                             .color(theme::darcula::TEXT_SECONDARY)
                             .wrapping(text::Wrapping::WordOrGlyph),
@@ -858,30 +852,30 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
             Column::new()
                 .spacing(theme::spacing::XS)
                 .push(widgets::section_header(
-                    "上下文".to_uppercase(),
-                    "历史整理入口",
-                    "编辑待执行的 rebase 步骤，调整动作与顺序后继续。",
+                    i18n.re_section_context.to_uppercase(),
+                    i18n.re_context_title,
+                    i18n.re_context_detail,
                 ))
                 .push(
                     Row::new()
                         .spacing(theme::spacing::XS)
                         .push(widgets::info_chip::<RebaseEditorMessage>(
-                            format!("起点 {}", short_commit_id(&state.base_branch)),
+                            i18n.re_start_point_fmt.replace("{}", short_commit_id(&state.base_branch)),
                             BadgeTone::Accent,
                         ))
                         .push(widgets::info_chip::<RebaseEditorMessage>(
                             state.todo_base_ref.as_deref().map_or_else(
-                                || "从根提交开始".to_string(),
-                                |base| format!("基点 {}", short_commit_id(base)),
+                                || i18n.re_from_root.to_string(),
+                                |base| i18n.re_base_point_fmt.replace("{}", short_commit_id(base)),
                             ),
                             BadgeTone::Neutral,
                         )),
                 )
                 .push(
                     Text::new(if state.todo_is_editable {
-                        "直接编辑 todo 列表：`edit` 停下来改说明，`fixup/squash/drop` 自动继续。"
+                        i18n.re_editable_hint
                     } else {
-                        "当前正在执行或查看这次历史整理流程；下方会显示剩余 todo 与下一步操作。"
+                        i18n.re_viewing_hint
                     })
                     .size(11)
                     .width(Length::Fill)
@@ -903,7 +897,7 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                         Row::new()
                             .spacing(theme::spacing::XS)
                             .align_y(Alignment::Center)
-                            .push(Text::new("Rebase 编辑器").size(16))
+                            .push(Text::new(i18n.re_editor_title).size(16))
                             .push(widgets::info_chip::<RebaseEditorMessage>(
                                 format!("Todo {}", state.todo_list.len()),
                                 BadgeTone::Neutral,
@@ -912,12 +906,12 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                                 if state.is_rebasing {
                                     format!("{}/{}", state.current_step, state.total_steps)
                                 } else {
-                                    "未开始".to_string()
+                                    i18n.re_not_started.to_string()
                                 },
                                 BadgeTone::Accent,
                             ))
-                            .push(button::ghost("刷新", Some(RebaseEditorMessage::Refresh)))
-                            .push(button::ghost("关闭", Some(RebaseEditorMessage::Close))),
+                            .push(button::ghost(i18n.refresh, Some(RebaseEditorMessage::Refresh)))
+                            .push(button::ghost(i18n.close, Some(RebaseEditorMessage::Close))),
                     )
                     .padding([10, 12])
                     .style(theme::panel_style(Surface::Panel)),
@@ -925,9 +919,9 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
                 .push_maybe(status_panel)
                 .push_maybe(context_panel)
                 .push(branch_inputs)
-                .push(build_progress(state))
-                .push(build_rebase_controls(state))
-                .push_maybe(build_selected_todo_detail(state)),
+                .push(build_progress(state, i18n))
+                .push(build_rebase_controls(state, i18n))
+                .push_maybe(build_selected_todo_detail(state, i18n)),
         )
         .height(Length::Fill),
     )
@@ -939,9 +933,9 @@ pub fn view(state: &RebaseEditorState) -> Element<'_, RebaseEditorMessage> {
 }
 
 /// Build detail panel for the selected todo item (T043)
-fn build_selected_todo_detail(
-    state: &RebaseEditorState,
-) -> Option<Element<'_, RebaseEditorMessage>> {
+fn build_selected_todo_detail<'a>(
+    state: &'a RebaseEditorState, i18n: &'a I18n,
+) -> Option<Element<'a, RebaseEditorMessage>> {
     let index = state.selected_todo_index?;
     let item = state.todo_list.get(index)?;
 
@@ -950,7 +944,7 @@ fn build_selected_todo_detail(
             Column::new()
                 .spacing(theme::spacing::XS)
                 .push(
-                    Text::new("提交详情")
+                    Text::new(i18n.re_commit_detail)
                         .size(12)
                         .color(theme::darcula::TEXT_SECONDARY),
                 )
@@ -975,7 +969,7 @@ fn build_selected_todo_detail(
                         .wrapping(text::Wrapping::WordOrGlyph),
                 )
                 .push(
-                    Text::new(format!("完整哈希: {}", item.commit))
+                    Text::new(i18n.re_full_hash_fmt.replace("{}", &item.commit))
                         .size(10)
                         .color(theme::darcula::TEXT_DISABLED),
                 ),

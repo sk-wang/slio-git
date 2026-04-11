@@ -50,7 +50,7 @@ impl<'a> StatusBar<'a> {
             &self
                 .selected_path
                 .map(|path| format!("{}: {path}", self.i18n.selected_file))
-                .unwrap_or_else(|| format!("{}: 未选择", self.i18n.selected_file)),
+                .unwrap_or_else(|| format!("{}: -", self.i18n.selected_file)),
             28,
         );
 

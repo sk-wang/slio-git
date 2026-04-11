@@ -2,6 +2,7 @@
 //!
 //! Provides a panel for stash operations.
 
+use crate::i18n::I18n;
 use crate::theme::{self, BadgeTone, Surface};
 use crate::widgets::{self, button, scrollable, text_input, OptionalPush};
 use git_core::{
@@ -82,7 +83,7 @@ impl StashPanelState {
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("加载储藏失败: {error}"));
+                self.error = Some(format!("Failed to load stashes: {error}"));
                 self.success_message = None;
                 self.is_loading = false;
             }
@@ -108,15 +109,15 @@ impl StashPanelState {
         ) {
             Ok(_) => {
                 self.success_message = Some(if let Some(message) = message {
-                    format!("已保存储藏：{message}")
+                    format!("Stash saved: {message}")
                 } else {
-                    "已保存储藏。".to_string()
+                    "Stash saved.".to_string()
                 });
                 self.new_stash_message.clear();
                 self.load_stashes(repo);
             }
             Err(error) => {
-                self.error = Some(format!("保存储藏失败: {error}"));
+                self.error = Some(format!("Failed to save stash: {error}"));
                 self.is_loading = false;
             }
         }
@@ -134,7 +135,7 @@ impl StashPanelState {
                 self.preview_diff_text = Some(diff);
             }
             Err(e) => {
-                self.error = Some(format!("加载储藏差异失败: {e}"));
+                self.error = Some(format!("Failed to load stash diff: {e}"));
             }
         }
     }
@@ -146,11 +147,11 @@ impl StashPanelState {
 
         match git_core::stash_apply(repo, index) {
             Ok(_) => {
-                self.success_message = Some(format!("已应用 stash@{{{index}}}（保留在列表中）"));
+                self.success_message = Some(format!("Applied stash@{{{index}}} (kept in list)"));
                 self.is_loading = false;
             }
             Err(error) => {
-                self.error = Some(format!("应用储藏失败: {error}"));
+                self.error = Some(format!("Failed to apply stash: {error}"));
                 self.is_loading = false;
             }
         }
@@ -163,11 +164,11 @@ impl StashPanelState {
 
         match stash_pop(repo, index) {
             Ok(_) => {
-                self.success_message = Some(format!("已应用 stash@{{{index}}}"));
+                self.success_message = Some(format!("Applied stash@{{{index}}}"));
                 self.load_stashes(repo);
             }
             Err(error) => {
-                self.error = Some(format!("应用储藏失败: {error}"));
+                self.error = Some(format!("Failed to apply stash: {error}"));
                 self.is_loading = false;
             }
         }
@@ -183,11 +184,11 @@ impl StashPanelState {
                 if self.selected_stash == Some(index) {
                     self.selected_stash = None;
                 }
-                self.success_message = Some(format!("已删除 stash@{{{index}}}"));
+                self.success_message = Some(format!("Dropped stash@{{{index}}}"));
                 self.load_stashes(repo);
             }
             Err(error) => {
-                self.error = Some(format!("删除储藏失败: {error}"));
+                self.error = Some(format!("Failed to drop stash: {error}"));
                 self.is_loading = false;
             }
         }
@@ -252,10 +253,10 @@ fn build_stash_row(stash: &StashInfo, is_selected: bool) -> Element<'_, StashPan
         .into()
 }
 
-fn build_stashes_list(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
+fn build_stashes_list<'a>(state: &'a StashPanelState, i18n: &'a I18n) -> Element<'a, StashPanelMessage> {
     let list = if state.stashes.is_empty() {
         Column::new().push(
-            Text::new("当前没有 stash 记录。")
+            Text::new(i18n.sp_no_stashes)
                 .size(12)
                 .color(theme::darcula::TEXT_SECONDARY),
         )
@@ -277,7 +278,7 @@ fn build_stashes_list(state: &StashPanelState) -> Element<'_, StashPanelMessage>
                     .spacing(theme::spacing::XS)
                     .align_y(Alignment::Center)
                     .push(
-                        Text::new("储藏列表")
+                        Text::new(i18n.sp_stash_list)
                             .size(13)
                             .color(theme::darcula::TEXT_SECONDARY),
                     )
@@ -287,7 +288,7 @@ fn build_stashes_list(state: &StashPanelState) -> Element<'_, StashPanelMessage>
                     )),
             )
             .push(
-                Text::new("选择一条 stash 后可直接应用或删除。")
+                Text::new(i18n.sp_select_hint)
                     .size(12)
                     .color(theme::darcula::TEXT_SECONDARY),
             )
@@ -298,17 +299,17 @@ fn build_stashes_list(state: &StashPanelState) -> Element<'_, StashPanelMessage>
     .into()
 }
 
-fn build_stash_input(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
+fn build_stash_input<'a>(state: &'a StashPanelState, i18n: &'a I18n) -> Element<'a, StashPanelMessage> {
     Container::new(
         Column::new()
             .spacing(theme::spacing::SM)
             .push(widgets::section_header(
-                "创建".to_uppercase(),
-                "新建储藏",
-                "储藏当前工作区修改，便于先切换任务再回来继续。",
+                i18n.sp_create_section.to_uppercase(),
+                i18n.sp_create_title,
+                i18n.sp_create_detail,
             ))
             .push(text_input::styled(
-                "储藏消息（可选）",
+                i18n.sp_message_placeholder,
                 &state.new_stash_message,
                 StashPanelMessage::SetNewStashMessage,
             ))
@@ -317,12 +318,12 @@ fn build_stash_input(state: &StashPanelState) -> Element<'_, StashPanelMessage> 
                     .spacing(theme::spacing::MD)
                     .push(widgets::compact_checkbox(
                         state.include_untracked,
-                        "包含未跟踪文件",
+                        i18n.sp_include_untracked,
                         |_| StashPanelMessage::ToggleIncludeUntracked,
                     ))
                     .push(widgets::compact_checkbox(
                         state.keep_index,
-                        "保留暂存区",
+                        i18n.sp_keep_index,
                         |_| StashPanelMessage::SetKeepIndex(!state.keep_index),
                     )),
             ),
@@ -332,34 +333,34 @@ fn build_stash_input(state: &StashPanelState) -> Element<'_, StashPanelMessage> 
     .into()
 }
 
-fn build_action_buttons(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
+fn build_action_buttons<'a>(state: &'a StashPanelState, i18n: &'a I18n) -> Element<'a, StashPanelMessage> {
     scrollable::styled_horizontal(
         Row::new()
             .spacing(theme::spacing::XS)
             .push(button::primary(
-                "保存储藏",
+                i18n.sp_save_stash_btn,
                 (!state.is_loading).then_some(StashPanelMessage::SaveStash),
             ))
             .push(button::secondary(
-                "弹出",
+                i18n.sp_pop_btn,
                 state.selected_stash.map(StashPanelMessage::PopStash),
             ))
             .push(button::secondary(
-                "应用",
+                i18n.sp_apply_btn,
                 state.selected_stash.map(StashPanelMessage::ApplyStash),
             ))
             .push(button::ghost(
-                "应用到新分支",
+                i18n.sp_apply_to_branch_btn,
                 state
                     .selected_stash
                     .map(StashPanelMessage::ShowUnstashDialog),
             ))
             .push(button::ghost(
-                "丢弃",
+                i18n.sp_drop_btn,
                 state.selected_stash.map(StashPanelMessage::DropStash),
             ))
             .push(button::ghost(
-                "清空所有",
+                i18n.sp_clear_all_btn,
                 (!state.stashes.is_empty()).then_some(StashPanelMessage::ClearAllStashes),
             )),
     )
@@ -367,7 +368,7 @@ fn build_action_buttons(state: &StashPanelState) -> Element<'_, StashPanelMessag
     .into()
 }
 
-pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
+pub fn view<'a>(state: &'a StashPanelState, i18n: &'a I18n) -> Element<'a, StashPanelMessage> {
     // IDEA-style: compact loading indicator when processing
     let status_panel: Option<Element<'_, StashPanelMessage>> = if state.is_loading {
         Some(
@@ -377,7 +378,7 @@ pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
                     .align_y(Alignment::Center)
                     .push(widgets::loading_spinner::<StashPanelMessage>())
                     .push(
-                        Text::new("正在刷新 stash 列表...")
+                        Text::new(i18n.sp_loading)
                             .size(12)
                             .color(theme::darcula::TEXT_SECONDARY),
                     ),
@@ -388,20 +389,20 @@ pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
         )
     } else if let Some(error) = state.error.as_ref() {
         Some(build_status_panel::<StashPanelMessage>(
-            "失败",
+            i18n.sp_status_failed,
             error,
             BadgeTone::Danger,
         ))
     } else if let Some(message) = state.success_message.as_ref() {
         Some(build_status_panel::<StashPanelMessage>(
-            "完成",
+            i18n.sp_status_done,
             message,
             BadgeTone::Success,
         ))
     } else if state.stashes.is_empty() {
         Some(build_status_panel::<StashPanelMessage>(
-            "空状态",
-            "当前没有 stash 记录；可以先保存一组工作区修改再回来处理。",
+            i18n.sp_status_empty,
+            i18n.sp_status_empty_detail,
             BadgeTone::Neutral,
         ))
     } else {
@@ -412,19 +413,19 @@ pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
         Row::new()
             .spacing(theme::spacing::XS)
             .align_y(Alignment::Center)
-            .push(Text::new("储藏").size(16))
+            .push(Text::new(i18n.sp_title).size(16))
             .push(widgets::info_chip::<StashPanelMessage>(
-                format!("总数 {}", state.stashes.len()),
+                i18n.sp_total_count_fmt.replace("{}", &state.stashes.len().to_string()),
                 BadgeTone::Neutral,
             ))
             .push_maybe(state.selected_stash.map(|index| {
                 widgets::info_chip::<StashPanelMessage>(
-                    format!("已选 stash@{{{index}}}"),
+                    i18n.sp_selected_fmt.replace("{}", &index.to_string()),
                     BadgeTone::Accent,
                 )
             }))
-            .push(button::ghost("刷新", Some(StashPanelMessage::Refresh)))
-            .push(button::ghost("关闭", Some(StashPanelMessage::Close))),
+            .push(button::ghost(i18n.refresh, Some(StashPanelMessage::Refresh)))
+            .push(button::ghost(i18n.close, Some(StashPanelMessage::Close))),
     )
     .padding([10, 12])
     .style(theme::panel_style(Surface::Panel));
@@ -436,12 +437,12 @@ pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
         .push_maybe(
             (state.stashes.is_empty() && !state.is_loading && state.error.is_none()).then(|| {
                 widgets::panel_empty_state(
-                    "储藏",
-                    "当前还没有 stash 记录",
-                    "如果你想暂存当前工作区修改，可以先填写一条消息并点击“保存储藏”。",
+                    i18n.sp_empty_title,
+                    i18n.sp_empty_subtitle,
+                    i18n.sp_empty_detail,
                     Some(
                         button::primary(
-                            "保存储藏",
+                            i18n.sp_save_stash_btn,
                             (!state.is_loading).then_some(StashPanelMessage::SaveStash),
                         )
                         .into(),
@@ -449,9 +450,9 @@ pub fn view(state: &StashPanelState) -> Element<'_, StashPanelMessage> {
                 )
             }),
         )
-        .push(build_stashes_list(state))
-        .push(build_stash_input(state))
-        .push(build_action_buttons(state));
+        .push(build_stashes_list(state, i18n))
+        .push(build_stash_input(state, i18n))
+        .push(build_action_buttons(state, i18n));
 
     Container::new(scrollable::styled(content).height(Length::Fill))
         .padding([10, 12])
