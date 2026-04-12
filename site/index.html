@@ -35,6 +35,7 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;backdrop-filter:blur(20px);-
 .lang-btn{padding:4px 12px;border-radius:var(--radius-pill);font-size:.75rem;font-weight:600;border:none;cursor:pointer;transition:all .2s;background:transparent;color:var(--text-dim)}
 .lang-btn.active{background:var(--accent);color:#fff}
 .btn-download{background:var(--accent);color:#fff;padding:8px 20px;border-radius:var(--radius-pill);font-size:.875rem;font-weight:600;transition:all .2s;border:none;cursor:pointer}
+a.btn-download,a.btn-download:visited,a.btn-download:hover{color:#fff}
 .btn-download:hover{filter:brightness(1.15);transform:translateY(-1px)}
 
 /* --- HERO --- */
@@ -136,7 +137,7 @@ footer a{color:var(--text-dim)}
 <section class="hero">
   <div class="hero-badge">
     <span class="dot"></span>
-    <span data-i18n="hero_badge">v0.0.17 &middot; Open Source &middot; MIT / Apache-2.0</span>
+    <span data-i18n="hero_badge">v0.0.18 &middot; Open Source &middot; MIT / Apache-2.0</span>
   </div>
   <h1>
     <span data-i18n="hero_title_1">YOUR GIT.</span><br>
@@ -147,7 +148,7 @@ footer a{color:var(--text-dim)}
     <span class="hero-accent" data-i18n="hero_accent">No Electron. Pure Rust.</span>
   </p>
   <div class="hero-cta">
-    <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS</button></a>
+    <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
     <a href="https://github.com/sk-wang/slio-git"><button class="cta-secondary" data-i18n="cta_source">View Source on GitHub</button></a>
   </div>
   <div class="hero-screenshot reveal">
@@ -257,8 +258,8 @@ footer a{color:var(--text-dim)}
 <!-- CTA BOTTOM -->
 <section class="cta-section">
   <h2 data-i18n="cta2_title">Ready to try?</h2>
-  <p data-i18n="cta2_desc">Download the latest release and start using slio-git today.</p>
-  <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS</button></a>
+  <p data-i18n="cta2_desc">Download the latest macOS and Windows builds and start using slio-git today.</p>
+  <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
 </section>
 
 <!-- FOOTER -->
@@ -273,12 +274,12 @@ const translations = {
     nav_features: "Features",
     nav_tech: "Tech Stack",
     nav_download: "Download",
-    hero_badge: "v0.0.17 \u00b7 Open Source \u00b7 MIT / Apache-2.0",
+    hero_badge: "v0.0.18 \u00b7 Open Source \u00b7 MIT / Apache-2.0",
     hero_title_1: "YOUR GIT.",
     hero_title_2: "BEAUTIFULLY NATIVE.",
     hero_sub: "A fast Git GUI built with Rust + Iced. The workflow polish of IntelliJ IDEA\u2019s Git tool window, as a standalone app. ",
     hero_accent: "No Electron. Pure Rust.",
-    cta_download: "Download for macOS",
+    cta_download: "Download for macOS & Windows",
     cta_source: "View Source on GitHub",
     feat_label: "Features",
     feat_title: "Everything you need,<br>nothing you don\u2019t.",
@@ -309,18 +310,18 @@ const translations = {
     tech_title: "Pure Rust. GPU-accelerated.",
     tech_desc: "No Electron, no WebView, no runtime overhead. Native performance with a 60fps UI powered by wgpu.",
     cta2_title: "Ready to try?",
-    cta2_desc: "Download the latest release and start using slio-git today.",
+    cta2_desc: "Download the latest macOS and Windows builds and start using slio-git today.",
   },
   zh: {
     nav_features: "\u529f\u80fd",
     nav_tech: "\u6280\u672f\u6808",
     nav_download: "\u4e0b\u8f7d",
-    hero_badge: "v0.0.17 \u00b7 \u5f00\u6e90 \u00b7 MIT / Apache-2.0",
+    hero_badge: "v0.0.18 \u00b7 \u5f00\u6e90 \u00b7 MIT / Apache-2.0",
     hero_title_1: "\u4f60\u7684 GIT\u3002",
     hero_title_2: "\u539f\u751f\u4e4b\u7f8e\u3002",
     hero_sub: "\u57fa\u4e8e Rust + Iced \u6784\u5efa\u7684\u9ad8\u6027\u80fd Git GUI\u3002\u5c06 IntelliJ IDEA Git \u5de5\u5177\u7a97\u7684\u5de5\u4f5c\u6d41\u4f53\u9a8c\uff0c\u5e26\u5230\u72ec\u7acb\u5e94\u7528\u4e2d\u3002",
     hero_accent: "\u96f6 Electron\u3002\u7eaf Rust\u3002",
-    cta_download: "\u4e0b\u8f7d macOS \u7248\u672c",
+    cta_download: "\u4e0b\u8f7d macOS / Windows \u7248\u672c",
     cta_source: "\u5728 GitHub \u67e5\u770b\u6e90\u7801",
     feat_label: "\u6838\u5fc3\u529f\u80fd",
     feat_title: "\u4f60\u9700\u8981\u7684\uff0c\u90fd\u5728\u8fd9\u91cc\u3002",
@@ -351,7 +352,7 @@ const translations = {
     tech_title: "\u7eaf Rust\u3002GPU \u52a0\u901f\u3002",
     tech_desc: "\u96f6 Electron\u3001\u96f6 WebView\u3001\u96f6\u8fd0\u884c\u65f6\u5f00\u9500\u3002\u7531 wgpu \u9a71\u52a8\u7684 60fps \u539f\u751f\u754c\u9762\u3002",
     cta2_title: "\u51c6\u5907\u597d\u4e86\u5417\uff1f",
-    cta2_desc: "\u4e0b\u8f7d\u6700\u65b0\u7248\u672c\uff0c\u7acb\u5373\u5f00\u59cb\u4f7f\u7528 slio-git\u3002",
+    cta2_desc: "\u4e0b\u8f7d\u6700\u65b0\u7684 macOS \u548c Windows \u53d1\u5e03\u7248\uff0c\u7acb\u5373\u5f00\u59cb\u4f7f\u7528 slio-git\u3002",
   }
 };
 

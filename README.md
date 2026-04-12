@@ -8,7 +8,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-2021+-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Iced](https://img.shields.io/badge/Iced-0.14-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJ3aGl0ZSIgc3Ryb2tlLXdpZHRoPSIyIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIvPjwvc3ZnPg==)](https://iced.rs)
-[![Release](https://img.shields.io/badge/release-v0.0.17-brightgreen)](https://github.com/sk-wang/slio-git/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.0.18-brightgreen)](https://github.com/sk-wang/slio-git/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue)](LICENSE-MIT)
 
 </div>
@@ -35,6 +35,10 @@ Most Git GUIs are either Electron-heavy or missing the workflow polish that make
 
 Download **slio-git.dmg** from the [latest release](https://github.com/sk-wang/slio-git/releases/latest).
 
+### Windows
+
+Download **slio-git-windows-x86_64.zip** from the [latest release](https://github.com/sk-wang/slio-git/releases/latest), extract it, and run `slio-git.exe`.
+
 ### Build from source
 
 ```bash
@@ -45,9 +49,12 @@ cargo build --release -p src-ui
 
 # Or build the macOS .app bundle:
 bash scripts/package-macos-dmg.sh
+
+# Or cross-compile a Windows ZIP release:
+bash scripts/package-windows-zip.sh
 ```
 
-Requires Rust 1.70+ and macOS 12+ / Linux / Windows 10+.
+Requires Rust 1.70+ and macOS 12+ / Linux / Windows 10+. Windows cross-compilation uses the `x86_64-pc-windows-gnu` Rust target and a MinGW-w64 toolchain.
 
 ## Features
 
