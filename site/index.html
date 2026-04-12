@@ -128,7 +128,7 @@ footer a{color:var(--text-dim)}
         <button class="lang-btn active" onclick="setLang('en')">EN</button>
         <button class="lang-btn" onclick="setLang('zh')">CN</button>
       </div>
-      <a href="https://github.com/sk-wang/slio-git/releases/latest" class="btn-download" data-i18n="nav_download">Download</a>
+      <a id="nav-dl" href="https://github.com/sk-wang/slio-git/releases/latest/download/slio-git.dmg" class="btn-download" data-i18n="nav_download">Download</a>
     </div>
   </div>
 </nav>
@@ -148,7 +148,7 @@ footer a{color:var(--text-dim)}
     <span class="hero-accent" data-i18n="hero_accent">No Electron. Pure Rust.</span>
   </p>
   <div class="hero-cta">
-    <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
+    <a id="hero-dl" href="https://github.com/sk-wang/slio-git/releases/latest/download/slio-git.dmg"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
     <a href="https://github.com/sk-wang/slio-git"><button class="cta-secondary" data-i18n="cta_source">View Source on GitHub</button></a>
   </div>
   <div class="hero-screenshot reveal">
@@ -259,7 +259,7 @@ footer a{color:var(--text-dim)}
 <section class="cta-section">
   <h2 data-i18n="cta2_title">Ready to try?</h2>
   <p data-i18n="cta2_desc">Download the latest macOS and Windows builds and start using slio-git today.</p>
-  <a href="https://github.com/sk-wang/slio-git/releases/latest"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
+  <a id="bottom-dl" href="https://github.com/sk-wang/slio-git/releases/latest/download/slio-git.dmg"><button class="cta-primary" data-i18n="cta_download">Download for macOS &amp; Windows</button></a>
 </section>
 
 <!-- FOOTER -->
@@ -268,6 +268,17 @@ footer a{color:var(--text-dim)}
 </footer>
 
 <script>
+// --- OS detection ---
+function detectOS() {
+  const ua = navigator.userAgent || navigator.platform || "";
+  if (/Win/i.test(ua)) return "windows";
+  return "mac"; // default to mac for macOS / Linux / unknown
+}
+
+const DL_MAC = "https://github.com/sk-wang/slio-git/releases/latest/download/slio-git.dmg";
+const DL_WIN = "https://github.com/sk-wang/slio-git/releases/latest/download/slio-git-windows-x86_64.zip";
+const userOS = detectOS();
+
 // --- i18n ---
 const translations = {
   en: {
@@ -369,6 +380,23 @@ function setLang(lang) {
     }
   });
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+
+  // Update download buttons based on OS
+  const dlUrl = userOS === "windows" ? DL_WIN : DL_MAC;
+  const navDl = document.getElementById("nav-dl");
+  const heroDl = document.getElementById("hero-dl");
+  const bottomDl = document.getElementById("bottom-dl");
+  if (navDl) navDl.href = dlUrl;
+  if (heroDl) heroDl.href = dlUrl;
+  if (bottomDl) bottomDl.href = dlUrl;
+
+  // Update CTA button text to show detected OS
+  const osName = userOS === "windows" ? (lang === "zh" ? "Windows" : "Windows") : (lang === "zh" ? "macOS" : "macOS");
+  document.querySelectorAll("[data-i18n='cta_download']").forEach(el => {
+    el.textContent = lang === "zh"
+      ? `\u4E0B\u8F7D ${osName} \u7248\u672C`
+      : `Download for ${osName}`;
+  });
 }
 
 // Init
