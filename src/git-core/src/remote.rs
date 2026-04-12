@@ -187,10 +187,25 @@ fn run_git_remote_command(
 }
 
 fn configured_upstream_branch(repo: &Repository, remote_name: &str) -> Option<String> {
-    let upstream_ref = repo.current_upstream_ref()?;
-    let (upstream_remote, upstream_branch) = upstream_ref.split_once('/')?;
-    (upstream_remote == remote_name && !upstream_branch.is_empty())
-        .then(|| upstream_branch.to_string())
+    let branch_name = repo.current_branch().ok().flatten()?;
+    let repo_lock = repo.inner.read().ok()?;
+    let config = repo_lock.config().ok()?;
+    let configured_remote = config
+        .get_string(&format!("branch.{branch_name}.remote"))
+        .ok()?;
+
+    if configured_remote != remote_name {
+        return None;
+    }
+
+    let merge_ref = config
+        .get_string(&format!("branch.{branch_name}.merge"))
+        .ok()?;
+    let upstream_branch = merge_ref
+        .strip_prefix("refs/heads/")
+        .unwrap_or(merge_ref.as_str());
+
+    (!upstream_branch.is_empty()).then(|| upstream_branch.to_string())
 }
 
 fn current_branch(repo: &Repository, operation: &str) -> Result<String, GitError> {
@@ -214,6 +229,10 @@ fn build_pull_args(
 
     if options.rebase {
         args.push("--rebase".to_string());
+    } else {
+        // Match GUI clients like TortoiseGit by explicitly disabling rebase for
+        // the default merge-based pull path instead of inheriting ambient config.
+        args.push("--no-rebase".to_string());
     }
     if options.ff_only {
         args.push("--ff-only".to_string());
@@ -232,14 +251,12 @@ fn build_pull_args(
         return Ok(args);
     }
 
-    if repo.current_upstream_remote().as_deref() == Some(remote_name) {
+    if configured_upstream_branch(repo, remote_name).is_some() {
+        args.push(remote_name.to_string());
         return Ok(args);
     }
 
-    let branch_name = match configured_upstream_branch(repo, remote_name) {
-        Some(branch_name) => branch_name,
-        None => current_branch(repo, "pull")?,
-    };
+    let branch_name = current_branch(repo, "pull")?;
 
     args.push(remote_name.to_string());
     args.push(branch_name);
@@ -586,7 +603,7 @@ mod tests {
         let repo = Repository::open(repo_dir.path()).unwrap();
         let args = build_pull_args(&repo, "origin", PullOptions::default()).unwrap();
 
-        assert_eq!(args, vec!["pull"]);
+        assert_eq!(args, vec!["pull", "--no-rebase", "origin"]);
     }
 
     #[test]
@@ -602,7 +619,7 @@ mod tests {
         let repo = Repository::open(repo_dir.path()).unwrap();
         let args = build_pull_args(&repo, "origin", PullOptions::default()).unwrap();
 
-        assert_eq!(args, vec!["pull", "origin", &branch_name]);
+        assert_eq!(args, vec!["pull", "--no-rebase", "origin", &branch_name]);
     }
 
     #[test]

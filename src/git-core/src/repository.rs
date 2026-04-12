@@ -338,6 +338,8 @@ fn convert_state(state: git2::RepositoryState) -> RepositoryState {
 
 fn parse_remote_name_from_ref(reference: &str) -> Option<&str> {
     reference
+        .strip_prefix("refs/remotes/")
+        .unwrap_or(reference)
         .split_once('/')
         .map(|(remote, _)| remote)
         .filter(|remote| !remote.is_empty())
@@ -374,6 +376,10 @@ mod tests {
     #[test]
     fn parse_remote_name_from_ref_extracts_remote_segment() {
         assert_eq!(parse_remote_name_from_ref("origin/main"), Some("origin"));
+        assert_eq!(
+            parse_remote_name_from_ref("refs/remotes/origin/main"),
+            Some("origin")
+        );
         assert_eq!(
             parse_remote_name_from_ref("upstream/feature/demo"),
             Some("upstream")

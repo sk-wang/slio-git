@@ -175,6 +175,20 @@ impl RemoteDialogState {
             .to_string()
     }
 
+    fn pull_command_prefix(&self) -> &'static str {
+        if self.pull_rebase {
+            "git pull --rebase"
+        } else if self.pull_ff_only {
+            "git pull --no-rebase --ff-only"
+        } else if self.pull_no_ff {
+            "git pull --no-rebase --no-ff"
+        } else if self.pull_squash {
+            "git pull --no-rebase --squash"
+        } else {
+            "git pull --no-rebase"
+        }
+    }
+
     fn pull_options(&self) -> PullOptions<'_> {
         PullOptions {
             branch_name: Some(self.pull_branch.trim()).filter(|branch| !branch.is_empty()),
@@ -668,6 +682,7 @@ fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element
     } else {
         &state.pull_branch
     };
+    let pull_command = state.pull_command_prefix();
 
     // ── Header ──
     let header = Container::new(
@@ -694,7 +709,7 @@ fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element
             .spacing(6)
             .align_y(Alignment::Center)
             .push(
-                Text::new("git pull")
+                Text::new(pull_command)
                     .size(12)
                     .color(theme::darcula::TEXT_DISABLED),
             )
@@ -705,8 +720,8 @@ fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element
             )
             .push(
                 Container::new(text_input::styled(
-                    i18n.rd_select_pull_branch,
                     pull_target,
+                    state.pull_branch.as_str(),
                     RemoteDialogMessage::SetPullBranch,
                 ))
                 .width(Length::Fill),
@@ -954,6 +969,12 @@ mod tests {
         assert!(state.pull_ff_only);
         assert!(!state.pull_rebase);
         assert!(!state.pull_no_ff);
+    }
+
+    #[test]
+    fn plain_pull_preview_defaults_to_no_rebase() {
+        let state = RemoteDialogState::new();
+        assert_eq!(state.pull_command_prefix(), "git pull --no-rebase");
     }
 
     #[test]
