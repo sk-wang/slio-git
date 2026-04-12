@@ -4,12 +4,12 @@
 
 use crate::error::GitError;
 use crate::index;
+use crate::process::git_command;
 use crate::repository::{Repository, RepositoryState};
 use git2::Oid;
 use log::info;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Rebase operation result
@@ -332,7 +332,7 @@ pub fn rebase_start(repo: &Repository, onto: &str) -> Result<String, GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["rebase", onto])
         .current_dir(&repo_path)
         .output()
@@ -462,7 +462,7 @@ pub fn start_interactive_rebase(
     fs::write(&todo_path, todo_contents).map_err(GitError::Io)?;
     write_sequence_editor_script(&todo_path, &script_path)?;
 
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command.current_dir(repo.command_cwd());
     command.env("GIT_SEQUENCE_EDITOR", &script_path);
     if entries
@@ -522,7 +522,7 @@ pub fn rebase_continue(repo: &Repository) -> Result<RebaseResult, GitError> {
     let repo_path = repo.command_cwd();
 
     // First add the resolved files
-    let add_output = Command::new("git")
+    let add_output = git_command()
         .args(["add", "-A"])
         .current_dir(&repo_path)
         .output()
@@ -542,7 +542,7 @@ pub fn rebase_continue(repo: &Repository) -> Result<RebaseResult, GitError> {
     }
 
     // Then continue the rebase
-    let output = Command::new("git")
+    let output = git_command()
         .args(["rebase", "--continue"])
         .current_dir(&repo_path)
         .output()
@@ -571,7 +571,7 @@ pub fn rebase_abort(repo: &Repository) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["rebase", "--abort"])
         .current_dir(&repo_path)
         .output()
@@ -600,7 +600,7 @@ pub fn rebase_skip(repo: &Repository) -> Result<RebaseResult, GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["rebase", "--skip"])
         .current_dir(&repo_path)
         .output()
@@ -697,7 +697,7 @@ pub fn has_rebase_conflicts(repo: &Repository) -> Result<bool, GitError> {
     let repo_path = repo.command_cwd();
 
     // Check for conflict markers in the index
-    let output = Command::new("git")
+    let output = git_command()
         .args(["diff", "--name-only", "--diff-filter=U"])
         .current_dir(&repo_path)
         .output()

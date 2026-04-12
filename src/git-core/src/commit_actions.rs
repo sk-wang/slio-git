@@ -4,11 +4,11 @@ use crate::commit;
 use crate::error::GitError;
 use crate::git_utils::{current_head_oid, is_ancestor, resolve_commit_oid};
 use crate::index;
+use crate::process::git_command;
 use crate::repository::{Repository, RepositoryState};
 use log::info;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -112,7 +112,7 @@ fn ensure_clean_worktree(repo: &Repository, operation: &str) -> Result<(), GitEr
 }
 
 fn run_git_command(repo: &Repository, operation: &str, args: &[String]) -> Result<(), GitError> {
-    let output = Command::new("git")
+    let output = git_command()
         .args(args)
         .current_dir(repo.command_cwd())
         .output()
@@ -367,7 +367,7 @@ fn run_scripted_interactive_rebase(
     fs::write(&todo_path, todo_contents).map_err(GitError::Io)?;
     write_sequence_editor_script(operation, &todo_path, &script_path)?;
 
-    let mut command = Command::new("git");
+    let mut command = git_command();
     command.current_dir(repo.command_cwd());
     command.env("GIT_SEQUENCE_EDITOR", &script_path);
     if auto_accept_editor {
@@ -428,7 +428,7 @@ pub fn export_commit_patch(
         output_path.display()
     );
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["format-patch", "--stdout", "-1", commit_id])
         .current_dir(repo.command_cwd())
         .output()
@@ -565,7 +565,7 @@ pub fn continue_in_progress_commit_action(
         InProgressCommitActionKind::Revert => "revert",
     };
 
-    let add_output = Command::new("git")
+    let add_output = git_command()
         .args(["add", "-A"])
         .current_dir(repo.command_cwd())
         .output()
@@ -789,7 +789,7 @@ pub fn uncommit_to_commit(repo: &Repository, commit_id: &str) -> Result<(), GitE
     // Resolve the target commit's parent
     let parent_ref = format!("{}^", commit_id);
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["reset", "--soft", &parent_ref])
         .current_dir(&repo_path)
         .output()

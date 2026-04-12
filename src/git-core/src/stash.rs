@@ -1,9 +1,9 @@
 //! Stash operations for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use log::info;
-use std::process::Command;
 
 /// A Git stash
 #[derive(Debug, Clone)]
@@ -24,7 +24,7 @@ pub fn list_stashes(repo: &Repository) -> Result<Vec<StashInfo>, GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "list", "--format=full"])
         .current_dir(&repo_path)
         .output()
@@ -100,7 +100,7 @@ pub fn stash_save_with_options(
         args.push(msg.to_string());
     }
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(&args)
         .current_dir(&repo_path)
         .output()
@@ -142,7 +142,7 @@ pub fn stash_pop(repo: &Repository, index: u32) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "pop", &format!("stash@{{{}}}", index)])
         .current_dir(&repo_path)
         .output()
@@ -171,7 +171,7 @@ pub fn stash_drop(repo: &Repository, index: u32) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "drop", &format!("stash@{{{}}}", index)])
         .current_dir(&repo_path)
         .output()
@@ -200,7 +200,7 @@ pub fn stash_apply(repo: &Repository, index: u32) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "apply", &format!("stash@{{{}}}", index)])
         .current_dir(&repo_path)
         .output()
@@ -229,7 +229,7 @@ pub fn stash_diff(repo: &Repository, index: u32) -> Result<String, GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "show", "-p", &format!("stash@{{{}}}", index)])
         .current_dir(&repo_path)
         .output()
@@ -262,7 +262,7 @@ pub fn unstash_as_branch(repo: &Repository, index: u32, branch_name: &str) -> Re
     let repo_path = repo.command_cwd();
     let stash_ref = format!("stash@{{{}}}", index);
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "branch", branch_name, &stash_ref])
         .current_dir(&repo_path)
         .output()
@@ -291,7 +291,7 @@ pub fn stash_clear(repo: &Repository) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["stash", "clear"])
         .current_dir(&repo_path)
         .output()

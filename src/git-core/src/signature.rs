@@ -1,10 +1,10 @@
 //! GPG/SSH signature verification for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use log::info;
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::RwLock;
 
 /// Signature type
@@ -111,7 +111,7 @@ pub fn verify_commit_signature(
 
     // Shell out to verify
     let repo_path = repo.command_cwd();
-    let output = Command::new("git")
+    let output = git_command()
         .args(["verify-commit", "--raw", commit_id])
         .current_dir(&repo_path)
         .output();

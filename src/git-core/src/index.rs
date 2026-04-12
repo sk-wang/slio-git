@@ -1,6 +1,7 @@
 //! Index (staging area) operations for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use git2::{DiffOptions, StatusOptions};
 use log::info;
@@ -185,12 +186,10 @@ pub fn stage_all(repo: &Repository) -> Result<(), GitError> {
 
 /// Unstage all files
 pub fn unstage_all(repo: &Repository) -> Result<(), GitError> {
-    use std::process::Command;
-
     let repo_path = repo.command_cwd();
 
     // Run git reset HEAD -- .
-    let output = Command::new("git")
+    let output = git_command()
         .args(["reset", "HEAD", "--", "."])
         .current_dir(&repo_path)
         .output()
@@ -501,8 +500,6 @@ fn generate_hunk_patch(file_path: &Path, hunk: &Hunk) -> Result<String, GitError
 
 /// Apply a patch to the index using git apply --cached
 fn apply_patch_cached(repo: &Repository, patch: &str) -> Result<(), GitError> {
-    use std::process::Command;
-
     let repo_path = repo.command_cwd();
 
     // Write patch to a temporary file
@@ -522,7 +519,7 @@ fn apply_patch_cached(repo: &Repository, patch: &str) -> Result<(), GitError> {
     })?;
 
     // Run git apply --cached
-    let output = Command::new("git")
+    let output = git_command()
         .args(["apply", "--cached", "--unidiff-zero", "--whitespace=nowarn"])
         .arg(temp_path.as_path())
         .current_dir(&repo_path)
@@ -710,8 +707,6 @@ fn generate_reverse_hunk_patch(file_path: &Path, hunk: &Hunk) -> Result<String, 
 
 /// Apply a patch to the workdir using git apply
 fn apply_patch_workdir(repo: &Repository, patch: &str) -> Result<(), GitError> {
-    use std::process::Command;
-
     let repo_path = repo.command_cwd();
 
     // Write patch to a temporary file
@@ -731,7 +726,7 @@ fn apply_patch_workdir(repo: &Repository, patch: &str) -> Result<(), GitError> {
     })?;
 
     // Run git apply (not --cached, applies to workdir)
-    let output = Command::new("git")
+    let output = git_command()
         .args(["apply", "--unidiff-zero", "--whitespace=nowarn"])
         .arg(temp_path.as_path())
         .current_dir(&repo_path)
@@ -759,12 +754,10 @@ fn apply_patch_workdir(repo: &Repository, patch: &str) -> Result<(), GitError> {
 
 /// Reset a file in the index to HEAD state
 fn reset_file_in_index(repo: &Repository, file_path: &Path) -> Result<(), GitError> {
-    use std::process::Command;
-
     let repo_path = repo.command_cwd();
 
     // Run git reset HEAD -- file_path
-    let output = Command::new("git")
+    let output = git_command()
         .args(["reset", "HEAD", "--"])
         .arg(file_path)
         .current_dir(&repo_path)
@@ -809,8 +802,6 @@ fn re_stage_other_hunks(
 /// Discard changes for a file: reset both index and worktree to HEAD.
 /// For untracked files, removes the file from the working directory.
 pub fn discard_file(repo: &Repository, file_path: &Path) -> Result<(), GitError> {
-    use std::process::Command;
-
     let repo_path = repo.command_cwd();
     let full_path = repo_path.join(file_path);
 
@@ -828,7 +819,7 @@ pub fn discard_file(repo: &Repository, file_path: &Path) -> Result<(), GitError>
 
     if tracked {
         // git checkout HEAD -- file_path (restore to HEAD in both index and worktree)
-        let output = Command::new("git")
+        let output = git_command()
             .args(["checkout", "HEAD", "--"])
             .arg(file_path)
             .current_dir(&repo_path)

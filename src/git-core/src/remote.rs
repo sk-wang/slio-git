@@ -1,12 +1,12 @@
 //! Remote operations for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use git2::{
     Config, Cred, CredentialHelper, Error as Git2Error, FetchOptions, PushOptions, RemoteCallbacks,
 };
 use log::info;
-use std::process::Command;
 
 /// A Git remote
 #[derive(Debug, Clone)]
@@ -150,7 +150,7 @@ fn run_git_remote_command(
     remote_name: &str,
     args: &[&str],
 ) -> Result<(), GitError> {
-    let output = Command::new("git")
+    let output = git_command()
         .args(args)
         .current_dir(repo.command_cwd())
         .output()
@@ -351,7 +351,7 @@ pub fn force_push(repo: &Repository, remote_name: &str, branch_name: &str) -> Re
 
     let repo_path = repo.command_cwd();
 
-    let output = std::process::Command::new("git")
+    let output = git_command()
         .args(["push", "--force-with-lease", remote_name, branch_name])
         .current_dir(&repo_path)
         .output()
@@ -395,7 +395,7 @@ pub fn pull(
     let refspec = format!("{}/{}", remote_name, branch_name);
 
     // Use git merge to merge the fetched branch
-    let output = Command::new("git")
+    let output = git_command()
         .args(["merge", &refspec])
         .current_dir(&repo_path)
         .output()

@@ -1,10 +1,10 @@
 //! Working tree management for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use log::info;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 /// A linked git worktree
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ pub fn list_worktrees(repo: &Repository) -> Result<Vec<WorkingTree>, GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["worktree", "list", "--porcelain"])
         .current_dir(&repo_path)
         .output()
@@ -139,7 +139,7 @@ pub fn create_worktree(
         args.push(b);
     }
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(&args)
         .current_dir(&repo_path)
         .output()
@@ -182,7 +182,7 @@ pub fn remove_worktree(repo: &Repository, path: &Path) -> Result<(), GitError> {
     let repo_path = repo.command_cwd();
     let path_str = path.to_string_lossy();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["worktree", "remove", &path_str])
         .current_dir(&repo_path)
         .output()

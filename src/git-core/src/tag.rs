@@ -1,9 +1,9 @@
 //! Tag operations for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use crate::repository::Repository;
 use log::info;
-use std::process::Command;
 
 /// A Git tag
 #[derive(Debug, Clone, Default)]
@@ -32,7 +32,7 @@ pub fn list_tags(repo: &Repository) -> Result<Vec<TagInfo>, GitError> {
         "%(taggerdate:unix)",     // timestamp
     );
 
-    let output = Command::new("git")
+    let output = git_command()
         .args([
             "for-each-ref",
             "--sort=-taggerdate",
@@ -130,7 +130,7 @@ pub fn create_tag(
     let repo_path = repo.command_cwd();
 
     // Set git environment for tagger
-    let output = Command::new("git")
+    let output = git_command()
         .args(["tag", "-a", name, "-m", message, target])
         .env("GIT_COMMITTER_NAME", tagger_name)
         .env("GIT_COMMITTER_EMAIL", tagger_email)
@@ -165,7 +165,7 @@ pub fn create_lightweight_tag(
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["tag", name, target])
         .current_dir(&repo_path)
         .output()
@@ -194,7 +194,7 @@ pub fn delete_tag(repo: &Repository, name: &str) -> Result<(), GitError> {
 
     let repo_path = repo.command_cwd();
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["tag", "-d", name])
         .current_dir(&repo_path)
         .output()
@@ -224,7 +224,7 @@ pub fn push_tag(repo: &Repository, tag_name: &str, remote: &str) -> Result<(), G
     let repo_path = repo.command_cwd();
     let refspec = format!("refs/tags/{}", tag_name);
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["push", remote, &refspec])
         .current_dir(&repo_path)
         .output()
@@ -254,7 +254,7 @@ pub fn delete_remote_tag(repo: &Repository, tag_name: &str, remote: &str) -> Res
     let repo_path = repo.command_cwd();
     let refspec = format!(":refs/tags/{}", tag_name);
 
-    let output = Command::new("git")
+    let output = git_command()
         .args(["push", remote, &refspec])
         .current_dir(&repo_path)
         .output()

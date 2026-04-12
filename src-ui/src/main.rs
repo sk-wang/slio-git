@@ -4763,8 +4763,10 @@ fn copy_text_to_clipboard(value: &str) -> Result<(), String> {
 }
 
 fn pipe_command_stdin(command: &str, args: &[&str], value: &str) -> Result<(), String> {
-    let mut child = Command::new(command)
-        .args(args)
+    let mut child_command = Command::new(command);
+    git_core::configure_background_command(&mut child_command);
+
+    let mut child = child_command.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

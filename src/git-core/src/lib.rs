@@ -47,6 +47,7 @@ pub mod graph;
 pub mod history;
 pub mod index;
 pub mod llm;
+pub mod process;
 pub mod rebase;
 pub mod remote;
 pub mod repository;
@@ -59,8 +60,8 @@ pub mod worktree;
 
 pub use branch::Branch;
 pub use commit::{
-    amend_commit, create_commit, create_signature, get_commit, get_default_signature,
-    get_commit_changed_files, load_recent_messages, save_recent_message, validate_commit_ref,
+    amend_commit, create_commit, create_signature, get_commit, get_commit_changed_files,
+    get_default_signature, load_recent_messages, save_recent_message, validate_commit_ref,
     CommitChangeStatus, CommitChangedFile, CommitInfo,
 };
 pub use commit_actions::{
@@ -73,11 +74,11 @@ pub use commit_actions::{
 };
 pub use diff::{
     auto_merge_conflict, build_full_file_diff, compute_inline_changes, diff_commits,
-    diff_file_to_index, diff_index_to_head, diff_ref_to_workdir, diff_refs,
-    diff_workdir_to_index, file_is_binary, get_conflict_diff, resolve_conflict,
-    resolve_conflict_hunk, AutoMergeResult, ConflictHunk, ConflictHunkType, ConflictLine,
-    ConflictLineType, ConflictResolution, Diff, DiffHunk, DiffLine, DiffLineOrigin, FileDiff,
-    FullFilePreview, InlineChangeSpan, MergeChunk, MergeChunkType, MergeEditorModel, ThreeWayDiff,
+    diff_file_to_index, diff_index_to_head, diff_ref_to_workdir, diff_refs, diff_workdir_to_index,
+    file_is_binary, get_conflict_diff, resolve_conflict, resolve_conflict_hunk, AutoMergeResult,
+    ConflictHunk, ConflictHunkType, ConflictLine, ConflictLineType, ConflictResolution, Diff,
+    DiffHunk, DiffLine, DiffLineOrigin, FileDiff, FullFilePreview, InlineChangeSpan, MergeChunk,
+    MergeChunkType, MergeEditorModel, ThreeWayDiff,
 };
 pub use error::GitError;
 pub use history::{
@@ -88,6 +89,7 @@ pub use index::{
     discard_file, get_file_hunks, get_status, stage_file, stage_hunk, unstage_file, unstage_hunk,
     Change, ChangeStatus, Hunk, HunkLine, Index, IndexEntry,
 };
+pub use process::{background_command, configure_background_command, git_command};
 pub use rebase::{
     get_current_rebase_step, get_rebase_status, get_rebase_todo, has_rebase_conflicts,
     prepare_interactive_rebase_plan, rebase_abort, rebase_continue, rebase_skip, rebase_start,

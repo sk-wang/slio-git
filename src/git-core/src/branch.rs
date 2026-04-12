@@ -2,9 +2,9 @@
 
 use crate::error::GitError;
 use crate::index;
+use crate::process::git_command;
 use crate::repository::{compact_branch_sync_hint, compact_relative_time, Repository, SyncStatus};
 use log::info;
-use std::process::Command;
 
 /// A Git branch
 #[derive(Debug, Clone)]
@@ -101,7 +101,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Use git branch command
-        let output = Command::new("git")
+        let output = git_command()
             .args(["branch", name, start_point])
             .current_dir(&repo_path)
             .output()
@@ -141,7 +141,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Use git branch -d command
-        let output = Command::new("git")
+        let output = git_command()
             .args(["branch", "-d", name])
             .current_dir(&repo_path)
             .output()
@@ -170,7 +170,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Use git branch -m command
-        let output = Command::new("git")
+        let output = git_command()
             .args(["branch", "-m", old_name, new_name])
             .current_dir(&repo_path)
             .output()
@@ -212,7 +212,7 @@ impl Repository {
 
         let repo_path = self.command_cwd();
 
-        let output = Command::new("git")
+        let output = git_command()
             .args(["branch", "--set-upstream-to", upstream, branch_name])
             .current_dir(&repo_path)
             .output()
@@ -237,7 +237,7 @@ impl Repository {
     /// List uncommitted changed file paths (staged + unstaged).
     pub fn list_uncommitted_files(&self) -> Vec<String> {
         let repo_path = self.command_cwd();
-        Command::new("git")
+        git_command()
             .args(["status", "--porcelain"])
             .current_dir(&repo_path)
             .output()
@@ -257,7 +257,7 @@ impl Repository {
     pub fn has_uncommitted_changes(&self) -> bool {
         let repo_path = self.command_cwd();
         // `git status --porcelain` outputs nothing when clean
-        Command::new("git")
+        git_command()
             .args(["status", "--porcelain"])
             .current_dir(&repo_path)
             .output()
@@ -277,7 +277,7 @@ impl Repository {
     pub fn force_checkout_branch(&self, name: &str) -> Result<(), GitError> {
         info!("Force checking out branch '{}' (discarding changes)", name);
         let repo_path = self.command_cwd();
-        let output = Command::new("git")
+        let output = git_command()
             .args(["checkout", "--force", name])
             .current_dir(&repo_path)
             .output()
@@ -307,7 +307,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Step 1: stash including untracked files
-        let stash_output = Command::new("git")
+        let stash_output = git_command()
             .args([
                 "stash",
                 "push",
@@ -330,7 +330,7 @@ impl Repository {
 
         // Step 3: if stash was created, pop it regardless of checkout result
         if stash_created {
-            let pop_output = Command::new("git")
+            let pop_output = git_command()
                 .args(["stash", "pop"])
                 .current_dir(&repo_path)
                 .output();
@@ -356,7 +356,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Use git checkout command
-        let output = Command::new("git")
+        let output = git_command()
             .args(["checkout", name])
             .current_dir(&repo_path)
             .output()
@@ -391,7 +391,7 @@ impl Repository {
 
         let repo_path = self.command_cwd();
         let local_ref = format!("refs/heads/{local_branch_name}");
-        let local_branch_exists = Command::new("git")
+        let local_branch_exists = git_command()
             .args(["show-ref", "--verify", "--quiet", &local_ref])
             .current_dir(&repo_path)
             .status()
@@ -407,7 +407,7 @@ impl Repository {
             vec!["checkout", "--track", remote_ref]
         };
 
-        let output = Command::new("git")
+        let output = git_command()
             .args(&args)
             .current_dir(&repo_path)
             .output()
@@ -436,7 +436,7 @@ impl Repository {
         let repo_path = self.command_cwd();
 
         // Use git merge command
-        let output = Command::new("git")
+        let output = git_command()
             .args(["merge", branch_name])
             .current_dir(&repo_path)
             .output()
@@ -475,7 +475,7 @@ impl Repository {
 
         let repo_path = self.command_cwd();
 
-        let output = Command::new("git")
+        let output = git_command()
             .args([
                 "for-each-ref",
                 "--sort=-committerdate",
@@ -558,7 +558,7 @@ impl Repository {
             branches.push(branch);
         }
 
-        let remote_output = Command::new("git")
+        let remote_output = git_command()
             .args([
                 "for-each-ref",
                 "--sort=-committerdate",

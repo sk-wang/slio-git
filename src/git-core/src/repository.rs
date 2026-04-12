@@ -1,6 +1,7 @@
 //! Repository management for git-core
 
 use crate::error::GitError;
+use crate::process::git_command;
 use chrono::{Local, LocalResult, TimeZone};
 use git2::Repository as Git2Repository;
 use log::info;
@@ -224,7 +225,7 @@ impl Repository {
         let branch_name = self.current_branch().ok().flatten()?;
         let upstream_ref_spec = format!("{branch_name}@{{upstream}}");
         let repo_path = self.command_cwd();
-        let output = std::process::Command::new("git")
+        let output = git_command()
             .args([
                 "rev-parse",
                 "--abbrev-ref",
@@ -269,7 +270,7 @@ impl Repository {
         let upstream_ref = format!("{}@{{upstream}}", branch_name);
         let revspec = format!("{branch_name}...{upstream_ref}");
         let repo_path = self.command_cwd();
-        let output = std::process::Command::new("git")
+        let output = git_command()
             .args(["rev-list", "--left-right", "--count", &revspec])
             .current_dir(&repo_path)
             .output();
