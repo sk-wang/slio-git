@@ -1,3 +1,5 @@
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 //! slio-git UI - Pure Iced desktop application.
 
 mod file_watcher;

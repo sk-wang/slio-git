@@ -188,6 +188,8 @@ impl HistoryCommitDiffPopupState {
 const MAX_PROJECT_HISTORY: usize = 8;
 const WORKSPACE_MEMORY_FILE: &str = "workspace-memory-v1.txt";
 const AUTO_REMOTE_CHECK_INTERVAL: Duration = Duration::from_secs(90);
+#[cfg(target_os = "windows")]
+const WINDOWS_WORKSPACE_POLL_INTERVAL: Duration = Duration::from_secs(3);
 const TOAST_NOTIFICATION_DURATION: Duration = Duration::from_secs(4);
 
 /// Session-scoped project entries rendered in the left rail for quick switching.
@@ -2208,11 +2210,23 @@ impl AppState {
     }
 
     pub fn should_auto_refresh_workspace(&self, now: Instant) -> bool {
-        let _ = now;
-        self.current_repository.is_some()
-            && !self.is_loading
-            && !self.auto_refresh_suspended()
-            && self.auto_refresh.workspace_refresh_pending
+        if self.current_repository.is_none() || self.is_loading || self.auto_refresh_suspended() {
+            return false;
+        }
+
+        self.auto_refresh.workspace_refresh_pending || self.windows_workspace_poll_due(now)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn windows_workspace_poll_due(&self, now: Instant) -> bool {
+        self.auto_refresh
+            .last_workspace_refresh_at
+            .is_none_or(|last| now.duration_since(last) >= WINDOWS_WORKSPACE_POLL_INTERVAL)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn windows_workspace_poll_due(&self, _now: Instant) -> bool {
+        false
     }
 
     pub fn should_auto_check_remote(&self, now: Instant) -> bool {
