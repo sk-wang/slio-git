@@ -13,7 +13,7 @@ pub enum SettingsMessage {
     // Update
     SetUpdateMethod(UpdateMethod),
     ToggleAutoUpdateOnPushReject,
-    TogglePullAutocrlfFalse,
+    TogglePullAutocrlfTrue,
     // Push
     SetProtectedBranches(String),
     TogglePreviewPushOnCommit,
@@ -80,7 +80,7 @@ impl FetchTagsMode {
 pub struct GitSettings {
     pub update_method: UpdateMethod,
     pub auto_update_on_push_reject: bool,
-    pub pull_autocrlf_false: bool,
+    pub pull_autocrlf_true: bool,
     pub protected_branches: String,
     pub preview_push_on_commit: bool,
     pub sign_off_commit: bool,
@@ -106,7 +106,7 @@ impl Default for GitSettings {
         Self {
             update_method: UpdateMethod::Merge,
             auto_update_on_push_reject: false,
-            pull_autocrlf_false: true,
+            pull_autocrlf_true: true,
             protected_branches: "main, master".to_string(),
             preview_push_on_commit: true,
             sign_off_commit: false,
@@ -133,8 +133,8 @@ impl GitSettings {
             SettingsMessage::ToggleAutoUpdateOnPushReject => {
                 self.auto_update_on_push_reject = !self.auto_update_on_push_reject;
             }
-            SettingsMessage::TogglePullAutocrlfFalse => {
-                self.pull_autocrlf_false = !self.pull_autocrlf_false;
+            SettingsMessage::TogglePullAutocrlfTrue => {
+                self.pull_autocrlf_true = !self.pull_autocrlf_true;
             }
             SettingsMessage::SetProtectedBranches(val) => self.protected_branches = val.clone(),
             SettingsMessage::TogglePreviewPushOnCommit => {
@@ -204,7 +204,7 @@ impl GitSettings {
                 "auto_update_on_push_reject" => {
                     s.auto_update_on_push_reject = value == "true";
                 }
-                "pull_autocrlf_false" => s.pull_autocrlf_false = value == "true",
+                "pull_autocrlf_true" => s.pull_autocrlf_true = value == "true",
                 "protected_branches" => s.protected_branches = value.to_string(),
                 "preview_push_on_commit" => s.preview_push_on_commit = value == "true",
                 "sign_off_commit" => s.sign_off_commit = value == "true",
@@ -263,7 +263,7 @@ impl GitSettings {
         format!(
             "update_method\t{update_method}\n\
              auto_update_on_push_reject\t{}\n\
-             pull_autocrlf_false\t{}\n\
+             pull_autocrlf_true\t{}\n\
              protected_branches\t{}\n\
              preview_push_on_commit\t{}\n\
              sign_off_commit\t{}\n\
@@ -280,7 +280,7 @@ impl GitSettings {
              llm_model\t{}\n\
              language\t{}\n",
             self.auto_update_on_push_reject,
-            self.pull_autocrlf_false,
+            self.pull_autocrlf_true,
             self.protected_branches,
             self.preview_push_on_commit,
             self.sign_off_commit,
@@ -523,9 +523,9 @@ pub fn view<'a>(settings: &'a GitSettings, i18n: &'a I18n) -> Element<'a, Settin
                     )),
             )
             .push(checkbox_row(
-                settings.pull_autocrlf_false,
-                i18n.sv_pull_autocrlf_false,
-                SettingsMessage::TogglePullAutocrlfFalse,
+                settings.pull_autocrlf_true,
+                i18n.sv_pull_autocrlf_true,
+                SettingsMessage::TogglePullAutocrlfTrue,
             )),
     )
     .padding([8, 14]);
@@ -743,7 +743,7 @@ mod tests {
         let s = GitSettings::default();
         assert_eq!(s.update_method, UpdateMethod::Merge);
         assert!(!s.auto_update_on_push_reject);
-        assert!(s.pull_autocrlf_false);
+        assert!(s.pull_autocrlf_true);
         assert!(s.protected_branches.contains("main"));
         assert!(s.protected_branches.contains("master"));
         assert!(!s.sign_off_commit);
@@ -762,8 +762,8 @@ mod tests {
         assert!(s.sign_off_commit);
         s.apply_message(&SettingsMessage::ToggleSignOffCommit);
         assert!(!s.sign_off_commit);
-        s.apply_message(&SettingsMessage::TogglePullAutocrlfFalse);
-        assert!(!s.pull_autocrlf_false);
+        s.apply_message(&SettingsMessage::TogglePullAutocrlfTrue);
+        assert!(!s.pull_autocrlf_true);
     }
 
     #[test]
@@ -788,7 +788,7 @@ mod tests {
             sign_off_commit: true,
             update_method: UpdateMethod::Rebase,
             fetch_tags_mode: FetchTagsMode::AllTags,
-            pull_autocrlf_false: false,
+            pull_autocrlf_true: false,
             llm_enabled: true,
             llm_api_key: "sk-test-key".to_string(),
             protected_branches: "main, develop".to_string(),
@@ -802,7 +802,7 @@ mod tests {
         assert!(loaded.sign_off_commit);
         assert_eq!(loaded.update_method, UpdateMethod::Rebase);
         assert_eq!(loaded.fetch_tags_mode, FetchTagsMode::AllTags);
-        assert!(!loaded.pull_autocrlf_false);
+        assert!(!loaded.pull_autocrlf_true);
         assert!(loaded.llm_enabled);
         assert_eq!(loaded.llm_api_key, "sk-test-key");
         assert_eq!(loaded.protected_branches, "main, develop");

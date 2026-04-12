@@ -3235,7 +3235,7 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Ok(repo) = require_repository(state) {
                     state
                         .remote_dialog
-                        .pull_selected(&repo, cfg!(windows) && state.git_settings.pull_autocrlf_false);
+                        .pull_selected(&repo, cfg!(windows) && state.git_settings.pull_autocrlf_true);
                     if let Some(error) = state.remote_dialog.error.clone() {
                         report_async_failure(
                             state,
@@ -3393,8 +3393,8 @@ fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         ff_only: state.remote_dialog.pull_ff_only,
                         no_ff: state.remote_dialog.pull_no_ff,
                         squash: state.remote_dialog.pull_squash,
-                        force_autocrlf_false: cfg!(windows)
-                            && state.git_settings.pull_autocrlf_false,
+                        force_autocrlf_true: cfg!(windows)
+                            && state.git_settings.pull_autocrlf_true,
                     };
                     let branch_label = if branch.is_empty() {
                         state
