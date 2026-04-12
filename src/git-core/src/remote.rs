@@ -22,6 +22,7 @@ pub struct PullOptions<'a> {
     pub ff_only: bool,
     pub no_ff: bool,
     pub squash: bool,
+    pub force_autocrlf_false: bool,
 }
 
 fn remote_url_uses_ssh(url: &str) -> bool {
@@ -225,7 +226,12 @@ fn build_pull_args(
     remote_name: &str,
     options: PullOptions<'_>,
 ) -> Result<Vec<String>, GitError> {
-    let mut args = vec!["pull".to_string()];
+    let mut args = Vec::new();
+    if options.force_autocrlf_false {
+        args.push("-c".to_string());
+        args.push("core.autocrlf=false".to_string());
+    }
+    args.push("pull".to_string());
 
     if options.rebase {
         args.push("--rebase".to_string());
@@ -638,6 +644,40 @@ mod tests {
         .unwrap();
 
         assert_eq!(args, vec!["pull", "--rebase", "origin", "release/main"]);
+    }
+
+    #[test]
+    fn build_pull_args_includes_autocrlf_override_when_requested() {
+        let (repo_dir, branch_name) = create_committed_repo();
+        let remote_dir = tempdir().unwrap();
+        git(remote_dir.path(), &["init", "--bare"]);
+        git(
+            repo_dir.path(),
+            &["remote", "add", "origin", &remote_dir.path().display().to_string()],
+        );
+
+        let repo = Repository::open(repo_dir.path()).unwrap();
+        let args = build_pull_args(
+            &repo,
+            "origin",
+            PullOptions {
+                force_autocrlf_false: true,
+                ..PullOptions::default()
+            },
+        )
+        .unwrap();
+
+        assert_eq!(
+            args,
+            vec![
+                "-c",
+                "core.autocrlf=false",
+                "pull",
+                "--no-rebase",
+                "origin",
+                &branch_name
+            ]
+        );
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub enum SettingsMessage {
     // Update
     SetUpdateMethod(UpdateMethod),
     ToggleAutoUpdateOnPushReject,
+    TogglePullAutocrlfFalse,
     // Push
     SetProtectedBranches(String),
     TogglePreviewPushOnCommit,
@@ -79,6 +80,7 @@ impl FetchTagsMode {
 pub struct GitSettings {
     pub update_method: UpdateMethod,
     pub auto_update_on_push_reject: bool,
+    pub pull_autocrlf_false: bool,
     pub protected_branches: String,
     pub preview_push_on_commit: bool,
     pub sign_off_commit: bool,
@@ -104,6 +106,7 @@ impl Default for GitSettings {
         Self {
             update_method: UpdateMethod::Merge,
             auto_update_on_push_reject: false,
+            pull_autocrlf_false: true,
             protected_branches: "main, master".to_string(),
             preview_push_on_commit: true,
             sign_off_commit: false,
@@ -129,6 +132,9 @@ impl GitSettings {
             SettingsMessage::SetUpdateMethod(method) => self.update_method = *method,
             SettingsMessage::ToggleAutoUpdateOnPushReject => {
                 self.auto_update_on_push_reject = !self.auto_update_on_push_reject;
+            }
+            SettingsMessage::TogglePullAutocrlfFalse => {
+                self.pull_autocrlf_false = !self.pull_autocrlf_false;
             }
             SettingsMessage::SetProtectedBranches(val) => self.protected_branches = val.clone(),
             SettingsMessage::TogglePreviewPushOnCommit => {
@@ -198,6 +204,7 @@ impl GitSettings {
                 "auto_update_on_push_reject" => {
                     s.auto_update_on_push_reject = value == "true";
                 }
+                "pull_autocrlf_false" => s.pull_autocrlf_false = value == "true",
                 "protected_branches" => s.protected_branches = value.to_string(),
                 "preview_push_on_commit" => s.preview_push_on_commit = value == "true",
                 "sign_off_commit" => s.sign_off_commit = value == "true",
@@ -256,6 +263,7 @@ impl GitSettings {
         format!(
             "update_method\t{update_method}\n\
              auto_update_on_push_reject\t{}\n\
+             pull_autocrlf_false\t{}\n\
              protected_branches\t{}\n\
              preview_push_on_commit\t{}\n\
              sign_off_commit\t{}\n\
@@ -272,6 +280,7 @@ impl GitSettings {
              llm_model\t{}\n\
              language\t{}\n",
             self.auto_update_on_push_reject,
+            self.pull_autocrlf_false,
             self.protected_branches,
             self.preview_push_on_commit,
             self.sign_off_commit,
@@ -316,7 +325,10 @@ pub fn view<'a>(settings: &'a GitSettings, i18n: &'a I18n) -> Element<'a, Settin
                     .color(theme::darcula::TEXT_PRIMARY),
             )
             .push(Space::new().width(Length::Fill))
-            .push(button::compact_ghost(i18n.close, Some(SettingsMessage::Close))),
+            .push(button::compact_ghost(
+                i18n.close,
+                Some(SettingsMessage::Close),
+            )),
     )
     .padding([6, 14])
     .width(Length::Fill)
@@ -509,7 +521,12 @@ pub fn view<'a>(settings: &'a GitSettings, i18n: &'a I18n) -> Element<'a, Settin
                         settings.update_method == UpdateMethod::Rebase,
                         SettingsMessage::SetUpdateMethod(UpdateMethod::Rebase),
                     )),
-            ),
+            )
+            .push(checkbox_row(
+                settings.pull_autocrlf_false,
+                i18n.sv_pull_autocrlf_false,
+                SettingsMessage::TogglePullAutocrlfFalse,
+            )),
     )
     .padding([8, 14]);
 
@@ -622,7 +639,10 @@ pub fn view<'a>(settings: &'a GitSettings, i18n: &'a I18n) -> Element<'a, Settin
             .align_y(Alignment::Center)
             .push(Space::new().width(Length::Fill))
             .push(button::ghost(i18n.cancel, Some(SettingsMessage::Close)))
-            .push(button::primary(i18n.sv_save, Some(SettingsMessage::SaveAndClose))),
+            .push(button::primary(
+                i18n.sv_save,
+                Some(SettingsMessage::SaveAndClose),
+            )),
     )
     .padding([8, 14])
     .width(Length::Fill)
@@ -723,6 +743,7 @@ mod tests {
         let s = GitSettings::default();
         assert_eq!(s.update_method, UpdateMethod::Merge);
         assert!(!s.auto_update_on_push_reject);
+        assert!(s.pull_autocrlf_false);
         assert!(s.protected_branches.contains("main"));
         assert!(s.protected_branches.contains("master"));
         assert!(!s.sign_off_commit);
@@ -741,6 +762,8 @@ mod tests {
         assert!(s.sign_off_commit);
         s.apply_message(&SettingsMessage::ToggleSignOffCommit);
         assert!(!s.sign_off_commit);
+        s.apply_message(&SettingsMessage::TogglePullAutocrlfFalse);
+        assert!(!s.pull_autocrlf_false);
     }
 
     #[test]
@@ -765,6 +788,7 @@ mod tests {
             sign_off_commit: true,
             update_method: UpdateMethod::Rebase,
             fetch_tags_mode: FetchTagsMode::AllTags,
+            pull_autocrlf_false: false,
             llm_enabled: true,
             llm_api_key: "sk-test-key".to_string(),
             protected_branches: "main, develop".to_string(),
@@ -778,6 +802,7 @@ mod tests {
         assert!(loaded.sign_off_commit);
         assert_eq!(loaded.update_method, UpdateMethod::Rebase);
         assert_eq!(loaded.fetch_tags_mode, FetchTagsMode::AllTags);
+        assert!(!loaded.pull_autocrlf_false);
         assert!(loaded.llm_enabled);
         assert_eq!(loaded.llm_api_key, "sk-test-key");
         assert_eq!(loaded.protected_branches, "main, develop");

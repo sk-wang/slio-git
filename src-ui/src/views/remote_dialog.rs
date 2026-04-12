@@ -189,13 +189,14 @@ impl RemoteDialogState {
         }
     }
 
-    fn pull_options(&self) -> PullOptions<'_> {
+    fn pull_options(&self, force_autocrlf_false: bool) -> PullOptions<'_> {
         PullOptions {
             branch_name: Some(self.pull_branch.trim()).filter(|branch| !branch.is_empty()),
             rebase: self.pull_rebase,
             ff_only: self.pull_ff_only,
             no_ff: self.pull_no_ff,
             squash: self.pull_squash,
+            force_autocrlf_false,
         }
     }
 
@@ -247,7 +248,7 @@ impl RemoteDialogState {
         }
     }
 
-    pub fn pull_selected(&mut self, repo: &Repository) {
+    pub fn pull_selected(&mut self, repo: &Repository, force_autocrlf_false: bool) {
         let Some(remote_name) = self.selected_remote.clone() else {
             self.error = Some("Please select a remote first".to_string());
             self.success_message = None;
@@ -276,7 +277,7 @@ impl RemoteDialogState {
         match git_core::remote::pull_with_options(
             repo,
             &remote_name,
-            self.pull_options(),
+            self.pull_options(force_autocrlf_false),
             credentials
                 .as_ref()
                 .map(|(username, password)| (username.as_str(), password.as_str())),
@@ -758,6 +759,13 @@ fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element
     )
     .padding([8, 14]);
 
+    let autocrlf_hint = Container::new(
+        Text::new(i18n.rd_pull_autocrlf_hint)
+            .size(11)
+            .color(theme::darcula::TEXT_SECONDARY),
+    )
+    .padding([8, 14]);
+
     // ── Status ──
     let status: Option<Element<'_, RemoteDialogMessage>> = if let Some(error) = &state.error {
         Some(build_status_panel::<RemoteDialogMessage>(
@@ -794,6 +802,7 @@ fn build_pull_panel<'a>(state: &'a RemoteDialogState, i18n: &'a I18n) -> Element
     body = body.push(iced::widget::rule::horizontal(1));
     body = body.push(cmd_row);
     body = body.push(options);
+    body = body.push(autocrlf_hint);
     if let Some(s) = status {
         body = body.push(s);
     }
