@@ -7,10 +7,12 @@ cd "$ROOT_DIR"
 
 TARGET="${WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
 APP_NAME="slio-git"
+ARCH="${WINDOWS_ARCH:-$(printf '%s' "$TARGET" | cut -d- -f1)}"
 DIST_DIR="$ROOT_DIR/dist"
 STAGING_DIR="$DIST_DIR/windows-root"
-PACKAGE_DIR="$STAGING_DIR/${APP_NAME}-windows-x86_64"
-ZIP_PATH="$DIST_DIR/${APP_NAME}-windows-x86_64.zip"
+PACKAGE_BASENAME="${APP_NAME}-windows-${ARCH}"
+PACKAGE_DIR="$STAGING_DIR/${PACKAGE_BASENAME}"
+ZIP_PATH="$DIST_DIR/${PACKAGE_BASENAME}.zip"
 
 VERSION="$(
 python3 - <<'PY'

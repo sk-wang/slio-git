@@ -22,7 +22,7 @@ concurrency:
 jobs:
   validate:
     name: Validate release metadata
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
@@ -85,9 +85,55 @@ jobs:
       - name: Run workspace tests
         run: cargo test --workspace --locked
 
-  build_macos:
-    name: Build macOS DMG
-    runs-on: macos-latest
+  build_release_assets:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS x86_64 DMG
+            artifact_name: release-macos-x86_64
+            runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            platform: macos
+            arch: x86_64
+            output_file: slio-git-macos-x86_64.dmg
+          - label: macOS aarch64 DMG
+            artifact_name: release-macos-aarch64
+            runner: macos-15
+            rust_target: aarch64-apple-darwin
+            platform: macos
+            arch: aarch64
+            output_file: slio-git-macos-aarch64.dmg
+          - label: Linux x86_64 tarball
+            artifact_name: release-linux-x86_64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: x86_64
+            output_file: slio-git-linux-x86_64.tar.gz
+          - label: Linux aarch64 tarball
+            artifact_name: release-linux-aarch64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: aarch64
+            output_file: slio-git-linux-aarch64.tar.gz
+          - label: Windows x86_64 ZIP
+            artifact_name: release-windows-x86_64
+            runner: ubuntu-24.04
+            rust_target: x86_64-pc-windows-gnu
+            platform: windows
+            arch: x86_64
+            output_file: slio-git-windows-x86_64.zip
+          - label: Windows aarch64 ZIP
+            artifact_name: release-windows-aarch64
+            runner: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            platform: windows
+            arch: aarch64
+            output_file: slio-git-windows-aarch64.zip
+    runs-on: ${{ matrix.runner }}
     needs: validate
     steps:
       - name: Check out repository
@@ -97,80 +143,51 @@ jobs:
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Build macOS package
-        run: bash scripts/package-macos-dmg.sh
-
-      - name: Upload macOS artifact
-        uses: actions/upload-artifact@v4
         with:
-          name: macos-release
-          path: dist/slio-git.dmg
-          if-no-files-found: error
-
-  build_windows:
-    name: Build Windows ZIP
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+          targets: ${{ matrix.rust_target }}
 
       - name: Install MinGW toolchain
+        if: matrix.platform == 'windows' && matrix.arch == 'x86_64'
         run: |
           sudo apt-get update
           sudo apt-get install --yes mingw-w64
 
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
-
-      - name: Build Windows package
-        run: bash scripts/package-windows-zip.sh
-
-      - name: Upload Windows artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-release
-          path: dist/slio-git-windows-x86_64.zip
-          if-no-files-found: error
-
-  build_linux:
-    name: Build Linux tarball
-    runs-on: ubuntu-latest
-    needs: validate
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Build macOS package
+        if: matrix.platform == 'macos'
+        env:
+          MACOS_TARGET: ${{ matrix.rust_target }}
+          MACOS_ARCH: ${{ matrix.arch }}
+        run: bash scripts/package-macos-dmg.sh
 
       - name: Build Linux package
+        if: matrix.platform == 'linux'
+        env:
+          LINUX_TARGET: ${{ matrix.rust_target }}
+          LINUX_ARCH: ${{ matrix.arch }}
         run: bash scripts/package-linux-tarball.sh
 
-      - name: Upload Linux artifact
+      - name: Build Windows package
+        if: matrix.platform == 'windows'
+        env:
+          WINDOWS_TARGET: ${{ matrix.rust_target }}
+          WINDOWS_ARCH: ${{ matrix.arch }}
+        run: bash scripts/package-windows-zip.sh
+
+      - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
-          name: linux-release
-          path: dist/slio-git-linux-x86_64.tar.gz
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.output_file }}
           if-no-files-found: error
 
   publish:
     name: Publish GitHub release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     needs:
       - validate
-      - build_macos
-      - build_windows
-      - build_linux
+      - build_release_assets
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -180,6 +197,8 @@ jobs:
       - name: Download packaged artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: release-*
+          merge-multiple: true
           path: dist/release-assets
 
       - name: Prepare release assets and notes
@@ -191,12 +210,11 @@ jobs:
           PREVIOUS_TAG: ${{ needs.validate.outputs.previous_tag }}
         run: |
           mkdir -p dist/publish
-          cp dist/release-assets/macos-release/slio-git.dmg dist/publish/
-          cp dist/release-assets/windows-release/slio-git-windows-x86_64.zip dist/publish/
-          cp dist/release-assets/linux-release/slio-git-linux-x86_64.tar.gz dist/publish/
+          cp dist/release-assets/* dist/publish/
           (
             cd dist/publish
-            sha256sum slio-git.dmg slio-git-windows-x86_64.zip slio-git-linux-x86_64.tar.gz > SHA256SUMS.txt
+            rm -f SHA256SUMS.txt RELEASE_BODY.md
+            sha256sum slio-git-* > SHA256SUMS.txt
           )
           {
             printf '## %s\n\n' "$RELEASE_TITLE"
@@ -218,9 +236,9 @@ jobs:
           name: ${{ needs.validate.outputs.release_title }}
           body_path: dist/publish/RELEASE_BODY.md
           files: |
-            dist/publish/slio-git.dmg
-            dist/publish/slio-git-windows-x86_64.zip
-            dist/publish/slio-git-linux-x86_64.tar.gz
+            dist/publish/slio-git-*.dmg
+            dist/publish/slio-git-*.zip
+            dist/publish/slio-git-*.tar.gz
             dist/publish/SHA256SUMS.txt
           fail_on_unmatched_files: true
           generate_release_notes: false

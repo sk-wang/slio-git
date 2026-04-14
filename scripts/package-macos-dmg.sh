@@ -6,9 +6,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="slio-git"
-APP_DIR="$ROOT_DIR/dist/${APP_NAME}.app"
+TARGET="${MACOS_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+ARCH="${MACOS_ARCH:-$(printf '%s' "$TARGET" | cut -d- -f1)}"
+PACKAGE_BASENAME="${APP_NAME}-macos-${ARCH}"
+APP_DIR="$ROOT_DIR/dist/${PACKAGE_BASENAME}.app"
 DMG_ROOT="$ROOT_DIR/dist/dmg-root"
-DMG_PATH="$ROOT_DIR/dist/${APP_NAME}.dmg"
+DMG_PATH="$ROOT_DIR/dist/${PACKAGE_BASENAME}.dmg"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
 INFO_PLIST="$APP_DIR/Contents/Info.plist"
@@ -31,14 +34,19 @@ print(match.group(1))
 PY
 )"
 
+if ! rustup target list --installed | grep -qx "$TARGET"; then
+  echo "Installing Rust target: $TARGET"
+  rustup target add "$TARGET"
+fi
+
 echo "Building release binary..."
-cargo build --locked --release -p src-ui
+cargo build --locked --release -p src-ui --target "$TARGET"
 
 echo "Preparing app bundle..."
 rm -rf "$APP_DIR" "$DMG_ROOT"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$DMG_ROOT"
 
-cp "$ROOT_DIR/target/release/src-ui" "$MACOS_DIR/$APP_NAME"
+cp "$ROOT_DIR/target/$TARGET/release/src-ui" "$MACOS_DIR/$APP_NAME"
 chmod 755 "$MACOS_DIR/$APP_NAME"
 
 ICON_SRC="$ROOT_DIR/src-ui/assets/AppIcon.icns"

@@ -6,10 +6,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 APP_NAME="slio-git"
+TARGET="${LINUX_TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
+ARCH="${LINUX_ARCH:-$(printf '%s' "$TARGET" | cut -d- -f1)}"
 DIST_DIR="$ROOT_DIR/dist"
 STAGING_DIR="$DIST_DIR/linux-root"
-PACKAGE_DIR="$STAGING_DIR/${APP_NAME}-linux-x86_64"
-TARBALL_PATH="$DIST_DIR/${APP_NAME}-linux-x86_64.tar.gz"
+PACKAGE_BASENAME="${APP_NAME}-linux-${ARCH}"
+PACKAGE_DIR="$STAGING_DIR/${PACKAGE_BASENAME}"
+TARBALL_PATH="$DIST_DIR/${PACKAGE_BASENAME}.tar.gz"
 
 VERSION="$(
 python3 - <<'PY'
@@ -28,14 +31,19 @@ print(match.group(1))
 PY
 )"
 
+if ! rustup target list --installed | grep -qx "$TARGET"; then
+  echo "Installing Rust target: $TARGET"
+  rustup target add "$TARGET"
+fi
+
 echo "Building Linux release binary..."
-cargo build --locked --release -p src-ui
+cargo build --locked --release -p src-ui --target "$TARGET"
 
 echo "Preparing tarball contents..."
 rm -rf "$STAGING_DIR"
 mkdir -p "$PACKAGE_DIR"
 
-cp "$ROOT_DIR/target/release/src-ui" "$PACKAGE_DIR/$APP_NAME"
+cp "$ROOT_DIR/target/$TARGET/release/src-ui" "$PACKAGE_DIR/$APP_NAME"
 chmod 755 "$PACKAGE_DIR/$APP_NAME"
 
 cat > "$PACKAGE_DIR/README.txt" <<EOF
