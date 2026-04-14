@@ -7,10 +7,12 @@ cd "$ROOT_DIR"
 
 TARGET="${WINDOWS_TARGET:-x86_64-pc-windows-gnu}"
 APP_NAME="slio-git"
+ARCH="${WINDOWS_ARCH:-$(printf '%s' "$TARGET" | cut -d- -f1)}"
 DIST_DIR="$ROOT_DIR/dist"
 STAGING_DIR="$DIST_DIR/windows-root"
-PACKAGE_DIR="$STAGING_DIR/${APP_NAME}-windows-x86_64"
-ZIP_PATH="$DIST_DIR/${APP_NAME}-windows-x86_64.zip"
+PACKAGE_BASENAME="${APP_NAME}-windows-${ARCH}"
+PACKAGE_DIR="$STAGING_DIR/${PACKAGE_BASENAME}"
+ZIP_PATH="$DIST_DIR/${PACKAGE_BASENAME}.zip"
 
 VERSION="$(
 python3 - <<'PY'
@@ -35,7 +37,7 @@ if ! rustup target list --installed | grep -qx "$TARGET"; then
 fi
 
 echo "Building Windows release binary for $TARGET..."
-cargo build --release -p src-ui --target "$TARGET"
+cargo build --locked --release -p src-ui --target "$TARGET"
 
 echo "Preparing ZIP contents..."
 rm -rf "$STAGING_DIR"
@@ -55,13 +57,27 @@ EOF
 
 echo "Creating ZIP archive..."
 rm -f "$ZIP_PATH"
-python3 - <<PY
+PY_STAGING_DIR="$STAGING_DIR"
+PY_PACKAGE_DIR="$PACKAGE_DIR"
+PY_ZIP_PATH="$ZIP_PATH"
+
+if command -v cygpath >/dev/null 2>&1; then
+  PY_STAGING_DIR="$(cygpath -w "$STAGING_DIR")"
+  PY_PACKAGE_DIR="$(cygpath -w "$PACKAGE_DIR")"
+  PY_ZIP_PATH="$(cygpath -w "$ZIP_PATH")"
+fi
+
+export PY_STAGING_DIR PY_PACKAGE_DIR PY_ZIP_PATH
+
+python3 - <<'PY'
 from pathlib import Path
+import os
 import zipfile
 
-root = Path(r"$STAGING_DIR")
-package = Path(r"$PACKAGE_DIR")
-zip_path = Path(r"$ZIP_PATH")
+root = Path(os.environ["PY_STAGING_DIR"])
+package = Path(os.environ["PY_PACKAGE_DIR"])
+zip_path = Path(os.environ["PY_ZIP_PATH"])
+zip_path.parent.mkdir(parents=True, exist_ok=True)
 
 with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
     for path in package.rglob("*"):

@@ -1,0 +1,246 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version from Cargo.toml (for example 0.0.25)
+        required: true
+        type: string
+      release_title:
+        description: Human-friendly release title
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      release_title: ${{ steps.meta.outputs.release_title }}
+      previous_tag: ${{ steps.previous_tag.outputs.previous_tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          INPUT_RELEASE_TITLE: ${{ github.event.inputs.release_title }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import pathlib
+          import tomllib
+
+          cargo = tomllib.loads(pathlib.Path("Cargo.toml").read_text(encoding="utf-8"))
+          cargo_version = cargo["workspace"]["package"]["version"]
+          raw_version = os.environ["INPUT_VERSION"].strip()
+          release_title = os.environ["INPUT_RELEASE_TITLE"].strip()
+          if not raw_version:
+              raise SystemExit("Release version input cannot be empty")
+          if raw_version.startswith("v"):
+              raise SystemExit("Release version must not include a leading 'v'")
+          if not release_title:
+              raise SystemExit("Release title input cannot be empty")
+          if "\n" in release_title or "\r" in release_title:
+              raise SystemExit("Release title must be a single line")
+          if raw_version != cargo_version:
+              raise SystemExit(
+                  f"Release version {raw_version!r} does not match Cargo.toml workspace version {cargo_version!r}"
+              )
+          print(f"version={raw_version}")
+          print(f"tag=v{raw_version}")
+          print(f"release_title={release_title}")
+          PY
+
+      - name: Fetch tags
+        run: git fetch --force --tags origin
+
+      - name: Resolve previous release tag
+        id: previous_tag
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          previous_tag="$(git tag --sort=-v:refname | grep -Fvx "$RELEASE_TAG" | head -n 1 || true)"
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+
+      - name: Run workspace tests
+        run: cargo test --workspace --locked
+
+  build_release_assets:
+    name: Build ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS x86_64 DMG
+            artifact_name: release-macos-x86_64
+            runner: macos-15-intel
+            rust_target: x86_64-apple-darwin
+            platform: macos
+            arch: x86_64
+            output_file: slio-git-macos-x86_64.dmg
+          - label: macOS aarch64 DMG
+            artifact_name: release-macos-aarch64
+            runner: macos-15
+            rust_target: aarch64-apple-darwin
+            platform: macos
+            arch: aarch64
+            output_file: slio-git-macos-aarch64.dmg
+          - label: Linux x86_64 tarball
+            artifact_name: release-linux-x86_64
+            runner: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: x86_64
+            output_file: slio-git-linux-x86_64.tar.gz
+          - label: Linux aarch64 tarball
+            artifact_name: release-linux-aarch64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: aarch64
+            output_file: slio-git-linux-aarch64.tar.gz
+          - label: Windows x86_64 ZIP
+            artifact_name: release-windows-x86_64
+            runner: ubuntu-24.04
+            rust_target: x86_64-pc-windows-gnu
+            platform: windows
+            arch: x86_64
+            output_file: slio-git-windows-x86_64.zip
+          - label: Windows aarch64 ZIP
+            artifact_name: release-windows-aarch64
+            runner: windows-11-arm
+            rust_target: aarch64-pc-windows-msvc
+            platform: windows
+            arch: aarch64
+            output_file: slio-git-windows-aarch64.zip
+    runs-on: ${{ matrix.runner }}
+    needs: validate
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install MinGW toolchain
+        if: matrix.platform == 'windows' && matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mingw-w64
+
+      - name: Build macOS package
+        if: matrix.platform == 'macos'
+        env:
+          MACOS_TARGET: ${{ matrix.rust_target }}
+          MACOS_ARCH: ${{ matrix.arch }}
+        run: bash scripts/package-macos-dmg.sh
+
+      - name: Build Linux package
+        if: matrix.platform == 'linux'
+        env:
+          LINUX_TARGET: ${{ matrix.rust_target }}
+          LINUX_ARCH: ${{ matrix.arch }}
+        run: bash scripts/package-linux-tarball.sh
+
+      - name: Build Windows package
+        if: matrix.platform == 'windows'
+        env:
+          WINDOWS_TARGET: ${{ matrix.rust_target }}
+          WINDOWS_ARCH: ${{ matrix.arch }}
+        run: bash scripts/package-windows-zip.sh
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.output_file }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    needs:
+      - validate
+      - build_release_assets
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist/release-assets
+
+      - name: Prepare release assets and notes
+        shell: bash
+        env:
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_TITLE: ${{ needs.validate.outputs.release_title }}
+          PREVIOUS_TAG: ${{ needs.validate.outputs.previous_tag }}
+        run: |
+          mkdir -p dist/publish
+          cp dist/release-assets/* dist/publish/
+          (
+            cd dist/publish
+            rm -f SHA256SUMS.txt RELEASE_BODY.md
+            sha256sum slio-git-* > SHA256SUMS.txt
+          )
+          {
+            printf '## %s\n\n' "$RELEASE_TITLE"
+            printf '## Changelog\n\n'
+            if [ -n "$PREVIOUS_TAG" ]; then
+              printf -- '- [Full Changelog](https://github.com/%s/compare/%s...%s)\n\n' "$REPOSITORY" "$PREVIOUS_TAG" "$RELEASE_TAG"
+            else
+              printf -- '- First published release in this repository.\n\n'
+            fi
+            printf '## Checksums\n\n```text\n'
+            cat dist/publish/SHA256SUMS.txt
+            printf '```\n'
+          } > dist/publish/RELEASE_BODY.md
+
+      - name: Create or update release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: ${{ needs.validate.outputs.release_title }}
+          body_path: dist/publish/RELEASE_BODY.md
+          files: |
+            dist/publish/slio-git-*.dmg
+            dist/publish/slio-git-*.zip
+            dist/publish/slio-git-*.tar.gz
+            dist/publish/SHA256SUMS.txt
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+          draft: false
+          prerelease: false

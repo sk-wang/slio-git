@@ -54,7 +54,18 @@ bash scripts/package-macos-dmg.sh
 bash scripts/package-windows-zip.sh
 ```
 
-Requires Rust 1.70+ and macOS 12+ / Linux / Windows 10+. Windows cross-compilation uses the `x86_64-pc-windows-gnu` Rust target and a MinGW-w64 toolchain.
+Requires Rust 1.70+ and macOS 12+ / Linux / Windows 10+.
+
+Linux packaging is available through `bash scripts/package-linux-tarball.sh`, which creates `dist/slio-git-linux-<arch>.tar.gz`.
+
+## Release Automation
+
+This repository includes a manual GitHub Actions release workflow at `.github/workflows/release.yml`.
+
+1. Open **Actions** → **Release** → **Run workflow**.
+2. Fill in the release `version` from `Cargo.toml` exactly as-is and the `release_title`.
+
+The workflow validates the requested version against `Cargo.toml`, builds macOS (`x86_64`, `aarch64`), Windows (`x86_64`, `aarch64`), and Linux (`x86_64`, `aarch64`) release archives, generates `SHA256SUMS.txt`, and publishes a GitHub Release whose body includes a compare link from the previous release tag to the new tag plus the file checksums.
 
 ## Features
 
