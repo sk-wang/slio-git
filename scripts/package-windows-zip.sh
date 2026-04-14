@@ -57,13 +57,27 @@ EOF
 
 echo "Creating ZIP archive..."
 rm -f "$ZIP_PATH"
-python3 - <<PY
+PY_STAGING_DIR="$STAGING_DIR"
+PY_PACKAGE_DIR="$PACKAGE_DIR"
+PY_ZIP_PATH="$ZIP_PATH"
+
+if command -v cygpath >/dev/null 2>&1; then
+  PY_STAGING_DIR="$(cygpath -w "$STAGING_DIR")"
+  PY_PACKAGE_DIR="$(cygpath -w "$PACKAGE_DIR")"
+  PY_ZIP_PATH="$(cygpath -w "$ZIP_PATH")"
+fi
+
+export PY_STAGING_DIR PY_PACKAGE_DIR PY_ZIP_PATH
+
+python3 - <<'PY'
 from pathlib import Path
+import os
 import zipfile
 
-root = Path(r"$STAGING_DIR")
-package = Path(r"$PACKAGE_DIR")
-zip_path = Path(r"$ZIP_PATH")
+root = Path(os.environ["PY_STAGING_DIR"])
+package = Path(os.environ["PY_PACKAGE_DIR"])
+zip_path = Path(os.environ["PY_ZIP_PATH"])
+zip_path.parent.mkdir(parents=True, exist_ok=True)
 
 with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
     for path in package.rglob("*"):
