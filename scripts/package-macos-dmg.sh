@@ -32,7 +32,7 @@ PY
 )"
 
 echo "Building release binary..."
-cargo build --release -p src-ui
+cargo build --locked --release -p src-ui
 
 echo "Preparing app bundle..."
 rm -rf "$APP_DIR" "$DMG_ROOT"

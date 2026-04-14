@@ -35,7 +35,7 @@ if ! rustup target list --installed | grep -qx "$TARGET"; then
 fi
 
 echo "Building Windows release binary for $TARGET..."
-cargo build --release -p src-ui --target "$TARGET"
+cargo build --locked --release -p src-ui --target "$TARGET"
 
 echo "Preparing ZIP contents..."
 rm -rf "$STAGING_DIR"
